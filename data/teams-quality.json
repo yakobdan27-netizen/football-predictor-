@@ -1,0 +1,12 @@
+{
+  "teams": [],
+  "tier_config": {
+    "A": { "rank": 4, "label": "Elite", "color": "#d4af37" },
+    "B": { "rank": 3, "label": "Strong", "color": "#c0c0c0" },
+    "C": { "rank": 2, "label": "Average", "color": "#cd7f32" },
+    "D": { "rank": 1, "label": "Below Average", "color": "#9ca3af" }
+  },
+  "boost_per_tier_gap": 0.05,
+  "max_boost": 0.15,
+  "last_updated": "2026-07-04T00:00:00.000Z"
+}

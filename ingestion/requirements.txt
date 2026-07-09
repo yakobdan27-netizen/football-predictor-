@@ -1,0 +1,1 @@
+# Football data ingestion pipeline (stdlib only)

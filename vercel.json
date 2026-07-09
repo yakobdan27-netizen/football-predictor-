@@ -1,0 +1,46 @@
+{
+  "functions": {
+    "app/api/backtest/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/upload/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/seed/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/batches/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/batches/[id]/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/clubs/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/clubs/[clubId]/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/clubs/export/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/migrate/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/sync-results/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/ml-model/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/ml-model/retrain/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/bayesian/migrate/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/teams-quality/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

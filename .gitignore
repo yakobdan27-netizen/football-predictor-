@@ -1,0 +1,18 @@
+node_modules
+.next
+.env
+.env.local
+.vercel
+drizzle/*.sql
+.env*
+
+# Cursor IDE
+.cursor/
+
+# Generated ingestion datasets (reproducible via python run_all.py)
+data/raw/*.csv
+data/raw/*.jsonl
+data/raw/*.txt
+data/clean/*.csv
+!data/raw/.gitkeep
+!data/clean/.gitkeep
