@@ -1,2 +1,0 @@
-{"sessionId":"fa774b","location":"lib/football-api/config.ts:hasApiFootballKey","message":"hasApiFootballKey result","data":{"configured":false,"rawDefined":false,"rawLength":0,"envKeysPresent":[]},"timestamp":1782828296299,"hypothesisId":"A,B,C,E","runId":"pre-fix"}
-{"sessionId":"fa774b","location":"app/api/fixtures/upcoming/route.ts:GET","message":"503 missing API key branch","data":{"vercelEnv":"local"},"timestamp":1782828296302,"hypothesisId":"A,B","runId":"pre-fix"}
