@@ -31,11 +31,14 @@ export function impliedProbability(odds: number): number {
   return 1 / odds;
 }
 
+import type { ScoreResult } from "./types";
+
 export function resultExportLabel(
-  result: "correct" | "wrong" | "push" | null | undefined
+  result: ScoreResult | undefined
 ): string {
   if (result === "correct") return "Win";
   if (result === "wrong") return "Loss";
   if (result === "push") return "Push";
+  if (result === "void") return "Void";
   return "";
 }
