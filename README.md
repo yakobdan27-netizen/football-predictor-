@@ -30,7 +30,17 @@ The project is a Next.js app: UI and `/api/*` routes deploy as Vercel serverless
 
 1. Link the project: `vercel link` (already linked as `football-predictor`).
 2. Add Neon from the [Vercel Marketplace](https://vercel.com/marketplace) — this sets `DATABASE_URL` automatically.
-3. Deploy: `vercel deploy --prod`
+3. Add Upstash Redis / KV — sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` (required for Prediction Log persistence).
+4. Deploy: `vercel deploy --prod`
+
+**Git CI (auto-deploy on push):** create a GitHub repo and connect it:
+
+```powershell
+# After: gh auth login
+powershell -ExecutionPolicy Bypass -File scripts/connect-github.ps1
+```
+
+Or in the [Vercel Dashboard](https://vercel.com/jacobs21983/football-predictor/settings/git) → **Git** → connect the repository.
 
 Tables are created automatically on first API request (`ensureSchema` in `lib/db/init.ts`). Seed demo data from the Dashboard **Home** page or `POST /api/seed`.
 
