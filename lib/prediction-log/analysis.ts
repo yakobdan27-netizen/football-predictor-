@@ -20,6 +20,7 @@ function addResult(stats: MarketAccuracyStats, result: ScoreResult): void {
   if (result === "correct") stats.correct++;
   else if (result === "wrong") stats.wrong++;
   else if (result === "push") stats.push++;
+  // void excluded from accuracy (same as pending)
 }
 
 function finalizePct(stats: MarketAccuracyStats): void {
@@ -37,7 +38,7 @@ export function flattenScoredRows(batches: PredictionBatch[]): ScoredRow[] {
         { prediction: string; line?: number; confidence: number; odds?: number },
       ][]) {
         const result = scored.scored[key];
-        if (result == null) continue;
+        if (result == null || result === "void") continue;
         const actual = scored.actualResults[key]?.actual;
         if (actual == null) continue;
         rows.push({

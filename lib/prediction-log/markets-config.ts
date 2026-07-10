@@ -49,8 +49,22 @@ export const LOG_MARKETS: LogMarketDef[] = [
     key: "shots_ou",
     label: "Total shots O/U",
     kind: "numeric",
+    defaultLine: 20.5,
+    lineOptions: [20.5, 25.5],
+  },
+  {
+    key: "home_shots_ou",
+    label: "Home team shots O/U",
+    kind: "numeric",
     defaultLine: 10.5,
-    lineOptions: [8.5, 10.5, 12.5],
+    lineOptions: [10.5, 12.5],
+  },
+  {
+    key: "away_shots_ou",
+    label: "Away team shots O/U",
+    kind: "numeric",
+    defaultLine: 10.5,
+    lineOptions: [10.5, 12.5],
   },
   {
     key: "sot_ou",

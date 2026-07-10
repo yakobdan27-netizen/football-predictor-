@@ -19,6 +19,8 @@ export interface MatchSummaryRow {
   selectedPredictionLabel: string;
   selectedPFinal: number | null;
   betterAlternative: FrozenBetterAlternative | null;
+  pickComment: { label: "good" | "risky" | "avoid"; message: string } | null;
+  confidenceSource: string | null;
   hasExtendedSnapshot: boolean;
 }
 
@@ -76,6 +78,8 @@ export function buildMatchSummaryRows(
 
     const systemPick = math?.systemPickByMatch?.[rm.id] ?? null;
     const betterAlternative = math?.betterAlternativeByMatch?.[rm.id] ?? null;
+    const pickComment = math?.pickCommentByMatch?.[rm.id] ?? null;
+    const confidenceSource = pick?.confidenceBreakdown ?? null;
 
     return {
       matchId: rm.id,
@@ -91,6 +95,8 @@ export function buildMatchSummaryRows(
           : "—",
       selectedPFinal: pFinal,
       betterAlternative,
+      pickComment,
+      confidenceSource,
       hasExtendedSnapshot: hasExtended,
     };
   });

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import { findOrCreateClub } from "@/lib/prediction-log/club-store";
+import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
 import {
   loadTeamsQualityStore,
   saveTeamsQualityStore,
 } from "@/lib/prediction-log/teams-quality-store";
 import {
   mergeImportedTeams,
+  normalizeLeagues,
   normalizeStore,
   normalizeTeamRecord,
   parseTeamsImport,
@@ -41,6 +44,7 @@ export async function POST(request: Request) {
       action?: "add" | "import";
       team_name?: string;
       tier?: QualityTier;
+      league?: string;
       text?: string;
       mode?: "merge" | "replace";
     };
@@ -61,16 +65,55 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "team_name and tier are required" }, { status: 400 });
     }
 
+    const teamName = body.team_name.trim();
+    const league = body.league?.trim() ?? "";
+    const isKnownLeague = (LEAGUE_OPTIONS as readonly string[]).includes(league);
+
+    const existingIdx = store.teams.findIndex(
+      (t) =>
+        t.team_name.toLowerCase() === teamName.toLowerCase() ||
+        t.team_id === teamName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+    );
+    const existing = existingIdx >= 0 ? store.teams[existingIdx] : null;
+
+    // New custom teams (not already in store) require a league for roster membership.
+    if (!existing && !isKnownLeague) {
+      return NextResponse.json(
+        { error: "league is required when adding a new team" },
+        { status: 400 }
+      );
+    }
+
+    let clubId = existing?.club_id;
+    if (isKnownLeague) {
+      const club = await findOrCreateClub(teamName, league);
+      clubId = club.clubId;
+    }
+
+    const prevLeagues = normalizeLeagues(existing?.leagues);
+    const nextLeagues = isKnownLeague
+      ? normalizeLeagues([...prevLeagues, league])
+      : prevLeagues;
+
     const record = normalizeTeamRecord(
-      { team_name: body.team_name.trim(), tier: body.tier },
+      {
+        team_name: teamName,
+        tier: body.tier,
+        leagues: nextLeagues,
+        club_id: clubId ?? existing?.club_id,
+        created_at: existing?.created_at,
+        team_id: existing?.team_id,
+      },
       store.tier_config
     );
-    const existingIdx = store.teams.findIndex(
-      (t) => t.team_id === record.team_id || t.team_name.toLowerCase() === record.team_name.toLowerCase()
-    );
+
     const teams = [...store.teams];
     if (existingIdx >= 0) {
-      teams[existingIdx] = { ...teams[existingIdx]!, ...record, created_at: teams[existingIdx]!.created_at };
+      teams[existingIdx] = {
+        ...teams[existingIdx]!,
+        ...record,
+        created_at: teams[existingIdx]!.created_at,
+      };
     } else {
       teams.push(record);
     }

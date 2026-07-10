@@ -2,9 +2,12 @@
 
 import { useMemo } from "react";
 import { computeLearnerPatterns, overallWinRate, totalMatchesInBatches, totalSavedBatches } from "@/lib/prediction-log/learner-patterns";
+import { buildGlobalCalibrationReport } from "@/lib/prediction-log/global-calibration";
 import { LearnerAdvicePanel } from "./learner-advice-panel";
 import { LearnedPatternsPanel } from "./learned-patterns-panel";
 import { ClubCapacityBrowser } from "./club-capacity-browser";
+import { CalibrationDashboard } from "./calibration-dashboard";
+import { MarketReliabilityBoard } from "./market-reliability-board";
 import { usePredictionLogData } from "./use-prediction-log-data";
 
 export function AiLearnerApp() {
@@ -32,6 +35,11 @@ export function AiLearnerApp() {
       luckyNumbers?.numbers ?? []
     );
   }, [batches, analysis, learnerStats, teamCharacteristics, luckyNumbers]);
+
+  const calibrationReport = useMemo(
+    () => buildGlobalCalibrationReport(batches),
+    [batches]
+  );
 
   if (!ready || !learnerStats) {
     return <p className="page-sub">Loading learner data…</p>;
@@ -116,6 +124,15 @@ export function AiLearnerApp() {
 
       <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Support for your next prediction</h3>
       <LearnerAdvicePanel stats={learnerStats} enabled={learnerEnabled} />
+
+      <CalibrationDashboard report={calibrationReport} />
+
+      {analysis ? (
+        <MarketReliabilityBoard
+          top={analysis.topMarkets ?? []}
+          weakest={analysis.weakestMarkets ?? []}
+        />
+      ) : null}
 
       {learnerStats.comboTypeStats && Object.keys(learnerStats.comboTypeStats).length > 0 && (
         <div className="card" style={{ marginBottom: "1rem" }}>

@@ -15,6 +15,8 @@ export interface TeamQualityRecord {
   created_at: string;
   updated_at: string;
   manual_override: true;
+  /** Leagues this custom team belongs to (for roster merge). */
+  leagues?: string[];
   club_id?: string;
 }
 

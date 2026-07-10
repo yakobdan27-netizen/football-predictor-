@@ -321,6 +321,7 @@ export function computeMasterProbability(
   let pStat = 50;
   let pDc = 50;
   let pMl = 50;
+  let wasCalibrated = false;
   let statLayer: MasterProbabilityResult["statLayer"];
 
   try {
@@ -347,7 +348,9 @@ export function computeMasterProbability(
     pDc = statParts.pDc;
     pMl = statParts.pMl;
     pStat = shrinkPStat(statParts.pStat, minSample);
-    pStat = applyCalibration(pStat, null);
+    const calibrator = ctx.binCalibrator ?? null;
+    pStat = applyCalibration(pStat, calibrator);
+    wasCalibrated = calibrator != null;
 
     let bayesianLayer:
       | {
@@ -398,7 +401,7 @@ export function computeMasterProbability(
       lambdaHome: dcResult.lambdaHome,
       lambdaAway: dcResult.lambdaAway,
       mlProbs,
-      calibrated: false,
+      calibrated: wasCalibrated,
       bayesianLayer,
     };
   } catch {
@@ -416,6 +419,7 @@ export function computeMasterProbability(
   const parts: string[] = [];
   if (statLayer) {
     parts.push(`Stat ${pStat}% (DC ${pDc}%, ML ${pMl}%)`);
+    if (wasCalibrated) parts.push("calibrated");
     parts.push(`Custom ${pCustom}%`);
   }
   if (cap.reliability > 0) parts.push(`Cap ${(cap.value * 100).toFixed(0)}%`);
@@ -423,6 +427,7 @@ export function computeMasterProbability(
   if (h2h.reliability > 0) parts.push(`H2H ${(h2h.value * 100).toFixed(0)}%`);
   if (you.reliability > 0) parts.push(`You ${(you.value * 100).toFixed(0)}%`);
   if (luck.reliability > 0) parts.push(`Luck +5%`);
+  if (ctx.leagueCharacterProfile) parts.push("league");
   const breakdown =
     parts.length > 0
       ? `P_signal ${pSignal}% from: ${parts.join(", ")}. Based on ${dataSampleSize} data points.`

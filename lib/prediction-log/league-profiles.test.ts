@@ -120,3 +120,25 @@ test("HT goal sync derives ht_1x2 from stats", () => {
   const actuals = applyHalfTimeGoalsToActualsFromStats(match);
   assert.equal(actuals.ht_1x2?.actual, "home");
 });
+
+test("first_goal_wins_rate prefers firstGoalSide over HT proxy", () => {
+  // HT says away led, but firstGoalSide says home scored first and home won FT
+  const matches: LogMatch[] = Array.from({ length: 6 }, (_, i) => ({
+    id: `m${i}`,
+    homeTeam: "Alpha",
+    awayTeam: "Beta",
+    predictions: { "1x2": { prediction: "home", confidence: 60 } },
+    actualResults: {},
+    scored: {},
+    teamStats: {
+      home: { goals: 2, firstHalfGoals: 0 },
+      away: { goals: 1, firstHalfGoals: 1 },
+      firstGoalSide: "home" as const,
+    },
+  }));
+  const store = recomputeLeagueProfiles([makeBatch("Premier League", matches)]);
+  const key = leagueProfileKey("premier_league", "2025/26");
+  const rate = store.leagues[key]!.characterProfile.first_goal_wins_rate;
+  assert.equal(rate.sampleSize, 6);
+  assert.equal(rate.value, 100);
+});

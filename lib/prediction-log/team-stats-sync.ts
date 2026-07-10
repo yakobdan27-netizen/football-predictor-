@@ -1,81 +1,49 @@
-import {
-  applyGoalsToActuals,
-  applyHalfTimeGoalsToActualsFromStats,
-} from "./goal-result-sync";
-import { scoreMatch } from "./scoring";
-import type { LogMarketKey, LogMatch, TeamSideStats } from "./types";
+import { cloneMatchTeamStats } from "./match-learning";
+import { gradeMatchFromFacts } from "./grade-from-facts";
+import type { LogMatch } from "./types";
 
-const SUM_SYNC: Array<{
-  field: keyof TeamSideStats;
-  market: LogMarketKey;
-}> = [
-  { field: "totalShots", market: "shots_ou" },
-  { field: "shotsOnTarget", market: "sot_ou" },
-  { field: "corners", market: "corners_ou" },
-  { field: "throwIns", market: "throw_ins_ou" },
-  { field: "offsides", market: "offsides_ou" },
-];
-
-function sumSideStat(
-  home: TeamSideStats | undefined,
-  away: TeamSideStats | undefined,
-  field: keyof TeamSideStats
-): number | null {
-  const h = home?.[field];
-  const a = away?.[field];
-  if (h == null || a == null || !Number.isFinite(h) || !Number.isFinite(a)) {
-    return null;
+/** Set home possession and auto-complement away to 100 − home (clamped 0–100). */
+export function setHomePossession(
+  match: LogMatch,
+  homePct: number | ""
+): LogMatch {
+  const teamStats = cloneMatchTeamStats(match);
+  if (homePct === "" || !Number.isFinite(homePct)) {
+    delete teamStats.home.possession;
+    delete teamStats.away.possession;
+  } else {
+    const h = Math.max(0, Math.min(100, Math.round(homePct)));
+    teamStats.home.possession = h;
+    teamStats.away.possession = 100 - h;
   }
-  return h + a;
+  return applyTeamStatsSync({ ...match, teamStats });
 }
 
-function bothGoalsSet(home?: number, away?: number): boolean {
-  return (
-    home != null &&
-    away != null &&
-    Number.isFinite(home) &&
-    Number.isFinite(away)
-  );
-}
-
-function bothHalfGoalsSet(home?: number, away?: number): boolean {
-  return home != null && away != null && Number.isFinite(home) && Number.isFinite(away);
-}
-
+/**
+ * Normalize possession / HT result flags, then grade all markets from facts.
+ * Actuals are derived inside gradeMatchFromFacts (ungated).
+ */
 export function applyTeamStatsSync(match: LogMatch): LogMatch {
   const ts = match.teamStats;
-  if (!ts) return scoreMatch(match);
+  if (!ts) return gradeMatchFromFacts(match);
 
-  let actualResults = { ...match.actualResults };
-
-  if (bothGoalsSet(ts.home?.goals, ts.away?.goals)) {
-    actualResults = applyGoalsToActuals(match, ts.home!.goals!, ts.away!.goals!, {
-      overwrite: true,
-    });
+  if (ts.home?.possession != null && Number.isFinite(ts.home.possession)) {
+    const h = Math.max(0, Math.min(100, ts.home.possession));
+    ts.home.possession = h;
+    ts.away = { ...ts.away, possession: 100 - h };
   }
 
-  if (bothHalfGoalsSet(ts.home?.firstHalfGoals, ts.away?.firstHalfGoals)) {
-    actualResults = {
-      ...actualResults,
-      ...applyHalfTimeGoalsToActualsFromStats({ ...match, actualResults }),
-    };
-    if (!ts.firstHalfResult) {
-      const hth = ts.home!.firstHalfGoals!;
-      const hta = ts.away!.firstHalfGoals!;
-      ts.firstHalfResult =
-        hth > hta ? "home" : hta > hth ? "away" : "draw";
-    }
-  } else if (match.predictions.ht_1x2 && ts.firstHalfResult) {
-    actualResults.ht_1x2 = { actual: ts.firstHalfResult };
+  const hth = ts.home?.firstHalfGoals;
+  const ath = ts.away?.firstHalfGoals;
+  if (
+    hth != null &&
+    ath != null &&
+    Number.isFinite(hth) &&
+    Number.isFinite(ath) &&
+    !ts.firstHalfResult
+  ) {
+    ts.firstHalfResult = hth > ath ? "home" : ath > hth ? "away" : "draw";
   }
 
-  for (const { field, market } of SUM_SYNC) {
-    if (!match.predictions[market]) continue;
-    const total = sumSideStat(ts.home, ts.away, field);
-    if (total != null) {
-      actualResults[market] = { actual: total };
-    }
-  }
-
-  return scoreMatch({ ...match, actualResults, teamStats: ts });
+  return gradeMatchFromFacts({ ...match, teamStats: ts });
 }

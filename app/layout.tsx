@@ -32,7 +32,7 @@ export default function RootLayout({
         <div className="app-shell">
           <Nav />
           <main className="app-main">
-            <div className="mx-auto max-w-6xl px-4 pt-4">
+            <div className="mx-auto max-w-6xl">
               <ManualDataBanner />
             </div>
             {children}

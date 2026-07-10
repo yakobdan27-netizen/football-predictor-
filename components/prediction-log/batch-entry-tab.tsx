@@ -262,7 +262,7 @@ export function BatchEntryTab({
         comboSettings={comboSettings}
       />
 
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+      <div className="batch-actions">
         <button type="button" className="btn btn-secondary" onClick={addMatch}>
           + Add match
         </button>

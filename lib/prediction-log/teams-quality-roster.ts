@@ -10,6 +10,7 @@ export interface StagingTeamRow {
   tier: QualityTier;
   inStore: boolean;
   isCustom: boolean;
+  leagues: string[];
 }
 
 export function buildStagingRows(store: TeamsQualityStore | null): StagingTeamRow[] {
@@ -25,6 +26,7 @@ export function buildStagingRows(store: TeamsQualityStore | null): StagingTeamRo
       tier: saved?.tier ?? DEFAULT_DISPLAY_TIER,
       inStore: saved != null,
       isCustom: false,
+      leagues: saved?.leagues ?? [],
     });
   }
 
@@ -37,6 +39,7 @@ export function buildStagingRows(store: TeamsQualityStore | null): StagingTeamRo
         tier: team.tier,
         inStore: true,
         isCustom: true,
+        leagues: team.leagues ?? [],
       });
     }
   }

@@ -127,6 +127,22 @@ export function mapMatchPredictionsToWrites(
           odds,
         });
         break;
+      case "home_shots_ou":
+        home.push({
+          clubSide: "home",
+          type: "totalShots",
+          predicted: `${pred.prediction}${pred.line != null ? `@${pred.line}` : ""}`,
+          odds,
+        });
+        break;
+      case "away_shots_ou":
+        away.push({
+          clubSide: "away",
+          type: "totalShots",
+          predicted: `${pred.prediction}${pred.line != null ? `@${pred.line}` : ""}`,
+          odds,
+        });
+        break;
       case "corners_ou":
         home.push({
           clubSide: "home",

@@ -27,6 +27,7 @@ import type { TeamsQualityStore } from "./teams-quality-types";
 import type { LeagueCharacterProfile } from "./types";
 import { BETTER_ALTERNATIVE_THRESHOLD_PCT } from "./recommendation-config";
 import { FORMULA_CONFIG } from "./master-probability-config";
+import { derivePickComment } from "./pick-comment";
 
 export interface TierFreezeMetadata {
   tier: RecommendationTier;
@@ -147,6 +148,8 @@ export function buildMarketComparison(
       ),
       pFinal,
       selected: isSelected,
+      prediction: candidate.pick.prediction,
+      line: candidate.pick.line,
     });
   }
 
@@ -171,6 +174,8 @@ export function buildBetterAlternative(
       pFinal: selected.pFinal,
       deltaPct: 0,
       isOptimal: true,
+      prediction: selected.prediction,
+      line: selected.line,
     };
   }
 
@@ -182,6 +187,8 @@ export function buildBetterAlternative(
       pFinal: selected.pFinal,
       deltaPct,
       isOptimal: true,
+      prediction: selected.prediction,
+      line: selected.line,
     };
   }
 
@@ -192,6 +199,8 @@ export function buildBetterAlternative(
     pFinal: best.pFinal,
     deltaPct,
     isOptimal: false,
+    prediction: best.prediction,
+    line: best.line,
   };
 }
 
@@ -269,6 +278,10 @@ export function buildExtendedMathSnapshot(
   const marketComparisonByMatch: Record<string, FrozenMarketEntry[]> = {};
   const systemPickByMatch: Record<string, FrozenSystemPick> = {};
   const betterAlternativeByMatch: Record<string, FrozenBetterAlternative> = {};
+  const pickCommentByMatch: Record<
+    string,
+    { label: "good" | "risky" | "avoid"; message: string }
+  > = {};
 
   for (const rm of recommended.matches) {
     const sourceMatch = sourceMatches.find((m) => m.id === rm.id);
@@ -294,6 +307,13 @@ export function buildExtendedMathSnapshot(
 
     const betterAlt = buildBetterAlternative(comparison, threshold);
     if (betterAlt) betterAlternativeByMatch[rm.id] = betterAlt;
+
+    const selectedPFinal = risk.pFinalByMatch[rm.id] ?? selectedEntry?.[1]?.pFinal ?? null;
+    pickCommentByMatch[rm.id] = derivePickComment({
+      selectedPFinal,
+      betterAlt,
+      riskyGapPct: threshold,
+    });
   }
 
   const legs = activeLegsFromRecommended(batch);
@@ -321,6 +341,7 @@ export function buildExtendedMathSnapshot(
     marketComparisonByMatch,
     systemPickByMatch,
     betterAlternativeByMatch,
+    pickCommentByMatch,
     workflowLog,
     reductionSteps,
     settingsSnapshot: {

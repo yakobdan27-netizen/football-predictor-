@@ -28,6 +28,8 @@ function marketMetricKey(
     case "win_one_half":
       return "firstHalfSecondHalf";
     case "shots_ou":
+    case "home_shots_ou":
+    case "away_shots_ou":
     case "sot_ou":
     case "corners_ou":
       return "numeric";
@@ -39,7 +41,7 @@ function marketMetricKey(
 function numericMetricKey(
   market: LogMarketKey
 ): keyof import("./types").ClubProfileMetrics["numericLines"] | null {
-  if (market === "shots_ou") return "shots";
+  if (market === "shots_ou" || market === "home_shots_ou" || market === "away_shots_ou") return "shots";
   if (market === "sot_ou") return "sot";
   if (market === "corners_ou") return "corners";
   return null;

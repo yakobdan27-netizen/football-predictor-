@@ -9,6 +9,10 @@ import {
   getTierAccentColor,
   hasExtendedSnapshot,
 } from "@/lib/prediction-log/snapshot-readers";
+import {
+  pickCommentEmoji,
+  pickCommentTitle,
+} from "@/lib/prediction-log/pick-comment";
 import { CorrectScoreOneLiner } from "./correct-score-panel";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
@@ -81,6 +85,15 @@ export function RecommendationBatchSummaryCard({ batch }: RecommendationBatchSum
             const altLine = formatBetterAlternativeLine(row.betterAlternative);
             const logMatch = batch.matches.find((m) => m.id === row.matchId);
             const csSnapshot = logMatch?.correctScoreSnapshot?.mostLikely;
+            const comment = row.pickComment;
+            const commentColor =
+              comment?.label === "good"
+                ? "var(--accent)"
+                : comment?.label === "risky"
+                  ? "var(--warn)"
+                  : comment?.label === "avoid"
+                    ? "var(--danger)"
+                    : "var(--muted)";
             return (
               <div
                 key={row.matchId}
@@ -95,6 +108,14 @@ export function RecommendationBatchSummaryCard({ batch }: RecommendationBatchSum
                   {row.homeTeam} vs {row.awayTeam}
                 </strong>
                 <div style={{ fontSize: "0.875rem", display: "grid", gap: "0.25rem" }}>
+                  {comment ? (
+                    <div style={{ color: commentColor, fontWeight: 600 }}>
+                      {pickCommentEmoji(comment.label)} {pickCommentTitle(comment.label)}
+                      <span style={{ fontWeight: 400, color: "var(--muted)", marginLeft: "0.35rem" }}>
+                        — {comment.message}
+                      </span>
+                    </div>
+                  ) : null}
                   <div>
                     <span style={{ color: "var(--muted)" }}>System pick: </span>
                     {row.systemPick?.label ?? "—"}
@@ -104,8 +125,28 @@ export function RecommendationBatchSummaryCard({ batch }: RecommendationBatchSum
                     {row.selectedMarketLabel}
                     {row.selectedPredictionLabel !== "—" && ` — ${row.selectedPredictionLabel}`}
                     {row.selectedPFinal != null && (
-                      <span style={{ fontWeight: 600 }}> — {row.selectedPFinal}%</span>
+                      <span
+                        style={{ fontWeight: 600 }}
+                        title={row.confidenceSource ?? undefined}
+                      >
+                        {" "}
+                        — {row.selectedPFinal}%
+                      </span>
                     )}
+                    {row.confidenceSource ? (
+                      <span
+                        title={row.confidenceSource}
+                        style={{
+                          marginLeft: "0.35rem",
+                          fontSize: "0.75rem",
+                          color: "var(--muted)",
+                          cursor: "help",
+                          borderBottom: "1px dotted var(--muted)",
+                        }}
+                      >
+                        why?
+                      </span>
+                    ) : null}
                   </div>
                   <div>
                     <span style={{ color: "var(--muted)" }}>Better option: </span>

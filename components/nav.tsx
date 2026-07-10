@@ -7,7 +7,7 @@ const links = [
   { href: "/", label: "Home", icon: "🏠", desktopLabel: "Dashboard" },
   { href: "/prediction-log", label: "Log", icon: "📝", desktopLabel: "Prediction Log" },
   { href: "/teams", label: "Teams", icon: "🏆", desktopLabel: "Teams" },
-  { href: "/league-analysis", label: "League", icon: "🌍", desktopLabel: "League Analysis" },
+  { href: "/leagues", label: "League", icon: "🌍", desktopLabel: "Leagues" },
   { href: "/ai-learner", label: "AI", icon: "🧠", desktopLabel: "AI Learner" },
   { href: "/recommendation", label: "Reco", icon: "🎯", desktopLabel: "Recommendation" },
   { href: "/combined-odds", label: "Combo", icon: "🎲", desktopLabel: "Combined Odds" },
@@ -18,8 +18,13 @@ const links = [
 
 export function Nav() {
   const pathname = usePathname();
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    if (href === "/leagues") {
+      return pathname.startsWith("/leagues") || pathname.startsWith("/league-analysis");
+    }
+    return pathname.startsWith(href);
+  };
 
   return (
     <>

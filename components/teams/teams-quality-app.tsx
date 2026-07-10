@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
 import {
   addTeamQuality,
   fetchTeamsQuality,
@@ -49,6 +50,7 @@ export function TeamsQualityApp() {
   const [showImport, setShowImport] = useState(false);
   const [newName, setNewName] = useState("");
   const [newTier, setNewTier] = useState<QualityTier>("C");
+  const [newLeague, setNewLeague] = useState<string>(LEAGUE_OPTIONS[0]);
   const [importText, setImportText] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -92,11 +94,11 @@ export function TeamsQualityApp() {
   }
 
   async function handleAddTeam() {
-    if (!newName.trim()) return;
+    if (!newName.trim() || !newLeague) return;
     setSaving(true);
     setError(null);
     try {
-      const saved = await addTeamQuality(newName.trim(), newTier);
+      const saved = await addTeamQuality(newName.trim(), newTier, newLeague);
       setStore(saved);
       setNewName("");
       setShowAdd(false);
@@ -144,9 +146,9 @@ export function TeamsQualityApp() {
         style={{ marginBottom: "1rem", background: "rgba(255,255,255,0.02)" }}
       >
         <p style={{ margin: 0, fontSize: "0.875rem", color: "var(--muted)" }}>
-          Manual tier assignment for prediction boost. Assign each club to tier A–D; when a
-          higher-tier team faces a lower-tier opponent, a tier-gap boost is applied on top of
-          P_final (without changing the base prediction model).
+          Manual tier assignment for prediction boost. Custom teams require a league so they
+          appear in New Batch autocomplete and pass fixture validation like registered clubs.
+          Higher-tier vs lower-tier matchups get a tier-gap boost on P_final.
         </p>
       </div>
 
@@ -216,6 +218,7 @@ export function TeamsQualityApp() {
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
               <th style={{ padding: "0.5rem" }}>#</th>
               <th style={{ padding: "0.5rem" }}>Team Name</th>
+              <th style={{ padding: "0.5rem" }}>League</th>
               <th style={{ padding: "0.5rem" }}>Tier</th>
               <th style={{ padding: "0.5rem" }}>Quality Boost</th>
             </tr>
@@ -223,7 +226,7 @@ export function TeamsQualityApp() {
           <tbody>
             {filteredTeams.length === 0 ? (
               <tr>
-                <td colSpan={4} style={{ padding: "1rem", color: "var(--muted)" }}>
+                <td colSpan={5} style={{ padding: "1rem", color: "var(--muted)" }}>
                   No teams match your filter. Try a different tier or search term.
                 </td>
               </tr>
@@ -249,6 +252,13 @@ export function TeamsQualityApp() {
                         not saved
                       </span>
                     )}
+                  </td>
+                  <td style={{ padding: "0.5rem", fontSize: "0.8125rem", color: "var(--muted)" }}>
+                    {team.isCustom
+                      ? team.leagues.length
+                        ? team.leagues.join(", ")
+                        : "—"
+                      : "—"}
                   </td>
                   <td style={{ padding: "0.5rem" }}>
                     <select
@@ -339,6 +349,21 @@ export function TeamsQualityApp() {
                 style={{ marginTop: "0.35rem", width: "100%" }}
               />
             </label>
+            <label className="label" style={{ display: "block", marginBottom: "0.75rem" }}>
+              League
+              <select
+                className="select"
+                value={newLeague}
+                onChange={(e) => setNewLeague(e.target.value)}
+                style={{ marginTop: "0.35rem", width: "100%" }}
+              >
+                {LEAGUE_OPTIONS.map((league) => (
+                  <option key={league} value={league}>
+                    {league}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div style={{ marginBottom: "1rem" }}>
               <div className="label" style={{ marginBottom: "0.35rem" }}>
                 Quality Tier
@@ -366,7 +391,7 @@ export function TeamsQualityApp() {
                 type="button"
                 className="btn btn-primary"
                 onClick={() => void handleAddTeam()}
-                disabled={!newName.trim() || saving}
+                disabled={!newName.trim() || !newLeague || saving}
               >
                 Add Team
               </button>

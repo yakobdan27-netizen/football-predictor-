@@ -783,7 +783,7 @@ const tcBatch: PredictionBatch = {
       predictions: {
         home_goals_ou: { prediction: "over", line: 0.5, confidence: 70, odds: 1.8 },
         away_goals_ou: { prediction: "over", line: 0.5, confidence: 65, odds: 2.0 },
-        shots_ou: { prediction: "over", line: 10.5, confidence: 60, odds: 1.9 },
+        shots_ou: { prediction: "over", line: 20.5, confidence: 60, odds: 1.9 },
       },
       actualResults: {
         home_goals_ou: { actual: 2 },
@@ -1287,7 +1287,7 @@ const teamStatsMatch: LogMatch = {
   awayTeam: "Chelsea",
   predictions: {
     corners_ou: { prediction: "over", line: 9.5, confidence: 60 },
-    shots_ou: { prediction: "under", line: 22.5, confidence: 55 },
+    shots_ou: { prediction: "under", line: 20.5, confidence: 55 },
     throw_ins_ou: { prediction: "over", line: 40.5, confidence: 50 },
   },
   actualResults: {},
@@ -1304,6 +1304,28 @@ assert.equal(syncedTeamStats.actualResults.shots_ou?.actual, 18);
 assert.equal(syncedTeamStats.scored.shots_ou, "correct");
 assert.equal(syncedTeamStats.actualResults.throw_ins_ou?.actual, 42);
 assert.equal(syncedTeamStats.scored.throw_ins_ou, "correct");
+
+// Team stats sync: per-side home/away shots O/U
+const sideShotsMatch: LogMatch = {
+  id: "ts-side-shots",
+  homeTeam: "Arsenal",
+  awayTeam: "Chelsea",
+  predictions: {
+    home_shots_ou: { prediction: "over", line: 10.5, confidence: 60 },
+    away_shots_ou: { prediction: "under", line: 12.5, confidence: 55 },
+  },
+  actualResults: {},
+  scored: {},
+  teamStats: {
+    home: { totalShots: 14 },
+    away: { totalShots: 9 },
+  },
+};
+const syncedSideShots = applyTeamStatsSync(sideShotsMatch);
+assert.equal(syncedSideShots.actualResults.home_shots_ou?.actual, 14);
+assert.equal(syncedSideShots.scored.home_shots_ou, "correct");
+assert.equal(syncedSideShots.actualResults.away_shots_ou?.actual, 9);
+assert.equal(syncedSideShots.scored.away_shots_ou, "correct");
 
 // Team stats sync: first half result auto-scores ht_1x2
 const htMatch: LogMatch = {

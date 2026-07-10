@@ -66,14 +66,24 @@ function htResult(
 ): "home" | "draw" | "away" | null {
   const ht = actualResults.ht_1x2?.actual;
   if (ht === "home" || ht === "draw" || ht === "away") return ht;
-  return teamStats?.firstHalfResult ?? null;
+  if (teamStats?.firstHalfResult) return teamStats.firstHalfResult;
+  const hth = teamStats?.home?.firstHalfGoals;
+  const ath = teamStats?.away?.firstHalfGoals;
+  if (hth != null && ath != null && Number.isFinite(hth) && Number.isFinite(ath)) {
+    return ftResult(hth, ath);
+  }
+  return null;
 }
 
 function fhGoals(
   actualResults: Partial<Record<LogMarketKey, MarketActual>>,
   teamStats?: MatchTeamStats
 ): number | null {
-  void teamStats;
+  const hth = teamStats?.home?.firstHalfGoals;
+  const ath = teamStats?.away?.firstHalfGoals;
+  if (hth != null && ath != null && Number.isFinite(hth) && Number.isFinite(ath)) {
+    return hth + ath;
+  }
   void actualResults;
   return null;
 }
@@ -245,8 +255,40 @@ export function scoreComboLeg(
   const evaluator = COMBO_EVALUATORS[comboId];
   if (!evaluator) return null;
   const hit = evaluator(actualResults, teamStats);
-  if (hit == null) return null;
+  if (hit == null) return "void";
   return hit ? "correct" : "wrong";
+}
+
+/** Aggregate combo legs: any wrong → wrong; any void (no wrong) → void; all correct → correct. */
+export function aggregateComboResults(results: ScoreResult[]): ScoreResult {
+  const known = results.filter((r) => r != null);
+  if (known.length === 0) return null;
+  if (known.some((r) => r === "wrong")) return "wrong";
+  if (known.some((r) => r === "void")) return "void";
+  if (known.every((r) => r === "correct")) return "correct";
+  return null;
+}
+
+export function explainComboResult(
+  comboId: string,
+  result: ScoreResult,
+  actualResults: Partial<Record<LogMarketKey, MarketActual>>,
+  teamStats?: MatchTeamStats
+): string {
+  const label = comboId.replace(/_/g, " ");
+  if (result === "void") {
+    return `Void: ${label} cannot be graded (missing required stats).`;
+  }
+  if (result == null) {
+    return `Pending: ${label} not yet graded.`;
+  }
+  const { home, away } = getGoals(actualResults, teamStats);
+  const score =
+    home != null && away != null ? `FT ${home}-${away}` : "FT unknown";
+  if (result === "correct") {
+    return `Correct: ${label} hit (${score}).`;
+  }
+  return `Wrong: ${label} missed (${score}).`;
 }
 
 export interface ComboScoredLeg {
@@ -294,7 +336,7 @@ export function scoreRecommendedBatchCombos(
     if (!comboId) continue;
     comboPickByMatch[logMatch.id] = comboId;
     const result = scoreComboLeg(comboId, logMatch.actualResults, logMatch.teamStats);
-    if (result) {
+    if (result != null) {
       comboScoredByMatch[logMatch.id] = result;
       scoredLegs.push({ matchId: logMatch.id, comboId, result });
     }
@@ -304,7 +346,8 @@ export function scoreRecommendedBatchCombos(
   for (const leg of accumulator.legs) {
     const scored = comboScoredByMatch[leg.matchId];
     const comboId = leg.selected?.comboId;
-    if (!comboId || !scored || scored === "push") continue;
+    if (!comboId || scored == null || scored === "push") continue;
+    if (scored === "void") continue;
     accaLegs.push({ matchId: leg.matchId, comboId, result: scored });
   }
 

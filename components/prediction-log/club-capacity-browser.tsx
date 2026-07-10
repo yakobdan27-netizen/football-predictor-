@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { HISTORY_TYPE_KEYS } from "@/lib/prediction-log/club-record-types";
 import type { ClubIndex, ClubRecord, HistoryTypeKey } from "@/lib/prediction-log/club-record-types";
 import { fetchClubRecord } from "@/lib/prediction-log/storage";
+import { DataCompletenessMeter } from "./data-completeness-meter";
 
 const TYPE_LABELS: Record<HistoryTypeKey, string> = {
   winLose: "Win / Lose",
@@ -103,6 +104,9 @@ export function ClubCapacityBrowser({ clubIndex }: ClubCapacityBrowserProps) {
               {cap.lowSample ? "Low data" : "OK"}
             </div>
             <div className="stat-label">Confidence</div>
+          </div>
+          <div className="card" style={{ display: "flex", alignItems: "center" }}>
+            <DataCompletenessMeter sampleSize={cap.sampleSize} label="Club history" />
           </div>
         </div>
       )}

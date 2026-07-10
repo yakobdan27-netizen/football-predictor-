@@ -51,7 +51,8 @@ a {
   width: 100%;
   max-width: 48rem;
   margin: 0 auto;
-  padding: 1rem 1rem calc(var(--nav-height) + var(--safe-bottom) + 1rem);
+  padding: 0.75rem 0.75rem calc(var(--nav-height) + var(--safe-bottom) + 1rem);
+  overflow-x: hidden;
 }
 
 @media (min-width: 768px) {
@@ -328,13 +329,20 @@ table.data-table td {
   right: 0;
   z-index: 50;
   display: flex;
-  justify-content: space-around;
+  justify-content: flex-start;
   align-items: stretch;
   min-height: var(--nav-height);
   padding-bottom: var(--safe-bottom);
   background: rgba(17, 24, 39, 0.96);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.bottom-nav::-webkit-scrollbar {
+  display: none;
 }
 
 @media (min-width: 768px) {
@@ -344,17 +352,17 @@ table.data-table td {
 }
 
 .bottom-nav-item {
-  flex: 1;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.125rem;
-  padding: 0.375rem 0.25rem;
+  padding: 0.375rem 0.5rem;
   font-size: 0.625rem;
   font-weight: 600;
   color: var(--muted);
-  min-width: 0;
+  min-width: 3.25rem;
 }
 
 .bottom-nav-item:active {
@@ -561,20 +569,43 @@ table.data-table td {
 
 /* Compact batch match table */
 .batch-table-wrap {
-  overflow: auto;
-  max-height: min(70vh, 720px);
-  margin-bottom: 0.75rem;
+  --batch-num-w: 2rem;
+  --batch-team-w: 6.5rem;
+  --batch-row-h: 40px;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: min(65vh, 720px);
+  margin: 0 -0.25rem 0.75rem;
+  padding: 0 0.25rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+@media (min-width: 768px) {
+  .batch-table-wrap {
+    --batch-num-w: 2.25rem;
+    --batch-team-w: 9.5rem;
+    --batch-row-h: 34px;
+    margin: 0 0 0.75rem;
+    padding: 0;
+  }
 }
 
 .batch-table {
   width: max-content;
   min-width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
   table-layout: fixed;
+}
+
+@media (min-width: 768px) {
+  .batch-table {
+    font-size: 13px;
+  }
 }
 
 .batch-table thead th {
@@ -582,20 +613,27 @@ table.data-table td {
   top: 0;
   z-index: 3;
   background: var(--surface2);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--muted);
-  padding: 0 0.5rem;
-  height: 34px;
+  padding: 0 0.35rem;
+  height: var(--batch-row-h);
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
   text-align: left;
 }
 
+@media (min-width: 768px) {
+  .batch-table thead th {
+    font-size: 12px;
+    padding: 0 0.5rem;
+  }
+}
+
 .batch-table tbody tr {
-  height: 34px;
+  height: var(--batch-row-h);
 }
 
 .batch-table tbody tr:nth-child(even) {
@@ -610,10 +648,14 @@ table.data-table td {
   background: rgba(239, 68, 68, 0.08);
 }
 
+.batch-table tbody tr.batch-row-void {
+  background: rgba(148, 163, 184, 0.1);
+}
+
 .batch-table td {
-  padding: 0 0.5rem;
-  height: 34px;
-  max-height: 34px;
+  padding: 0 0.35rem;
+  height: var(--batch-row-h);
+  max-height: var(--batch-row-h);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -621,10 +663,84 @@ table.data-table td {
   vertical-align: middle;
 }
 
+@media (min-width: 768px) {
+  .batch-table td {
+    padding: 0 0.5rem;
+  }
+}
+
 .batch-table .batch-col-frozen {
   position: sticky;
   z-index: 2;
-  background: inherit;
+  background: var(--surface);
+}
+
+.batch-table tbody tr:nth-child(even) .batch-col-frozen {
+  background: #131b28;
+}
+
+.batch-table tbody tr.batch-row-correct .batch-col-frozen {
+  background: #10241a;
+}
+
+.batch-table tbody tr.batch-row-wrong .batch-col-frozen {
+  background: #2a1414;
+}
+
+.batch-table tbody tr.batch-row-void .batch-col-frozen {
+  background: #1a1f28;
+}
+
+.batch-grade-badge {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.batch-grade-correct {
+  color: var(--accent);
+}
+
+.batch-grade-wrong {
+  color: var(--danger);
+}
+
+.batch-grade-void {
+  color: var(--muted);
+}
+
+.batch-grade-push {
+  color: var(--warn);
+}
+
+.batch-grade-details {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.batch-grade-details strong {
+  color: var(--text);
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.batch-grade-details p {
+  margin: 0.2rem 0 0;
+}
+
+.batch-alt-note {
+  color: var(--text) !important;
+}
+
+.batch-slip-line {
+  margin-top: 0.35rem;
+  font-size: 13px;
+  color: var(--text);
 }
 
 .batch-table thead .batch-col-frozen {
@@ -633,65 +749,130 @@ table.data-table td {
 }
 
 .batch-table .batch-col-num {
-  width: 2.25rem;
+  left: 0;
+  width: var(--batch-num-w);
+  min-width: var(--batch-num-w);
   text-align: center;
   color: var(--muted);
 }
 
+.batch-table .batch-col-home {
+  left: var(--batch-num-w);
+}
+
+.batch-table .batch-col-away {
+  left: calc(var(--batch-num-w) + var(--batch-team-w));
+  box-shadow: 4px 0 8px -4px rgba(0, 0, 0, 0.45);
+}
+
 .batch-table .batch-col-team {
-  width: 9.5rem;
-  min-width: 9.5rem;
+  width: var(--batch-team-w);
+  min-width: var(--batch-team-w);
 }
 
 .batch-table .batch-col-market {
-  width: 11rem;
-  min-width: 11rem;
+  width: 9rem;
+  min-width: 9rem;
 }
 
 .batch-table .batch-col-odds {
-  width: 4.5rem;
-  min-width: 4.5rem;
+  width: 3.75rem;
+  min-width: 3.75rem;
 }
 
 .batch-table .batch-col-pick {
-  width: 5.5rem;
-  min-width: 5.5rem;
+  width: 4.5rem;
+  min-width: 4.5rem;
   color: var(--muted);
 }
 
 .batch-table .batch-col-prob {
-  width: 3.5rem;
-  min-width: 3.5rem;
+  width: 3rem;
+  min-width: 3rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
 .batch-table .batch-col-score {
-  width: 3rem;
-  min-width: 3rem;
+  width: 2.75rem;
+  min-width: 2.75rem;
 }
 
 .batch-table .batch-col-outcome {
-  width: 4.5rem;
-  min-width: 4.5rem;
+  width: 3.75rem;
+  min-width: 3.75rem;
 }
 
 .batch-table .batch-col-actions {
-  width: 2.5rem;
-  min-width: 2.5rem;
+  width: 2.25rem;
+  min-width: 2.25rem;
   text-align: center;
+}
+
+@media (min-width: 768px) {
+  .batch-table .batch-col-market {
+    width: 11rem;
+    min-width: 11rem;
+  }
+
+  .batch-table .batch-col-odds {
+    width: 4.5rem;
+    min-width: 4.5rem;
+  }
+
+  .batch-table .batch-col-pick {
+    width: 5.5rem;
+    min-width: 5.5rem;
+  }
+
+  .batch-table .batch-col-prob {
+    width: 3.5rem;
+    min-width: 3.5rem;
+  }
+
+  .batch-table .batch-col-score {
+    width: 3rem;
+    min-width: 3rem;
+  }
+
+  .batch-table .batch-col-outcome {
+    width: 4.5rem;
+    min-width: 4.5rem;
+  }
+
+  .batch-table .batch-col-actions {
+    width: 2.5rem;
+    min-width: 2.5rem;
+  }
+}
+
+/* Hide secondary columns on narrow phones — swipe for full table */
+@media (max-width: 480px) {
+  .batch-table .batch-col-pick-secondary {
+    display: none;
+  }
 }
 
 .batch-table input,
 .batch-table select {
   width: 100%;
-  height: 28px;
-  font-size: 13px;
+  height: calc(var(--batch-row-h) - 8px);
+  min-height: 32px;
+  font-size: 16px; /* prevents iOS zoom on focus */
   border: none;
   background: transparent;
   color: inherit;
   padding: 0 0.25rem;
   outline: none;
+}
+
+@media (min-width: 768px) {
+  .batch-table input,
+  .batch-table select {
+    font-size: 13px;
+    min-height: 0;
+    height: 28px;
+  }
 }
 
 .batch-table input:focus,
@@ -710,32 +891,71 @@ table.data-table td {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.25rem;
-  height: 1.125rem;
-  padding: 0 0.25rem;
-  margin-left: 0.25rem;
+  min-width: 1.125rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  margin-left: 0.2rem;
   border-radius: 4px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
 }
 
+@media (min-width: 768px) {
+  .batch-tier-chip {
+    min-width: 1.25rem;
+    height: 1.125rem;
+    font-size: 10px;
+  }
+}
+
 .batch-summary-strip {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
   padding: 0.5rem 0.75rem;
   margin-bottom: 0.75rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+@media (min-width: 768px) {
+  .batch-summary-strip {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .batch-summary-strip strong {
   color: var(--text);
+}
+
+.batch-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.batch-actions .btn {
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .batch-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .batch-actions .btn {
+    width: auto;
+  }
 }
 
 .batch-advanced-row td {
@@ -787,3 +1007,133 @@ table.data-table td {
   color: var(--danger);
   font-weight: 600;
 }
+
+.batch-result-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.batch-full-stats-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.batch-table-result {
+  font-size: 13px;
+}
+
+.batch-table-result tbody tr {
+  height: 34px;
+  max-height: 34px;
+}
+
+.batch-table .batch-group-headers th {
+  padding: 0.15rem 0.25rem;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: none;
+  background: var(--surface2);
+}
+
+.batch-table .batch-group-label {
+  border-left: 1px solid var(--border);
+  text-align: center;
+}
+
+.batch-table .batch-col-cs,
+.batch-table .batch-col-prob {
+  min-width: 2.5rem;
+  max-width: 3.5rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.batch-table .batch-col-readonly {
+  text-align: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 2rem;
+}
+
+.batch-table .batch-col-toggle {
+  min-width: 2.75rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.batch-table .batch-col-fg {
+  min-width: 3.5rem;
+}
+
+.batch-seg {
+  display: inline-flex;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.batch-seg button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.batch-seg button.active {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.batch-seg button:focus-visible {
+  outline: 1px solid var(--accent);
+  z-index: 1;
+}
+
+.batch-complete-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 0.25rem;
+  vertical-align: middle;
+  background: var(--border);
+}
+
+.batch-complete-ft {
+  background: #d4a017;
+}
+
+.batch-complete-full {
+  background: var(--accent);
+}
+
+.batch-table-result .batch-col-score input {
+  width: 2.25ch;
+  min-width: 2.25ch;
+  max-width: 3.5ch;
+  padding: 0;
+  text-align: center;
+}
+
+.batch-table-result .batch-col-score input[maxlength="3"] {
+  width: 3ch;
+  max-width: 4ch;
+}
+

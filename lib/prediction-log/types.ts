@@ -9,6 +9,8 @@ export type LogMarketKey =
   | "draw_one_half"
   | "win_one_half"
   | "shots_ou"
+  | "home_shots_ou"
+  | "away_shots_ou"
   | "sot_ou"
   | "corners_ou"
   | "throw_ins_ou"
@@ -25,7 +27,13 @@ export interface MarketActual {
   actual: string | number;
 }
 
-export type ScoreResult = "correct" | "wrong" | "push" | null;
+export type ScoreResult = "correct" | "wrong" | "push" | "void" | null;
+
+export interface GradedMarketDetail {
+  result: ScoreResult;
+  actual?: string | number;
+  reason: string;
+}
 
 export type MarketMode = "single" | "combined";
 
@@ -99,7 +107,12 @@ export interface MatchTeamStats {
   away: TeamSideStats;
   firstHalfResult?: "home" | "draw" | "away";
   goalTiming?: MatchGoalTiming;
+  /** @deprecated Prefer penaltiesAwarded */
   penaltyAwarded?: boolean;
+  firstGoalSide?: "home" | "away" | "none";
+  penaltiesAwarded?: { home?: number; away?: number };
+  /** When true, learning writers apply a reduced sample weight. */
+  abnormalMatch?: boolean;
 }
 
 export interface LogMatch {
@@ -118,6 +131,12 @@ export interface LogMatch {
   correctScorePick?: CorrectScorePick;
   correctScoreSnapshot?: CorrectScoreSnapshot;
   correctScoreCalibration?: CorrectScoreCalibration;
+  /** Outcome-only silent grades for markets without a pick (result usually null). */
+  silentGrades?: Partial<Record<LogMarketKey, GradedMarketDetail>>;
+  /** Grade for the selected single market or combo leg. */
+  primaryGrade?: GradedMarketDetail;
+  /** Grade of frozen better-alternative when present and gradable. */
+  altGrade?: GradedMarketDetail & { marketLabel: string; predictionLabel: string };
 }
 
 export type RecommendationTier = "safe" | "balanced" | "aggressive";
@@ -171,6 +190,9 @@ export interface FrozenMarketEntry {
   predictionLabel: string;
   pFinal: number;
   selected: boolean;
+  /** Raw pick value for post-result grading (optional on older snapshots). */
+  prediction?: string;
+  line?: number;
 }
 
 export interface FrozenSystemPick {
@@ -191,6 +213,9 @@ export interface FrozenBetterAlternative {
   pFinal: number;
   deltaPct: number;
   isOptimal: boolean;
+  /** Raw pick value for post-result grading (optional on older snapshots). */
+  prediction?: string;
+  line?: number;
 }
 
 export interface RecommendedBatchMathSnapshot {
@@ -222,6 +247,11 @@ export interface RecommendedBatchMathSnapshot {
   marketComparisonByMatch?: Record<string, FrozenMarketEntry[]>;
   systemPickByMatch?: Record<string, FrozenSystemPick>;
   betterAlternativeByMatch?: Record<string, FrozenBetterAlternative>;
+  /** Good / Risky / Avoid vs selected market (frozen at generation). */
+  pickCommentByMatch?: Record<
+    string,
+    { label: "good" | "risky" | "avoid"; message: string }
+  >;
   workflowLog?: FrozenWorkflowStep[];
   reductionSteps?: import("./dynamic-batch-risk").ReductionStep[];
   settingsSnapshot: {
@@ -316,6 +346,11 @@ export interface RecommendedBatch {
   /** Combo id selected per match at settlement time. */
   comboPickByMatch?: Record<string, string>;
   comboAccumulatorWon?: boolean | null;
+  /** Did frozen better-alts beat wrong selected picks? */
+  alternativeSuggestionStats?: {
+    evaluated: number;
+    altWouldHaveWon: number;
+  };
 }
 
 export type RiskLevel = "low" | "medium" | "high";

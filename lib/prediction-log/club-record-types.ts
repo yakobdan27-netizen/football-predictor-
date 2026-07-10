@@ -47,6 +47,8 @@ export interface HistoryEntry {
   actual?: number | string;
   result: HistoryResult;
   odds?: number;
+  /** Learning sample weight; defaults to 1. Abnormal matches use 0.25. */
+  sampleWeight?: number;
   superseded?: boolean;
   editedAt?: string;
 }

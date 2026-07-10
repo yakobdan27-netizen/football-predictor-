@@ -13,6 +13,8 @@ import type { MlClassifierStore } from "./ml-model-store";
 import type { TeamsQualityStore } from "./teams-quality-types";
 import type { LeagueCharacterProfile, LeagueProfilesStore } from "./types";
 import { resolveLeagueCharacterProfile } from "./league-profiles";
+import type { BinCalibrator } from "@/lib/predictor/calibration";
+import { buildCalibratorFromBatches } from "./global-calibration";
 
 export interface RateLookup {
   pct: number | null;
@@ -35,6 +37,8 @@ export interface RecommendationContext {
   leagueCharacterProfile?: LeagueCharacterProfile | null;
   matchupCaches?: Record<string, MatchupCache>;
   allBatches?: PredictionBatch[];
+  /** Live bin calibrator from scored history (null until enough samples). */
+  binCalibrator?: BinCalibrator | null;
 }
 
 export function buildRecommendationContext(
@@ -50,12 +54,18 @@ export function buildRecommendationContext(
     teamsQuality?: TeamsQualityStore | null;
     leagueProfiles?: LeagueProfilesStore | null;
     matchupCaches?: Record<string, MatchupCache>;
+    binCalibrator?: BinCalibrator | null;
   }
 ): RecommendationContext {
   const teamRows = flattenScoredRows(
     allBatches.filter((b) => b.id !== original.id)
   );
   const leagueProfiles = extras?.leagueProfiles ?? null;
+  const historyBatches = allBatches.filter((b) => b.id !== original.id);
+  const binCalibrator =
+    extras?.binCalibrator !== undefined
+      ? extras.binCalibrator
+      : buildCalibratorFromBatches(historyBatches);
   return {
     analysis,
     hasHistory: analysis.totalScored > 0,
@@ -75,6 +85,7 @@ export function buildRecommendationContext(
     ),
     matchupCaches: extras?.matchupCaches ?? {},
     allBatches,
+    binCalibrator,
   };
 }
 

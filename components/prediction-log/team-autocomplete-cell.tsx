@@ -56,7 +56,7 @@ export function TeamAutocompleteCell({
   }
 
   return (
-    <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+    <div style={{ display: "flex", alignItems: "center", minWidth: 0, gap: "0.15rem" }}>
       <input
         ref={inputRef}
         type="text"
@@ -66,6 +66,7 @@ export function TeamAutocompleteCell({
         placeholder={placeholder}
         tabIndex={tabIndex}
         title={value || undefined}
+        style={{ minWidth: 0, flex: 1 }}
         onChange={(e) => {
           setHighlight(-1);
           onChange(e.target.value);

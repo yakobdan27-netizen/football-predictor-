@@ -88,6 +88,8 @@ function setTeamStatIfEmpty(
 export function matchNeedsStatistics(match: LogMatch): boolean {
   const statMarkets: LogMarketKey[] = [
     "shots_ou",
+    "home_shots_ou",
+    "away_shots_ou",
     "sot_ou",
     "corners_ou",
     "throw_ins_ou",

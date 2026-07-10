@@ -14,6 +14,7 @@ import {
   saveClubRecord,
 } from "./club-store";
 import { buildMatchupCache, saveMatchupCache } from "./matchup-cache";
+import { matchLearningWeight } from "./match-learning";
 import type { LeagueBaselinesStore } from "./league-baselines";
 import type { TeamsQualityStore } from "./teams-quality-types";
 
@@ -93,6 +94,7 @@ function applyWrites(
       actual: typeResult.actual,
       result: typeResult.result,
       odds: w.odds,
+      sampleWeight: matchLearningWeight(ctx.match.teamStats),
     });
   }
   return updated;
@@ -118,7 +120,9 @@ function resolveResultForType(
     return { result: "hit", actual: ts.possession };
   }
   if (type === "totalShots" && ts?.totalShots != null) {
-    return teamStatMarketResult(match, ts.totalShots, "shots_ou");
+    const sideMarket: LogMarketKey = venue === "home" ? "home_shots_ou" : "away_shots_ou";
+    const marketKey: LogMarketKey = match.predictions[sideMarket] ? sideMarket : "shots_ou";
+    return teamStatMarketResult(match, ts.totalShots, marketKey);
   }
   if (type === "shotsOnTarget" && ts?.shotsOnTarget != null) {
     return teamStatMarketResult(match, ts.shotsOnTarget, "sot_ou");
@@ -134,7 +138,13 @@ function resolveResultForType(
     winLose: "1x2",
     bothTeamsScore: "btts",
     shotsOnTarget: "sot_ou",
-    totalShots: "shots_ou",
+    totalShots: venue === "home"
+      ? match.predictions.home_shots_ou
+        ? "home_shots_ou"
+        : "shots_ou"
+      : match.predictions.away_shots_ou
+        ? "away_shots_ou"
+        : "shots_ou",
     corners: "corners_ou",
     offsides: "offsides_ou",
     goalsScored: venue === "home" ? "home_goals_ou" : "away_goals_ou",
@@ -211,6 +221,7 @@ async function processMatch(
   // Team stats histories
   if (match.teamStats) {
     const ts = match.teamStats;
+    const sampleWeight = matchLearningWeight(ts);
     if (ts.home.yellowCards != null) {
       homeUpdated = appendEntry(homeUpdated, "yellowCards", {
         date: batch.date,
@@ -222,6 +233,7 @@ async function processMatch(
         predicted: ts.home.yellowCards,
         actual: ts.home.yellowCards,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.redCards != null) {
@@ -235,6 +247,7 @@ async function processMatch(
         predicted: ts.home.redCards,
         actual: ts.home.redCards,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.fouls != null) {
@@ -248,6 +261,7 @@ async function processMatch(
         predicted: ts.home.fouls,
         actual: ts.home.fouls,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.possession != null) {
@@ -261,6 +275,7 @@ async function processMatch(
         predicted: ts.home.possession,
         actual: ts.home.possession,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.totalShots != null) {
@@ -274,6 +289,7 @@ async function processMatch(
         predicted: ts.home.totalShots,
         actual: ts.home.totalShots,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.shotsOnTarget != null) {
@@ -287,6 +303,7 @@ async function processMatch(
         predicted: ts.home.shotsOnTarget,
         actual: ts.home.shotsOnTarget,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.corners != null) {
@@ -300,6 +317,7 @@ async function processMatch(
         predicted: ts.home.corners,
         actual: ts.home.corners,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.home.offsides != null) {
@@ -313,6 +331,7 @@ async function processMatch(
         predicted: ts.home.offsides,
         actual: ts.home.offsides,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.yellowCards != null) {
@@ -326,6 +345,7 @@ async function processMatch(
         predicted: ts.away.yellowCards,
         actual: ts.away.yellowCards,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.redCards != null) {
@@ -339,6 +359,7 @@ async function processMatch(
         predicted: ts.away.redCards,
         actual: ts.away.redCards,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.fouls != null) {
@@ -352,6 +373,7 @@ async function processMatch(
         predicted: ts.away.fouls,
         actual: ts.away.fouls,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.possession != null) {
@@ -365,6 +387,7 @@ async function processMatch(
         predicted: ts.away.possession,
         actual: ts.away.possession,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.totalShots != null) {
@@ -378,6 +401,7 @@ async function processMatch(
         predicted: ts.away.totalShots,
         actual: ts.away.totalShots,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.shotsOnTarget != null) {
@@ -391,6 +415,7 @@ async function processMatch(
         predicted: ts.away.shotsOnTarget,
         actual: ts.away.shotsOnTarget,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.corners != null) {
@@ -404,6 +429,7 @@ async function processMatch(
         predicted: ts.away.corners,
         actual: ts.away.corners,
         result: "hit",
+        sampleWeight,
       });
     }
     if (ts.away.offsides != null) {
@@ -417,6 +443,7 @@ async function processMatch(
         predicted: ts.away.offsides,
         actual: ts.away.offsides,
         result: "hit",
+        sampleWeight,
       });
     }
   }

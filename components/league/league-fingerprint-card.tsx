@@ -2,6 +2,7 @@
 
 import { confidenceBadgeLabel, generateFingerprintSentences } from "@/lib/prediction-log/league-fingerprint";
 import type { CorrectScoreStats, League } from "@/lib/prediction-log/types";
+import { DataCompletenessMeter } from "@/components/prediction-log/data-completeness-meter";
 
 interface LeagueFingerprintCardProps {
   league: League;
@@ -23,6 +24,9 @@ export function LeagueFingerprintCard({ league, correctScoreStats }: LeagueFinge
             {league.season}
             {league.country ? ` · ${league.country}` : ""} · {league.matchesLogged} matches logged
           </p>
+          <div style={{ marginTop: "0.5rem", maxWidth: 180 }}>
+            <DataCompletenessMeter sampleSize={league.matchesLogged} label="League history" />
+          </div>
         </div>
         <span
           style={{

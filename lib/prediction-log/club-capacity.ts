@@ -21,11 +21,24 @@ function resolved(entries: HistoryEntry[]): HistoryEntry[] {
   return activeEntries(entries).filter((e) => e.result === "hit" || e.result === "miss");
 }
 
+function entryWeight(e: HistoryEntry): number {
+  return e.sampleWeight != null && Number.isFinite(e.sampleWeight) && e.sampleWeight > 0
+    ? e.sampleWeight
+    : 1;
+}
+
 function hitRate(entries: HistoryEntry[]): number | null {
   const r = resolved(entries);
   if (!r.length) return null;
-  const hits = r.filter((e) => e.result === "hit").length;
-  return Math.round((hits / r.length) * 100);
+  let hitW = 0;
+  let totalW = 0;
+  for (const e of r) {
+    const w = entryWeight(e);
+    totalW += w;
+    if (e.result === "hit") hitW += w;
+  }
+  if (totalW <= 0) return null;
+  return Math.round((hitW / totalW) * 100);
 }
 
 function venueEntries(entries: HistoryEntry[], venue: "home" | "away"): HistoryEntry[] {
@@ -33,14 +46,19 @@ function venueEntries(entries: HistoryEntry[], venue: "home" | "away"): HistoryE
 }
 
 function avgNumeric(entries: HistoryEntry[], field: "actual" | "predicted" = "actual"): number {
-  const nums = resolved(entries)
-    .map((e) => {
-      const v = field === "actual" ? e.actual : e.predicted;
-      return typeof v === "number" ? v : parseFloat(String(v));
-    })
-    .filter((n) => Number.isFinite(n));
-  if (!nums.length) return 0;
-  return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100;
+  const r = resolved(entries);
+  let sum = 0;
+  let weight = 0;
+  for (const e of r) {
+    const v = field === "actual" ? e.actual : e.predicted;
+    const n = typeof v === "number" ? v : parseFloat(String(v));
+    if (!Number.isFinite(n)) continue;
+    const w = entryWeight(e);
+    sum += n * w;
+    weight += w;
+  }
+  if (weight <= 0) return 0;
+  return Math.round((sum / weight) * 100) / 100;
 }
 
 function recentFormScore(record: ClubRecord): number {

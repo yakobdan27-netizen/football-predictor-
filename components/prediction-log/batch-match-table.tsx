@@ -1,10 +1,22 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { parsePastedRows } from "@/lib/prediction-log/parse-pasted-rows";
+import {
+  parsePastedResultGrid,
+  parsePastedRows,
+} from "@/lib/prediction-log/parse-pasted-rows";
+import {
+  resultEditableFields,
+  type ResultGridField,
+} from "@/lib/prediction-log/result-grid-fields";
 import { BatchEntryRow } from "./batch-entry-row";
-import { BatchResultRow } from "./batch-result-row";
-import type { CombinedOddsSettings, LogMatch } from "@/lib/prediction-log/types";
+import { applyResultPastePatch, BatchResultRow } from "./batch-result-row";
+import { gradeMatchFromFacts } from "@/lib/prediction-log/grade-from-facts";
+import type {
+  CombinedOddsSettings,
+  FrozenBetterAlternative,
+  LogMatch,
+} from "@/lib/prediction-log/types";
 import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
 
 interface BatchMatchTableProps {
@@ -14,12 +26,16 @@ interface BatchMatchTableProps {
   date?: string;
   comboSettings?: CombinedOddsSettings;
   teamsQuality?: TeamsQualityStore | null;
+  betterAltByMatch?: Record<string, FrozenBetterAlternative>;
   onChange: (matches: LogMatch[]) => void;
   onAddMatch?: () => void;
 }
 
 const ENTRY_COLS = 4;
-const RESULT_COLS = 2;
+
+type FocusableRef = React.RefObject<
+  HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null
+>;
 
 export function BatchMatchTable({
   mode,
@@ -28,34 +44,43 @@ export function BatchMatchTable({
   date = "",
   comboSettings,
   teamsQuality = null,
+  betterAltByMatch,
   onChange,
   onAddMatch,
 }: BatchMatchTableProps) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
-  const colCount = mode === "entry" ? ENTRY_COLS : RESULT_COLS;
+  const [showFullStats, setShowFullStats] = useState(false);
+  const resultFields = useMemo(
+    () => resultEditableFields(showFullStats),
+    [showFullStats]
+  );
+  const colCount = mode === "entry" ? ENTRY_COLS : resultFields.length;
   const rowKeys = matches.map((m) => m.id).join("|");
 
   const cellRefs = useMemo(() => {
     return matches.map(() =>
-      Array.from({ length: colCount }, () => ({ current: null as HTMLInputElement | HTMLSelectElement | null }))
+      Array.from({ length: colCount }, () => ({
+        current: null as HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null,
+      }))
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when row count/ids change
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when row count/ids/cols change
   }, [rowKeys, colCount]);
 
-  const focusCell = useCallback((row: number, col: number) => {
-    const ref = cellRefs[row]?.[col];
-    ref?.current?.focus();
-  }, [cellRefs]);
+  const focusCell = useCallback(
+    (row: number, col: number) => {
+      const ref = cellRefs[row]?.[col];
+      ref?.current?.focus();
+    },
+    [cellRefs]
+  );
 
-  const handleCellKeyDown = useCallback(
-    (e: React.KeyboardEvent, row: number, col: number, colCount: number) => {
+  const handleEntryKeyDown = useCallback(
+    (e: React.KeyboardEvent, row: number, col: number) => {
       if (e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
-        if (col < colCount - 1) {
-          focusCell(row, col + 1);
-        } else if (row < matches.length - 1) {
-          focusCell(row + 1, 0);
-        } else if (mode === "entry" && onAddMatch) {
+        if (col < ENTRY_COLS - 1) focusCell(row, col + 1);
+        else if (row < matches.length - 1) focusCell(row + 1, 0);
+        else if (onAddMatch) {
           onAddMatch();
           setTimeout(() => focusCell(matches.length, 0), 0);
         }
@@ -63,30 +88,75 @@ export function BatchMatchTable({
       }
       if (e.key === "Tab" && e.shiftKey) {
         e.preventDefault();
-        if (col > 0) {
-          focusCell(row, col - 1);
-        } else if (row > 0) {
-          focusCell(row - 1, colCount - 1);
-        }
+        if (col > 0) focusCell(row, col - 1);
+        else if (row > 0) focusCell(row - 1, ENTRY_COLS - 1);
         return;
       }
-      if (e.key === "Enter" && mode === "entry" && col === colCount - 1 && row === matches.length - 1) {
+      if (e.key === "Enter" && col === ENTRY_COLS - 1 && row === matches.length - 1) {
         e.preventDefault();
         onAddMatch?.();
         setTimeout(() => focusCell(matches.length, 0), 0);
       }
-      if (e.key === "Enter" && mode === "result" && col === 1) {
-        e.preventDefault();
-        if (row < matches.length - 1) {
-          focusCell(row + 1, 0);
-        }
-      }
     },
-    [focusCell, matches.length, mode, onAddMatch]
+    [focusCell, matches.length, onAddMatch]
   );
 
+  const handleResultKeyDown = useCallback(
+    (e: React.KeyboardEvent, row: number, field: ResultGridField) => {
+      const col = resultFields.indexOf(field);
+      if (col < 0) return;
+      const lastCol = resultFields.length - 1;
+
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        if (col < lastCol) focusCell(row, col + 1);
+        else if (row < matches.length - 1) focusCell(row + 1, 0);
+        return;
+      }
+      if (e.key === "Tab" && e.shiftKey) {
+        e.preventDefault();
+        if (col > 0) focusCell(row, col - 1);
+        else if (row > 0) focusCell(row - 1, lastCol);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (row < matches.length - 1) focusCell(row + 1, col);
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (col < lastCol) focusCell(row, col + 1);
+        else if (row < matches.length - 1) focusCell(row + 1, 0);
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (col > 0) focusCell(row, col - 1);
+        else if (row > 0) focusCell(row - 1, lastCol);
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (row < matches.length - 1) focusCell(row + 1, col);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (row > 0) focusCell(row - 1, col);
+      }
+    },
+    [focusCell, matches.length, resultFields]
+  );
+
+  function withAltGrade(match: LogMatch): LogMatch {
+    const alt = betterAltByMatch?.[match.id];
+    if (!alt) return match;
+    return gradeMatchFromFacts(match, { betterAlternative: alt });
+  }
+
   function updateMatch(i: number, match: LogMatch) {
-    onChange(matches.map((m, idx) => (idx === i ? match : m)));
+    onChange(matches.map((m, idx) => (idx === i ? withAltGrade(match) : m)));
   }
 
   function deleteMatch(i: number) {
@@ -95,27 +165,53 @@ export function BatchMatchTable({
   }
 
   function handlePaste(e: React.ClipboardEvent) {
-    if (mode !== "entry") return;
     const text = e.clipboardData.getData("text");
     if (!text.includes("\t") && !text.includes("\n") && !text.includes(",")) return;
-    const rows = parsePastedRows(text);
-    if (rows.length === 0) return;
-    e.preventDefault();
+
+    if (mode === "entry") {
+      const rows = parsePastedRows(text);
+      if (rows.length === 0) return;
+      e.preventDefault();
+      const target = e.target as HTMLElement;
+      const tr = target.closest("tr");
+      const tbody = tr?.parentElement;
+      const rowIndex = tr && tbody ? Array.from(tbody.children).indexOf(tr) : 0;
+      const next = [...matches];
+      for (let i = 0; i < rows.length; i++) {
+        const idx = rowIndex + i;
+        if (idx >= next.length) break;
+        next[idx] = {
+          ...next[idx]!,
+          homeTeam: rows[i]!.home,
+          awayTeam: rows[i]!.away,
+        };
+      }
+      onChange(next);
+      return;
+    }
 
     const target = e.target as HTMLElement;
+    const fieldAttr = target.closest("[data-result-field]")?.getAttribute("data-result-field");
+    const startField = (fieldAttr as ResultGridField | null) ?? resultFields[0]!;
+    const patches = parsePastedResultGrid(text, startField, resultFields);
+    if (patches.length === 0) return;
+    e.preventDefault();
+
     const tr = target.closest("tr");
     const tbody = tr?.parentElement;
-    const rowIndex = tr && tbody ? Array.from(tbody.children).indexOf(tr) : 0;
+    let rowIndex = 0;
+    if (tr && tbody) {
+      const dataRows = Array.from(tbody.children).filter(
+        (el) => !el.classList.contains("batch-advanced-row")
+      );
+      rowIndex = Math.max(0, dataRows.indexOf(tr));
+    }
 
     const next = [...matches];
-    for (let i = 0; i < rows.length; i++) {
+    for (let i = 0; i < patches.length; i++) {
       const idx = rowIndex + i;
       if (idx >= next.length) break;
-      next[idx] = {
-        ...next[idx]!,
-        homeTeam: rows[i]!.home,
-        awayTeam: rows[i]!.away,
-      };
+      next[idx] = withAltGrade(applyResultPastePatch(next[idx]!, patches[i]!));
     }
     onChange(next);
   }
@@ -124,43 +220,122 @@ export function BatchMatchTable({
 
   return (
     <div className="batch-table-wrap" onPaste={handlePaste}>
-      <table className="batch-table">
+      {mode === "result" ? (
+        <div className="batch-result-toolbar">
+          <label className="batch-full-stats-toggle">
+            <input
+              type="checkbox"
+              checked={showFullStats}
+              onChange={(e) => setShowFullStats(e.target.checked)}
+            />
+            Show full stats
+          </label>
+        </div>
+      ) : null}
+      <table className={`batch-table${mode === "result" ? " batch-table-result" : ""}`}>
         <thead>
           {mode === "entry" ? (
             <tr>
-              <th className="batch-col-frozen batch-col-num" style={{ left: 0 }}>
-                #
-              </th>
-              <th className="batch-col-frozen batch-col-team" style={{ left: "2.25rem" }}>
-                Home
-              </th>
-              <th className="batch-col-frozen batch-col-team" style={{ left: "11.75rem" }}>
-                Away
-              </th>
+              <th className="batch-col-frozen batch-col-num">#</th>
+              <th className="batch-col-frozen batch-col-team batch-col-home">Home</th>
+              <th className="batch-col-frozen batch-col-team batch-col-away">Away</th>
               <th>Market</th>
               <th>Odds</th>
-              <th>System Pick</th>
+              <th className="batch-col-pick-secondary">System</th>
               <th style={{ textAlign: "right" }}>Prob</th>
               <th />
             </tr>
           ) : (
-            <tr>
-              <th className="batch-col-frozen batch-col-num" style={{ left: 0 }}>
-                #
-              </th>
-              <th className="batch-col-frozen batch-col-team" style={{ left: "2.25rem" }}>
-                Home
-              </th>
-              <th className="batch-col-frozen batch-col-team" style={{ left: "11.75rem" }}>
-                Away
-              </th>
-              <th>Market</th>
-              <th>Pick</th>
-              <th>H</th>
-              <th>A</th>
-              <th>Outcome</th>
-              <th />
-            </tr>
+            <>
+              <tr className="batch-group-headers">
+                <th className="batch-col-frozen" colSpan={3} />
+                <th colSpan={3} className="batch-group-label">
+                  Pick
+                </th>
+                <th className="batch-group-label">CS</th>
+                <th colSpan={2} className="batch-group-label batch-group-ht">
+                  HT
+                </th>
+                <th colSpan={2} className="batch-group-label batch-group-ft">
+                  FT
+                </th>
+                <th className="batch-group-label">Early</th>
+                <th colSpan={2} />
+                {showFullStats ? (
+                  <>
+                    <th colSpan={2} className="batch-group-label">
+                      Shots
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      SOT
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      Corners
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      Fouls
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      Yel
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      Red
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      Poss
+                    </th>
+                    <th colSpan={2} className="batch-group-label">
+                      Off
+                    </th>
+                    <th className="batch-group-label">1st</th>
+                    <th colSpan={2} className="batch-group-label">
+                      Pen
+                    </th>
+                    <th className="batch-group-label">Abn</th>
+                  </>
+                ) : null}
+              </tr>
+              <tr>
+                <th className="batch-col-frozen batch-col-num">#</th>
+                <th className="batch-col-frozen batch-col-team batch-col-home">Home</th>
+                <th className="batch-col-frozen batch-col-team batch-col-away">Away</th>
+                <th>Market</th>
+                <th className="batch-col-pick-secondary">Pick</th>
+                <th>Prob</th>
+                <th>Pred</th>
+                <th>H</th>
+                <th>A</th>
+                <th>H</th>
+                <th>A</th>
+                <th>Y/N</th>
+                <th>Out</th>
+                <th />
+                {showFullStats ? (
+                  <>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>H/A</th>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>✓</th>
+                  </>
+                ) : null}
+              </tr>
+            </>
           )}
         </thead>
         <tbody>
@@ -181,19 +356,20 @@ export function BatchMatchTable({
                 oddsRef={cellRefs[i]![3] as React.RefObject<HTMLInputElement | null>}
                 onChange={(m) => updateMatch(i, m)}
                 onDelete={() => deleteMatch(i)}
-                onCellKeyDown={(e, col) => handleCellKeyDown(e, i, col, ENTRY_COLS)}
+                onCellKeyDown={(e, col) => handleEntryKeyDown(e, i, col)}
               />
             ) : (
               <BatchResultRow
                 key={match.id}
                 index={i}
                 match={match}
+                showFullStats={showFullStats}
                 expanded={expandedRow === i}
                 onToggleExpand={() => setExpandedRow(expandedRow === i ? null : i)}
-                homeScoreRef={cellRefs[i]![0] as React.RefObject<HTMLInputElement | null>}
-                awayScoreRef={cellRefs[i]![1] as React.RefObject<HTMLInputElement | null>}
+                cellRefs={cellRefs[i]! as FocusableRef[]}
+                fields={resultFields}
                 onChange={(m) => updateMatch(i, m)}
-                onCellKeyDown={(e, col) => handleCellKeyDown(e, i, col, RESULT_COLS)}
+                onCellKeyDown={(e, field) => handleResultKeyDown(e, i, field)}
               />
             )
           )}

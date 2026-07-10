@@ -32,7 +32,7 @@ import { attachCorrectScoreToBatch } from "./correct-score-freeze";
 import { loadClubRecordsForBatch } from "./club-record-insights";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import type { TeamsQualityStore } from "./teams-quality-types";
-import { normalizeStore } from "./teams-quality";
+import { normalizeStore, setRosterQualityStore } from "./teams-quality";
 import { computeLeagueBaselines } from "./league-baselines";
 import {
   emptyLeagueProfilesStore,
@@ -426,6 +426,7 @@ export async function fetchTeamsQuality(): Promise<TeamsQualityStore> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to load teams quality");
   teamsQualityCache = normalizeStore(data.store);
+  setRosterQualityStore(teamsQualityCache);
   if (isBrowser()) {
     localStorage.setItem(TEAMS_QUALITY_KEY, JSON.stringify(teamsQualityCache));
   }
@@ -441,6 +442,7 @@ export async function saveTeamsQuality(store: TeamsQualityStore): Promise<TeamsQ
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to save teams quality");
   teamsQualityCache = normalizeStore(data.store);
+  setRosterQualityStore(teamsQualityCache);
   if (isBrowser()) {
     localStorage.setItem(TEAMS_QUALITY_KEY, JSON.stringify(teamsQualityCache));
   }
@@ -449,16 +451,18 @@ export async function saveTeamsQuality(store: TeamsQualityStore): Promise<TeamsQ
 
 export async function addTeamQuality(
   teamName: string,
-  tier: TeamsQualityStore["teams"][number]["tier"]
+  tier: TeamsQualityStore["teams"][number]["tier"],
+  league?: string
 ): Promise<TeamsQualityStore> {
   const res = await fetch("/api/teams-quality", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "add", team_name: teamName, tier }),
+    body: JSON.stringify({ action: "add", team_name: teamName, tier, league }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to add team");
   teamsQualityCache = normalizeStore(data.store);
+  setRosterQualityStore(teamsQualityCache);
   if (isBrowser()) {
     localStorage.setItem(TEAMS_QUALITY_KEY, JSON.stringify(teamsQualityCache));
   }
@@ -477,6 +481,7 @@ export async function importTeamsQuality(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to import teams");
   teamsQualityCache = normalizeStore(data.store);
+  setRosterQualityStore(teamsQualityCache);
   if (isBrowser()) {
     localStorage.setItem(TEAMS_QUALITY_KEY, JSON.stringify(teamsQualityCache));
   }

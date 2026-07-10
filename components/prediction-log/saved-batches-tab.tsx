@@ -104,7 +104,7 @@ export function SavedBatchesTab({
       matches: draft.matches.map((m) => applyCorrectScoreCalibrationToMatch(m)),
     };
     let scored = scoreBatch(calibratedDraft);
-    if (scored.batchKind === "recommended") {
+    if (scored.batchKind === "recommended" && scored.recommended) {
       const current = loadBatches();
       scored = scoreRecommendedBatchCombos(
         scored,
@@ -112,6 +112,25 @@ export function SavedBatchesTab({
         recomputeAnalysis(current),
         loadCombinedOddsSettings()
       );
+      let evaluated = 0;
+      let altWouldHaveWon = 0;
+      for (const m of scored.matches) {
+        if (m.primaryGrade?.result === "wrong" && m.altGrade?.result === "correct") {
+          evaluated++;
+          altWouldHaveWon++;
+        } else if (m.altGrade?.result === "correct" || m.altGrade?.result === "wrong") {
+          evaluated++;
+        }
+      }
+      if (evaluated > 0) {
+        scored = {
+          ...scored,
+          recommended: {
+            ...scored.recommended!,
+            alternativeSuggestionStats: { evaluated, altWouldHaveWon },
+          },
+        };
+      }
     }
     const entered = marketsEnteredCount(scored);
     const settled =
@@ -330,10 +349,13 @@ export function SavedBatchesTab({
                   mode="result"
                   matches={draft.matches}
                   league={draft.league}
+                  betterAltByMatch={
+                    draft.recommended?.mathSnapshot?.betterAlternativeByMatch
+                  }
                   onChange={(matches) => setDraft({ ...draft, matches })}
                 />
                 <BatchSummaryStrip mode="result" batch={draft} />
-                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                <div className="batch-actions" style={{ marginTop: "0.75rem" }}>
                   <button type="button" className="btn btn-primary" onClick={() => void saveResults()}>
                     Save results
                   </button>

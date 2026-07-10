@@ -1,6 +1,7 @@
 "use client";
 
 import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
+import { cloneMatchTeamStats } from "@/lib/prediction-log/match-learning";
 import { LOG_MARKETS, LOG_MARKET_MAP } from "@/lib/prediction-log/markets-config";
 import { scoreMatch } from "@/lib/prediction-log/scoring";
 import type { GoalTimingCurve, LogMarketKey, LogMatch, MarketActual, TeamSideStats } from "@/lib/prediction-log/types";
@@ -16,13 +17,7 @@ function setTeamStat(
   field: keyof TeamSideStats,
   value: number | ""
 ): LogMatch {
-  const teamStats = {
-    home: { ...match.teamStats?.home },
-    away: { ...match.teamStats?.away },
-    firstHalfResult: match.teamStats?.firstHalfResult,
-    goalTiming: match.teamStats?.goalTiming,
-    penaltyAwarded: match.teamStats?.penaltyAwarded,
-  };
+  const teamStats = cloneMatchTeamStats(match);
   if (value === "" || !Number.isFinite(value)) {
     delete teamStats[side][field];
   } else {
@@ -50,13 +45,8 @@ function setGoalTimingFlag(
   field: "goalInFirst10" | "goalInLast10" | "secondHalfCards",
   checked: boolean
 ): LogMatch {
-  const teamStats = {
-    home: { ...match.teamStats?.home },
-    away: { ...match.teamStats?.away },
-    firstHalfResult: match.teamStats?.firstHalfResult,
-    goalTiming: { ...match.teamStats?.goalTiming },
-    penaltyAwarded: match.teamStats?.penaltyAwarded,
-  };
+  const teamStats = cloneMatchTeamStats(match);
+  teamStats.goalTiming = { ...teamStats.goalTiming };
   if (checked) teamStats.goalTiming![field] = true;
   else delete teamStats.goalTiming![field];
   return applyTeamStatsSync({ ...match, teamStats });
@@ -159,23 +149,18 @@ export function BatchResultAdvanced({ match, onChange }: BatchResultAdvancedProp
             label={b.label}
             value={match.teamStats?.goalTiming?.timingBuckets?.[b.key]}
             onChange={(v) => {
-              const teamStats = {
-                home: { ...match.teamStats?.home },
-                away: { ...match.teamStats?.away },
-                firstHalfResult: match.teamStats?.firstHalfResult,
-                goalTiming: {
-                  ...match.teamStats?.goalTiming,
-                  timingBuckets: {
-                    g0_15: 0,
-                    g16_30: 0,
-                    g31_45: 0,
-                    g46_60: 0,
-                    g61_75: 0,
-                    g76_90plus: 0,
-                    ...match.teamStats?.goalTiming?.timingBuckets,
-                  },
+              const teamStats = cloneMatchTeamStats(match);
+              teamStats.goalTiming = {
+                ...teamStats.goalTiming,
+                timingBuckets: {
+                  g0_15: 0,
+                  g16_30: 0,
+                  g31_45: 0,
+                  g46_60: 0,
+                  g61_75: 0,
+                  g76_90plus: 0,
+                  ...teamStats.goalTiming?.timingBuckets,
                 },
-                penaltyAwarded: match.teamStats?.penaltyAwarded,
               };
               teamStats.goalTiming!.timingBuckets![b.key] =
                 v === "" || !Number.isFinite(v) ? 0 : v;

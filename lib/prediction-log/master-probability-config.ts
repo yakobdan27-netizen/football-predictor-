@@ -81,6 +81,8 @@ export const CAPACITY_FIELD_MAP: Partial<Record<LogMarketKey, CapacityFieldMappi
   draw_one_half: WIN_MAPPING,
   sot_ou: SOT_MAPPING,
   shots_ou: SHOTS_MAPPING,
+  home_shots_ou: SHOTS_MAPPING,
+  away_shots_ou: SHOTS_MAPPING,
   corners_ou: CORNERS_MAPPING,
   throw_ins_ou: CORNERS_MAPPING,
   offsides_ou: OFFSIDES_MAPPING,

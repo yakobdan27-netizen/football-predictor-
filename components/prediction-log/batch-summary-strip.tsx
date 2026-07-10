@@ -27,16 +27,19 @@ interface BatchSummaryStripProps {
 }
 
 function primaryLegResult(match: LogMatch): string | null {
+  if (match.primaryGrade?.result != null) return match.primaryGrade.result;
   const mode = resolveMarketMode(match);
   if (mode === "combined" && match.comboPick?.comboId) {
-    const home = match.teamStats?.home?.goals;
-    const away = match.teamStats?.away?.goals;
-    if (home == null || away == null) return null;
     return scoreComboLeg(match.comboPick.comboId, match.actualResults, match.teamStats);
   }
   const keys = Object.keys(match.predictions);
   if (keys.length !== 1) return null;
   return match.scored[keys[0] as keyof typeof match.scored] ?? null;
+}
+
+function matchLabel(m: LogMatch): string {
+  if (m.homeTeam && m.awayTeam) return `${m.homeTeam} vs ${m.awayTeam}`;
+  return m.homeTeam || m.awayTeam || "match";
 }
 
 export function BatchSummaryStrip({
@@ -141,16 +144,38 @@ export function BatchSummaryStrip({
 
   let won = 0;
   let lost = 0;
+  let voided = 0;
+  let pending = 0;
+  let firstFailed: LogMatch | null = null;
+
   for (const m of matches) {
     const r = primaryLegResult(m);
     if (r === "correct") won++;
-    else if (r === "wrong") lost++;
+    else if (r === "wrong") {
+      lost++;
+      if (!firstFailed) firstFailed = m;
+    } else if (r === "void" || r === "push") voided++;
+    else pending++;
+  }
+
+  const countable = won + lost;
+  const winRate = countable > 0 ? Math.round((won / countable) * 100) : null;
+
+  let slipLine = "";
+  if (pending === 0 && matches.length > 0) {
+    if (lost === 0 && won > 0) {
+      slipLine = "Batch slip: WON ✓";
+    } else if (lost > 0 && firstFailed) {
+      slipLine = `Batch slip: LOST (${lost} leg${lost === 1 ? "" : "s"} failed: ${matchLabel(firstFailed)})`;
+    } else if (won === 0 && lost === 0 && voided > 0) {
+      slipLine = "Batch slip: VOID (no countable legs)";
+    }
   }
 
   const entered = batch ? marketsEnteredCount(batch) : { total: 0, scored: 0 };
   const batchOutcome =
-    won + lost === matches.length && matches.length > 0
-      ? won === matches.length
+    pending === 0 && countable > 0
+      ? lost === 0
         ? "WON"
         : "LOST"
       : entered.scored === entered.total && entered.total > 0
@@ -159,12 +184,22 @@ export function BatchSummaryStrip({
 
   return (
     <div className="batch-summary-strip">
-      Result: <strong>{won} Won</strong> / <strong>{lost} Lost</strong>
-      {" · "}
-      Batch outcome: <strong>{batchOutcome}</strong>
-      {batchOutcome === "SETTLED" || batchOutcome === "WON" || batchOutcome === "LOST"
-        ? " · logged to learning loop on save"
-        : ""}
+      <div>
+        Result: <strong>{won} of {countable || matches.length} markets</strong>
+        {winRate != null ? ` (${winRate}%)` : ""}
+        {lost > 0 ? ` · ${lost} lost` : ""}
+        {voided > 0 ? ` · ${voided} void/push` : ""}
+        {" · "}
+        Batch outcome: <strong>{batchOutcome}</strong>
+        {batchOutcome === "SETTLED" || batchOutcome === "WON" || batchOutcome === "LOST"
+          ? " · logged to learning loop on save"
+          : ""}
+      </div>
+      {slipLine ? (
+        <div className="batch-slip-line">
+          <strong>{slipLine}</strong>
+        </div>
+      ) : null}
     </div>
   );
 }

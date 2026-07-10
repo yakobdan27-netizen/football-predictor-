@@ -71,6 +71,7 @@ export function normalizeTeamRecord(
 ): TeamQualityRecord {
   const now = new Date().toISOString();
   const tier = team.tier;
+  const leagues = normalizeLeagues(team.leagues);
   return {
     team_id: team.team_id ?? slugifyTeamId(team.team_name),
     team_name: team.team_name.trim(),
@@ -82,7 +83,47 @@ export function normalizeTeamRecord(
     updated_at: now,
     manual_override: true,
     club_id: team.club_id,
+    ...(leagues.length ? { leagues } : {}),
   };
+}
+
+export function normalizeLeagues(leagues: string[] | undefined): string[] {
+  if (!leagues?.length) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of leagues) {
+    const league = raw.trim();
+    if (!league || seen.has(league)) continue;
+    seen.add(league);
+    out.push(league);
+  }
+  return out;
+}
+
+/** In-memory quality store for roster merge (client + server). */
+let rosterQualityStore: TeamsQualityStore | null = null;
+
+export function setRosterQualityStore(store: TeamsQualityStore | null): void {
+  rosterQualityStore = store;
+}
+
+export function getRosterQualityStore(): TeamsQualityStore | null {
+  return rosterQualityStore;
+}
+
+export function customTeamNamesForLeague(
+  league: string,
+  store?: TeamsQualityStore | null
+): string[] {
+  const s = store === undefined ? rosterQualityStore : store;
+  if (!s?.teams.length || !league) return [];
+  const names: string[] = [];
+  for (const team of s.teams) {
+    if (team.leagues?.includes(league)) {
+      names.push(team.team_name);
+    }
+  }
+  return names;
 }
 
 export function buildTeamLookup(
@@ -144,8 +185,8 @@ export function inferPickSide(marketKey: LogMarketKey, prediction: string): Pick
     return "neutral";
   }
 
-  if (marketKey === "home_goals_ou") return "home";
-  if (marketKey === "away_goals_ou") return "away";
+  if (marketKey === "home_goals_ou" || marketKey === "home_shots_ou") return "home";
+  if (marketKey === "away_goals_ou" || marketKey === "away_shots_ou") return "away";
 
   if (marketKey === "win_one_half") {
     if (p.includes("home")) return "home";

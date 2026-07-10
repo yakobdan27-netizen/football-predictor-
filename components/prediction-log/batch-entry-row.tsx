@@ -108,10 +108,8 @@ export function BatchEntryRow({
 
   return (
     <tr>
-      <td className="batch-col-frozen batch-col-num" style={{ left: 0 }}>
-        {index + 1}
-      </td>
-      <td className="batch-col-frozen batch-col-team" style={{ left: "2.25rem" }}>
+      <td className="batch-col-frozen batch-col-num">{index + 1}</td>
+      <td className="batch-col-frozen batch-col-team batch-col-home">
         <TeamAutocompleteCell
           value={match.homeTeam}
           league={league}
@@ -122,7 +120,7 @@ export function BatchEntryRow({
           onKeyDown={(e) => onCellKeyDown?.(e, 0)}
         />
       </td>
-      <td className="batch-col-frozen batch-col-team" style={{ left: "11.75rem" }}>
+      <td className="batch-col-frozen batch-col-team batch-col-away">
         <TeamAutocompleteCell
           value={match.awayTeam}
           league={league}
@@ -164,7 +162,7 @@ export function BatchEntryRow({
           onKeyDown={(e) => onCellKeyDown?.(e, 3)}
         />
       </td>
-      <td className="batch-col-pick" title={systemPick.label}>
+      <td className="batch-col-pick batch-col-pick-secondary" title={systemPick.label}>
         {systemPick.loading ? "…" : systemPick.label}
       </td>
       <td className={`batch-col-prob ${probClass(prob.pGrid)}`}>

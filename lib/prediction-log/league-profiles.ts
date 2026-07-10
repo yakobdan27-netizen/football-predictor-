@@ -1,5 +1,9 @@
 import { ftResult } from "./goal-result-sync";
 import { leagueMetaForName, resolveLeagueId } from "./league-registry";
+import {
+  matchHasPenalties,
+  resolveFirstGoalSide,
+} from "./match-learning";
 import { leagueProfileKey, seasonForDate } from "./season";
 import type {
   GoalTimingCurve,
@@ -130,7 +134,8 @@ function buildProfileFromMatches(
   baselines: Partial<Record<keyof LeagueCharacterProfile, number>>
 ): LeagueCharacterProfile {
   const profile = emptyLeagueCharacterProfile();
-  const n = matches.length;
+  const usable = matches.filter((m) => !m.teamStats?.abnormalMatch);
+  const n = usable.length;
   if (n === 0) return profile;
 
   const totalGoals: number[] = [];
@@ -177,7 +182,7 @@ function buildProfileFromMatches(
   let homeGames = 0;
   let awayGames = 0;
 
-  for (const match of matches) {
+  for (const match of usable) {
     const { home: hg, away: ag } = getMatchFtGoals(match);
     if (hg == null || ag == null) continue;
 
@@ -207,7 +212,7 @@ function buildProfileFromMatches(
     if (gt?.goalInFirst10) earlyGoal++;
     if (gt?.goalInLast10) lateGoal++;
     if (gt?.goalInFirst10 && (gt.goalInLast10 || tg >= 3)) lateDrama++;
-    if (match.teamStats?.penaltyAwarded) penalties++;
+    if (matchHasPenalties(match.teamStats)) penalties++;
 
     const { home: hth, away: ath } = getMatchHtGoals(match);
     if (hth != null && ath != null) {
@@ -261,14 +266,16 @@ function buildProfileFromMatches(
       if (fav === res) favouriteWins++;
     }
 
+    const firstGoal = resolveFirstGoalSide(match);
+    if (firstGoal === "home" || firstGoal === "away") {
+      firstGoalTotal++;
+      if (firstGoal === res) {
+        firstGoalWins++;
+      }
+    }
+
     if (hth != null && ath != null) {
       const htRes = ftResult(hth, ath);
-      if (htRes !== "draw") {
-        firstGoalTotal++;
-        if (htRes === res || (res === "home" && htRes === "home") || (res === "away" && htRes === "away")) {
-          firstGoalWins++;
-        }
-      }
       const htLeader = htRes;
       const ftLeader = res;
       if (
