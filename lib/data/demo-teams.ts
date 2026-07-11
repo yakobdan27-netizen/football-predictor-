@@ -10,8 +10,8 @@ export const DEMO_DOMESTIC_LEAGUES: DemoLeagueGroup[] = [
     id: "Premier League",
     teams: [
       "Arsenal", "Aston Villa", "Bournemouth", "Brentford", "Brighton",
-      "Burnley", "Chelsea", "Crystal Palace", "Everton", "Fulham",
-      "Ipswich", "Leeds", "Leicester", "Liverpool", "Man City",
+      "Burnley", "Chelsea", "Coventry", "Crystal Palace", "Everton", "Fulham",
+      "Hull", "Ipswich", "Leeds", "Leicester", "Liverpool", "Man City",
       "Man United", "Newcastle", "Nott'm Forest", "Southampton",
       "Sunderland", "Tottenham", "West Ham", "Wolves",
     ],
