@@ -6,7 +6,11 @@ import {
   resolveFirstGoalSide,
 } from "./match-learning";
 import { parsePastedResultGrid } from "./parse-pasted-rows";
-import { RESULT_CORE_FIELDS } from "./result-grid-fields";
+import {
+  RESULT_CORE_FIELDS,
+  RESULT_SCORE_FIELDS,
+  resultEditableFields,
+} from "./result-grid-fields";
 import { applyTeamStatsSync, setHomePossession } from "./team-stats-sync";
 import type { LogMatch } from "./types";
 
@@ -93,4 +97,13 @@ test("parsePastedResultGrid maps HT/FT TSV from focused cell", () => {
   assert.equal(patches.length, 2);
   assert.deepEqual(patches[0], { htH: "1", htA: "0", ftH: "2", ftA: "1" });
   assert.deepEqual(patches[1], { htH: "0", htA: "0", ftH: "1", ftA: "1" });
+});
+
+test("resultEditableFields defaults to FT score only", () => {
+  assert.deepEqual(resultEditableFields(false), [...RESULT_SCORE_FIELDS]);
+  const full = resultEditableFields(true);
+  assert.equal(full[0], "ftH");
+  assert.equal(full[1], "ftA");
+  assert.ok(full.includes("htH"));
+  assert.ok(full.includes("shotsH"));
 });

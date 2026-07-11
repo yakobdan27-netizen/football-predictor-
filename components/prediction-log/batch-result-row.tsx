@@ -1,6 +1,5 @@
 "use client";
 
-import { formatScoreline } from "@/lib/prediction-log/correct-score";
 import {
   formatAltWouldHaveWonNote,
 } from "@/lib/prediction-log/grade-from-facts";
@@ -17,7 +16,9 @@ import {
   singleMarketKey,
 } from "@/lib/prediction-log/match-entry-helpers";
 import type { ResultGridField } from "@/lib/prediction-log/result-grid-fields";
+import { withClosingOdds } from "@/lib/prediction-log/evaluation-metrics";
 import type { LogMatch, ScoreResult, TeamSideStats } from "@/lib/prediction-log/types";
+import type { ReactNode } from "react";
 import { BatchResultAdvanced } from "./batch-result-advanced";
 
 function primaryLegResult(match: LogMatch): ScoreResult {
@@ -33,18 +34,34 @@ function primaryLegResult(match: LogMatch): ScoreResult {
 
 function GradeBadge({ result }: { result: ScoreResult }) {
   if (result === "correct") {
-    return <span className="batch-grade-badge batch-grade-correct">✓ Correct</span>;
+    return <span className="batch-grade-badge batch-grade-correct">Won</span>;
   }
   if (result === "wrong") {
-    return <span className="batch-grade-badge batch-grade-wrong">✗ Wrong</span>;
+    return <span className="batch-grade-badge batch-grade-wrong">Lost</span>;
   }
   if (result === "void") {
-    return <span className="batch-grade-badge batch-grade-void">– Void</span>;
+    return <span className="batch-grade-badge batch-grade-void">Void</span>;
   }
   if (result === "push") {
-    return <span className="batch-grade-badge batch-grade-push">P Push</span>;
+    return <span className="batch-grade-badge batch-grade-push">Push</span>;
   }
   return <span className="batch-grade-badge">—</span>;
+}
+
+function outcomeMark(result: ScoreResult): ReactNode {
+  if (result === "correct") {
+    return <span className="batch-outcome-mark batch-grade-correct">✓</span>;
+  }
+  if (result === "wrong") {
+    return <span className="batch-outcome-mark batch-grade-wrong">✕</span>;
+  }
+  if (result === "void") {
+    return <span className="batch-outcome-mark batch-grade-void">–</span>;
+  }
+  if (result === "push") {
+    return <span className="batch-outcome-mark batch-grade-push">P</span>;
+  }
+  return null;
 }
 
 function pickDisplay(match: LogMatch): string {
@@ -67,17 +84,6 @@ function marketDisplay(match: LogMatch): string {
   const key = singleMarketKey(match);
   if (!key) return "—";
   return LOG_MARKET_MAP[key]?.label ?? key;
-}
-
-function legProbability(match: LogMatch): string {
-  const mode = resolveMarketMode(match);
-  if (mode === "combined" && match.comboPick?.systemProbability != null) {
-    return `${Math.round(match.comboPick.systemProbability)}%`;
-  }
-  const key = singleMarketKey(match);
-  if (!key) return "—";
-  const conf = match.predictions[key]?.confidence;
-  return conf != null ? `${Math.round(conf)}%` : "—";
 }
 
 function setSideStat(
@@ -180,6 +186,7 @@ function NumCell({
 interface BatchResultRowProps {
   index: number;
   match: LogMatch;
+  league: string;
   showFullStats: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -192,6 +199,7 @@ interface BatchResultRowProps {
 export function BatchResultRow({
   index,
   match,
+  league,
   showFullStats,
   expanded,
   onToggleExpand,
@@ -210,7 +218,6 @@ export function BatchResultRow({
           ? "batch-row-void"
           : "";
   const completeness = resultCompleteness(match);
-  const cs = match.correctScoreSnapshot?.mostLikely;
   const early = match.teamStats?.goalTiming?.goalInFirst10 === true;
   const earlyNo = match.teamStats?.goalTiming?.goalInFirst10 === false;
   const fg = match.teamStats?.firstGoalSide;
@@ -221,7 +228,7 @@ export function BatchResultRow({
     return i >= 0 ? cellRefs[i] : undefined;
   };
 
-  const colSpan = showFullStats ? 34 : 14;
+  const colSpan = showFullStats ? 34 : 11;
 
   return (
     <>
@@ -248,96 +255,127 @@ export function BatchResultRow({
           </button>
           {index + 1}
         </td>
+        <td className="batch-col-frozen batch-col-league" title={league}>
+          <span className="batch-ellipsis">{league || "—"}</span>
+        </td>
         <td className="batch-col-frozen batch-col-team batch-col-home" title={match.homeTeam}>
-          {match.homeTeam || "—"}
+          <span className="batch-ellipsis">{match.homeTeam || "—"}</span>
         </td>
         <td className="batch-col-frozen batch-col-team batch-col-away" title={match.awayTeam}>
-          {match.awayTeam || "—"}
+          <span className="batch-ellipsis">{match.awayTeam || "—"}</span>
         </td>
         <td className="batch-col-market" title={matchLegLabel(match)}>
-          {marketDisplay(match)}
+          <span className="batch-ellipsis">{marketDisplay(match)}</span>
         </td>
         <td className="batch-col-pick batch-col-pick-secondary" title={pickDisplay(match)}>
-          {pickDisplay(match)}
+          <span className="batch-ellipsis">{pickDisplay(match)}</span>
         </td>
-        <td className="batch-col-prob">{legProbability(match)}</td>
-        <td className="batch-col-cs" title={cs ? `${cs.probPct}%` : undefined}>
-          {cs ? formatScoreline(cs.home, cs.away) : "—"}
+        <td className="batch-col-stake" title={match.suggestedStake != null ? `Suggested ${match.suggestedStake}` : undefined}>
+          {match.stake != null ? match.stake : "—"}
         </td>
-
-        <NumCell
-          field="htH"
-          placeholder="H"
-          value={match.teamStats?.home?.firstHalfGoals}
-          inputRef={refFor("htH")}
-          onChange={(v) => onChange(setSideStat(match, "home", "firstHalfGoals", v))}
-          onCellKeyDown={onCellKeyDown}
-        />
-        <NumCell
-          field="htA"
-          placeholder="A"
-          value={match.teamStats?.away?.firstHalfGoals}
-          inputRef={refFor("htA")}
-          onChange={(v) => onChange(setSideStat(match, "away", "firstHalfGoals", v))}
-          onCellKeyDown={onCellKeyDown}
-        />
-        <NumCell
-          field="ftH"
-          placeholder="H"
-          value={match.teamStats?.home?.goals}
-          inputRef={refFor("ftH")}
-          onChange={(v) => onChange(setSideStat(match, "home", "goals", v))}
-          onCellKeyDown={onCellKeyDown}
-        />
-        <NumCell
-          field="ftA"
-          placeholder="A"
-          value={match.teamStats?.away?.goals}
-          inputRef={refFor("ftA")}
-          onChange={(v) => onChange(setSideStat(match, "away", "goals", v))}
-          onCellKeyDown={onCellKeyDown}
-        />
-
-        <td className="batch-col-toggle">
-          <div className="batch-seg">
-            <button
-              type="button"
-              ref={refFor("early") as React.RefObject<HTMLButtonElement | null>}
-              data-result-field="early"
-              className={early ? "active" : ""}
-              onClick={() => onChange(setEarlyGoal(match, true))}
-              onKeyDown={(e) => onCellKeyDown?.(e, "early")}
-            >
-              Y
-            </button>
-            <button
-              type="button"
-              tabIndex={-1}
-              className={earlyNo ? "active" : ""}
-              onClick={() => onChange(setEarlyGoal(match, false))}
-            >
-              N
-            </button>
+        <td className="batch-col-close">
+          <input
+            className="input"
+            type="number"
+            min={1.01}
+            step={0.01}
+            placeholder="Close"
+            title="Closing odds for CLV (optional)"
+            aria-label="Closing odds"
+            value={match.closingOdds ?? ""}
+            onChange={(e) => onChange(withClosingOdds(match, e.target.value))}
+            style={{ width: "4.25rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+          />
+        </td>
+        <td className="batch-col-score-pair">
+          <div className="batch-score-pair">
+            <input
+              ref={refFor("ftH") as React.RefObject<HTMLInputElement | null>}
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="H"
+              data-result-field="ftH"
+              aria-label="Home FT goals"
+              value={
+                match.teamStats?.home?.goals != null
+                  ? String(match.teamStats.home.goals)
+                  : ""
+              }
+              onChange={(e) =>
+                onChange(setSideStat(match, "home", "goals", e.target.value))
+              }
+              onKeyDown={(e) => onCellKeyDown?.(e, "ftH")}
+            />
+            <span className="batch-score-dash" aria-hidden>
+              –
+            </span>
+            <input
+              ref={refFor("ftA") as React.RefObject<HTMLInputElement | null>}
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="A"
+              data-result-field="ftA"
+              aria-label="Away FT goals"
+              value={
+                match.teamStats?.away?.goals != null
+                  ? String(match.teamStats.away.goals)
+                  : ""
+              }
+              onChange={(e) =>
+                onChange(setSideStat(match, "away", "goals", e.target.value))
+              }
+              onKeyDown={(e) => onCellKeyDown?.(e, "ftA")}
+            />
           </div>
         </td>
-
         <td className="batch-col-outcome">
           <GradeBadge result={result} />
         </td>
-        <td className="batch-col-actions">
-          {result === "correct" ? (
-            <span style={{ color: "var(--accent)", fontWeight: 700 }}>✓</span>
-          ) : result === "wrong" ? (
-            <span style={{ color: "var(--danger)", fontWeight: 700 }}>✕</span>
-          ) : result === "void" ? (
-            <span style={{ color: "var(--muted)", fontWeight: 700 }}>–</span>
-          ) : result === "push" ? (
-            <span style={{ color: "var(--warn)", fontWeight: 700 }}>P</span>
-          ) : null}
-        </td>
+        <td className="batch-col-actions">{outcomeMark(result)}</td>
 
         {showFullStats ? (
           <>
+            <NumCell
+              field="htH"
+              placeholder="H"
+              value={match.teamStats?.home?.firstHalfGoals}
+              inputRef={refFor("htH")}
+              onChange={(v) => onChange(setSideStat(match, "home", "firstHalfGoals", v))}
+              onCellKeyDown={onCellKeyDown}
+            />
+            <NumCell
+              field="htA"
+              placeholder="A"
+              value={match.teamStats?.away?.firstHalfGoals}
+              inputRef={refFor("htA")}
+              onChange={(v) => onChange(setSideStat(match, "away", "firstHalfGoals", v))}
+              onCellKeyDown={onCellKeyDown}
+            />
+            <td className="batch-col-toggle">
+              <div className="batch-seg">
+                <button
+                  type="button"
+                  ref={refFor("early") as React.RefObject<HTMLButtonElement | null>}
+                  data-result-field="early"
+                  className={early ? "active" : ""}
+                  onClick={() => onChange(setEarlyGoal(match, true))}
+                  onKeyDown={(e) => onCellKeyDown?.(e, "early")}
+                >
+                  Y
+                </button>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className={earlyNo ? "active" : ""}
+                  onClick={() => onChange(setEarlyGoal(match, false))}
+                >
+                  N
+                </button>
+              </div>
+            </td>
+
             <NumCell
               field="shotsH"
               placeholder="H"

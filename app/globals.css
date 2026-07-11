@@ -569,9 +569,10 @@ table.data-table td {
 
 /* Compact batch match table */
 .batch-table-wrap {
-  --batch-num-w: 2rem;
+  --batch-num-w: 2.25rem;
+  --batch-league-w: 5.5rem;
   --batch-team-w: 6.5rem;
-  --batch-row-h: 40px;
+  --batch-row-h: 34px;
   overflow-x: auto;
   overflow-y: auto;
   max-height: min(65vh, 720px);
@@ -586,8 +587,9 @@ table.data-table td {
 
 @media (min-width: 768px) {
   .batch-table-wrap {
-    --batch-num-w: 2.25rem;
-    --batch-team-w: 9.5rem;
+    --batch-num-w: 2.5rem;
+    --batch-league-w: 7.5rem;
+    --batch-team-w: 9rem;
     --batch-row-h: 34px;
     margin: 0 0 0.75rem;
     padding: 0;
@@ -598,7 +600,7 @@ table.data-table td {
   width: max-content;
   min-width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
   table-layout: fixed;
 }
 
@@ -613,13 +615,14 @@ table.data-table td {
   top: 0;
   z-index: 3;
   background: var(--surface2);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--muted);
   padding: 0 0.35rem;
   height: var(--batch-row-h);
+  max-height: var(--batch-row-h);
   white-space: nowrap;
   border-bottom: 1px solid var(--border);
   text-align: left;
@@ -634,6 +637,7 @@ table.data-table td {
 
 .batch-table tbody tr {
   height: var(--batch-row-h);
+  max-height: var(--batch-row-h);
 }
 
 .batch-table tbody tr:nth-child(even) {
@@ -756,18 +760,34 @@ table.data-table td {
   color: var(--muted);
 }
 
-.batch-table .batch-col-home {
+.batch-table .batch-col-league {
   left: var(--batch-num-w);
+  width: var(--batch-league-w);
+  min-width: var(--batch-league-w);
+  max-width: var(--batch-league-w);
+  color: var(--muted);
+}
+
+.batch-table .batch-col-home {
+  left: calc(var(--batch-num-w) + var(--batch-league-w));
 }
 
 .batch-table .batch-col-away {
-  left: calc(var(--batch-num-w) + var(--batch-team-w));
+  left: calc(var(--batch-num-w) + var(--batch-league-w) + var(--batch-team-w));
   box-shadow: 4px 0 8px -4px rgba(0, 0, 0, 0.45);
 }
 
 .batch-table .batch-col-team {
   width: var(--batch-team-w);
   min-width: var(--batch-team-w);
+  max-width: var(--batch-team-w);
+}
+
+.batch-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .batch-table .batch-col-market {
@@ -778,6 +798,18 @@ table.data-table td {
 .batch-table .batch-col-odds {
   width: 3.75rem;
   min-width: 3.75rem;
+}
+
+.batch-table .batch-col-stake {
+  width: 3.5rem;
+  min-width: 3.5rem;
+}
+
+.batch-strategy-alerts {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--warn, #d97706);
+  line-height: 1.35;
 }
 
 .batch-table .batch-col-pick {
@@ -796,6 +828,39 @@ table.data-table td {
 .batch-table .batch-col-score {
   width: 2.75rem;
   min-width: 2.75rem;
+}
+
+.batch-table .batch-col-score-pair {
+  width: 5.5rem;
+  min-width: 5.5rem;
+}
+
+.batch-score-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+.batch-score-pair input {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.batch-score-dash {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.batch-outcome-mark {
+  font-weight: 700;
+}
+
+.batch-table-footer {
+  padding: 0.35rem 0.5rem 0.5rem;
+  border-top: 1px solid var(--border);
 }
 
 .batch-table .batch-col-outcome {
@@ -820,6 +885,11 @@ table.data-table td {
     min-width: 4.5rem;
   }
 
+  .batch-table .batch-col-stake {
+    width: 4rem;
+    min-width: 4rem;
+  }
+
   .batch-table .batch-col-pick {
     width: 5.5rem;
     min-width: 5.5rem;
@@ -833,6 +903,11 @@ table.data-table td {
   .batch-table .batch-col-score {
     width: 3rem;
     min-width: 3rem;
+  }
+
+  .batch-table .batch-col-score-pair {
+    width: 6rem;
+    min-width: 6rem;
   }
 
   .batch-table .batch-col-outcome {

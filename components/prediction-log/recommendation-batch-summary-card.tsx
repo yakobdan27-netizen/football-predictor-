@@ -13,6 +13,8 @@ import {
   pickCommentEmoji,
   pickCommentTitle,
 } from "@/lib/prediction-log/pick-comment";
+import { loadRecommendationSettings } from "@/lib/prediction-log/storage";
+import { suggestStake } from "@/lib/prediction-log/strategy-rules";
 import { CorrectScoreOneLiner } from "./correct-score-panel";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
@@ -32,6 +34,13 @@ export function RecommendationBatchSummaryCard({ batch }: RecommendationBatchSum
   const displayOdds = math?.totalCombinedOdds ?? recommended.summary.totalCombinedOdds;
   const batchConfidence = math?.averagePFinal ?? recommended.summary.averagePFinal ?? null;
   const extended = hasExtendedSnapshot(batch);
+  const bs = loadRecommendationSettings().bankrollStrategy;
+  const tierStake = suggestStake({
+    settings: bs,
+    pSignal: batchConfidence,
+    odds: null,
+    tier: batch.recommendationTier ?? "balanced",
+  });
 
   return (
     <div className="card" style={{ borderColor: accentColor }}>
@@ -53,6 +62,17 @@ export function RecommendationBatchSummaryCard({ batch }: RecommendationBatchSum
               <>
                 {" · "}
                 Combined odds <strong style={{ color: "inherit" }}>{displayOdds.toFixed(2)}</strong>
+              </>
+            )}
+            {tierStake.suggested != null && (
+              <>
+                {" · "}
+                Suggested stake{" "}
+                <strong style={{ color: "inherit" }}>{tierStake.suggested}</strong>
+                <span title={tierStake.reason}>
+                  {" "}
+                  ({batch.recommendationTier ?? "balanced"} tier)
+                </span>
               </>
             )}
           </p>

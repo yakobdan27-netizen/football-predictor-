@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { computeEntryLegProbability } from "@/lib/prediction-log/combo-entry-probability";
 import { batchRiskBand } from "@/lib/prediction-log/batch-risk-config";
 import { loadClubRecordsForBatch } from "@/lib/prediction-log/club-record-insights";
@@ -9,12 +9,30 @@ import { scoreComboLeg } from "@/lib/prediction-log/combo-scoring";
 import {
   ensureStorageInit,
   loadBatches,
+  loadRecommendationSettings,
   refreshClubIndex,
   fetchClubRecord,
 } from "@/lib/prediction-log/storage";
 import { isValidOdds } from "@/lib/prediction-log/odds-bands";
 import { marketsEnteredCount } from "@/lib/prediction-log/scoring";
-import type { CombinedOddsSettings, LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
+import {
+  defaultBankrollStrategySettings,
+  MIN_BETS_FOR_MEANINGFUL_METRICS,
+} from "@/lib/prediction-log/recommendation-config";
+import {
+  aggregateBatchPlacementAlerts,
+  batchPnL,
+  evaluateStopLoss,
+  formatMoney,
+  maxRecommendedStake,
+} from "@/lib/prediction-log/strategy-rules";
+import { collectSettledBets } from "@/lib/prediction-log/evaluation-metrics";
+import type {
+  BankrollStrategySettings,
+  CombinedOddsSettings,
+  LogMatch,
+  PredictionBatch,
+} from "@/lib/prediction-log/types";
 
 interface BatchSummaryStripProps {
   mode: "entry" | "result";
@@ -24,6 +42,7 @@ interface BatchSummaryStripProps {
   date?: string;
   batchName?: string;
   comboSettings?: CombinedOddsSettings;
+  bankrollStrategy?: BankrollStrategySettings;
 }
 
 function primaryLegResult(match: LogMatch): string | null {
@@ -50,10 +69,27 @@ export function BatchSummaryStrip({
   date = "",
   batchName = "",
   comboSettings,
+  bankrollStrategy,
 }: BatchSummaryStripProps) {
   const matches = mode === "result" ? (batch?.matches ?? []) : (entryMatches ?? []);
   const [avgProb, setAvgProb] = useState<number | null>(null);
   const [combinedOdds, setCombinedOdds] = useState<number | null>(null);
+
+  const bs =
+    bankrollStrategy ??
+    loadRecommendationSettings().bankrollStrategy ??
+    defaultBankrollStrategySettings();
+
+  const stopLoss = useMemo(
+    () => evaluateStopLoss(loadBatches(), bs),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when matches/settings identity changes
+    [bs, matches.length, mode]
+  );
+
+  const placementAlerts = useMemo(() => {
+    if (mode !== "entry") return { flags: [], messages: [] as string[] };
+    return aggregateBatchPlacementAlerts(matches, bs, stopLoss);
+  }, [mode, matches, bs, stopLoss]);
 
   useEffect(() => {
     if (mode !== "entry" || !comboSettings) {
@@ -80,22 +116,27 @@ export function BatchSummaryStrip({
 
       const probs: number[] = [];
       const oddsList: number[] = [];
-
       for (const m of matches) {
         if (!m.homeTeam || !m.awayTeam) continue;
-        const prob = computeEntryLegProbability(m, league, clubRecords, clubIndex, batches);
-        if (prob.pGrid != null) probs.push(prob.pGrid);
-
-        const mMode = resolveMarketMode(m);
-        if (mMode === "combined") {
+        const modeM = resolveMarketMode(m);
+        if (modeM === "combined") {
           if (m.comboPick?.odds && isValidOdds(m.comboPick.odds)) {
             oddsList.push(m.comboPick.odds);
           }
+          const prob = computeEntryLegProbability(
+            m,
+            league,
+            clubRecords,
+            clubIndex,
+            batches
+          );
+          if (prob.pGrid != null) probs.push(prob.pGrid);
         } else {
           const keys = Object.keys(m.predictions);
           if (keys.length === 1) {
-            const o = m.predictions[keys[0] as keyof typeof m.predictions]?.odds;
-            if (o != null && isValidOdds(o)) oddsList.push(o);
+            const pred = m.predictions[keys[0] as keyof typeof m.predictions];
+            if (pred?.odds && isValidOdds(pred.odds)) oddsList.push(pred.odds);
+            if (pred?.confidence != null) probs.push(pred.confidence);
           }
         }
       }
@@ -125,19 +166,42 @@ export function BatchSummaryStrip({
   if (mode === "entry") {
     const risk =
       avgProb != null ? batchRiskBand(Math.max(0, 100 - avgProb)) : null;
+    const maxStake = maxRecommendedStake(bs);
+    const settledN = collectSettledBets(loadBatches()).length;
 
     return (
       <div className="batch-summary-strip">
-        {batchName ? (
-          <>
-            <strong>{batchName}</strong>
-            {" · "}
-          </>
+        <div>
+          {batchName ? (
+            <>
+              <strong>{batchName}</strong>
+              {" · "}
+            </>
+          ) : null}
+          {matches.length} matches
+          {combinedOdds != null ? ` · Combined odds ×${combinedOdds}` : ""}
+          {risk ? ` · Batch risk: ${risk}` : ""}
+          {avgProb != null ? ` · Avg prob ${avgProb}%` : ""}
+          {bs.bankroll != null ? ` · Bankroll ${bs.bankroll}` : ""}
+          {maxStake != null ? ` · Max stake ${maxStake.toFixed(2)}` : ""}
+        </div>
+        {settledN < MIN_BETS_FOR_MEANINGFUL_METRICS ? (
+          <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+            Expected long-term note: metrics noisy until {MIN_BETS_FOR_MEANINGFUL_METRICS}+ bets
+            (n={settledN}).
+          </div>
         ) : null}
-        {matches.length} matches
-        {combinedOdds != null ? ` · Combined odds ×${combinedOdds}` : ""}
-        {risk ? ` · Batch risk: ${risk}` : ""}
-        {avgProb != null ? ` · Avg prob ${avgProb}%` : ""}
+        {placementAlerts.messages.length > 0 ? (
+          <div className="batch-strategy-alerts">
+            {placementAlerts.messages.slice(0, 4).map((msg) => (
+              <div key={msg}>⚠ {msg}</div>
+            ))}
+          </div>
+        ) : stopLoss.stopLossActive ? (
+          <div className="batch-strategy-alerts">
+            ⚠ Stop-loss: {stopLoss.reason}. Suggested: pause.
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -160,6 +224,8 @@ export function BatchSummaryStrip({
 
   const countable = won + lost;
   const winRate = countable > 0 ? Math.round((won / countable) * 100) : null;
+  const pnl = batchPnL(matches);
+  const settledN = collectSettledBets(loadBatches()).length;
 
   let slipLine = "";
   if (pending === 0 && matches.length > 0) {
@@ -191,13 +257,24 @@ export function BatchSummaryStrip({
         {voided > 0 ? ` · ${voided} void/push` : ""}
         {" · "}
         Batch outcome: <strong>{batchOutcome}</strong>
+        {pnl.totalPnL != null
+          ? ` · P&L ${formatMoney(pnl.totalPnL)}${
+              pnl.roiPct != null ? ` · ROI ${pnl.roiPct}%` : ""
+            }`
+          : ""}
         {batchOutcome === "SETTLED" || batchOutcome === "WON" || batchOutcome === "LOST"
           ? " · logged to learning loop on save"
           : ""}
       </div>
+      {settledN < MIN_BETS_FOR_MEANINGFUL_METRICS ? (
+        <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+          Expected long-term note: metrics noisy until {MIN_BETS_FOR_MEANINGFUL_METRICS}+ bets
+          (n={settledN}).
+        </div>
+      ) : null}
       {slipLine ? (
         <div className="batch-slip-line">
-          <strong>{slipLine}</strong>
+          {slipLine}
         </div>
       ) : null}
     </div>

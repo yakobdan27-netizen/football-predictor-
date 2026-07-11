@@ -5,7 +5,7 @@ import {
   buildMarketOptions,
   marketOptionFromMatch,
 } from "./batch-market-options";
-import { parsePastedRows } from "./parse-pasted-rows";
+import { parsePastedRows, applyPastedTeamRows } from "./parse-pasted-rows";
 import { resolveMarketMode } from "./match-entry-helpers";
 import type { LogMatch } from "./types";
 
@@ -42,5 +42,19 @@ const pasted = parsePastedRows("Arsenal\tChelsea\nLiverpool, Man City");
 assert.equal(pasted.length, 2);
 assert.equal(pasted[0]!.home, "Arsenal");
 assert.equal(pasted[0]!.away, "Chelsea");
+
+const seed: LogMatch[] = [
+  { ...base, id: "a", homeTeam: "", awayTeam: "" },
+];
+const grown = applyPastedTeamRows(seed, pasted, 0, () => ({
+  ...base,
+  id: `n-${Math.random()}`,
+  homeTeam: "",
+  awayTeam: "",
+}));
+assert.equal(grown.length, 2);
+assert.equal(grown[0]!.homeTeam, "Arsenal");
+assert.equal(grown[1]!.homeTeam, "Liverpool");
+assert.equal(grown[1]!.awayTeam, "Man City");
 
 console.log("batch-market-options.test.ts: all passed");

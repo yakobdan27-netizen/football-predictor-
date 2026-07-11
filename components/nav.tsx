@@ -13,6 +13,7 @@ const links = [
   { href: "/combined-odds", label: "Combo", icon: "🎲", desktopLabel: "Combined Odds" },
   { href: "/settings", label: "Set", icon: "⚙️", desktopLabel: "Settings" },
   { href: "/analysis", label: "Stats", icon: "📊", desktopLabel: "Analysis" },
+  { href: "/risk", label: "Risk", icon: "🛡️", desktopLabel: "Risk & Eval" },
   { href: "/backtest", label: "Test", icon: "📈", desktopLabel: "Backtest" },
 ];
 

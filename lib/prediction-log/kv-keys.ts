@@ -16,4 +16,7 @@ export const KV_KEYS = {
   livescoreCache: (key: string) => `livescore:v1:${key}`,
   /** Bulk last-5 scrape progress (failed leagues for retry). */
   livescoreBulkProgress: "livescore:bulk:v1:progress",
+  /** Saved reco walk-forward backtest run ids (newest first). */
+  backtestRunsIndex: "backtestRuns:v1:index",
+  backtestRun: (runId: string) => `backtestRun:v1:${runId}`,
 } as const;

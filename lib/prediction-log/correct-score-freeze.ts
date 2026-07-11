@@ -3,12 +3,41 @@ import {
   analysisToSnapshot,
   scorelineProbPct,
 } from "./correct-score";
+import { correctScoreHasEnoughData } from "./correct-score-data";
 import { entryValueFromGrid } from "./combo-entry-probability";
 import { computeDixonColes } from "./statistics-engine";
 import { computeLeagueBaselines } from "./league-baselines";
 import { findClubInIndex } from "./club-index";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import type { LogMatch, PredictionBatch } from "./types";
+
+export {
+  CORRECT_SCORE_INSUFFICIENT_MESSAGE,
+  CORRECT_SCORE_MIN_SAMPLE,
+  clubSampleSize,
+  correctScoreHasEnoughData,
+} from "./correct-score-data";
+
+export function resolveMatchClubRecords(
+  match: LogMatch,
+  league: string,
+  clubRecords: Record<string, ClubRecord>,
+  clubIndex: ClubIndex | null
+): { home: ClubRecord | null; away: ClubRecord | null } {
+  const homeEntry = clubIndex ? findClubInIndex(clubIndex, match.homeTeam, league) : null;
+  const awayEntry = clubIndex ? findClubInIndex(clubIndex, match.awayTeam, league) : null;
+  const homeRecord = match.homeClubId
+    ? clubRecords[match.homeClubId] ?? null
+    : homeEntry
+      ? clubRecords[homeEntry.clubId] ?? null
+      : null;
+  const awayRecord = match.awayClubId
+    ? clubRecords[match.awayClubId] ?? null
+    : awayEntry
+      ? clubRecords[awayEntry.clubId] ?? null
+      : null;
+  return { home: homeRecord, away: awayRecord };
+}
 
 export function scoreGridForMatch(
   match: LogMatch,
@@ -19,18 +48,16 @@ export function scoreGridForMatch(
 ): number[][] | null {
   if (!match.homeTeam || !match.awayTeam) return null;
 
-  const homeEntry = clubIndex ? findClubInIndex(clubIndex, match.homeTeam, league) : null;
-  const awayEntry = clubIndex ? findClubInIndex(clubIndex, match.awayTeam, league) : null;
-  const homeRecord = match.homeClubId
-    ? clubRecords[match.homeClubId]
-    : homeEntry
-      ? clubRecords[homeEntry.clubId]
-      : null;
-  const awayRecord = match.awayClubId
-    ? clubRecords[match.awayClubId]
-    : awayEntry
-      ? clubRecords[awayEntry.clubId]
-      : null;
+  const { home: homeRecord, away: awayRecord } = resolveMatchClubRecords(
+    match,
+    league,
+    clubRecords,
+    clubIndex
+  );
+
+  if (!correctScoreHasEnoughData(homeRecord, awayRecord)) {
+    return null;
+  }
 
   try {
     const leagueBaselines = computeLeagueBaselines(allBatches);

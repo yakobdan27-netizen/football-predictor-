@@ -223,6 +223,8 @@ export function loadRecommendationSettings(): RecommendationSettings {
     if (!raw) return defaultRecommendationSettings();
     const parsed = JSON.parse(raw) as RecommendationSettings;
     const defaults = defaultRecommendationSettings();
+    const bs = parsed.bankrollStrategy;
+    const dbs = defaults.bankrollStrategy;
     return {
       oddsFilteringEnabled: parsed.oddsFilteringEnabled !== false,
       tier1MinPFinal:
@@ -237,10 +239,83 @@ export function loadRecommendationSettings(): RecommendationSettings {
         typeof parsed.betterAlternativeThresholdPct === "number"
           ? parsed.betterAlternativeThresholdPct
           : defaults.betterAlternativeThresholdPct,
+      bankrollStrategy: {
+        bankroll:
+          bs?.bankroll != null && Number.isFinite(bs.bankroll) && bs.bankroll > 0
+            ? bs.bankroll
+            : null,
+        startingBankroll:
+          bs?.startingBankroll != null &&
+          Number.isFinite(bs.startingBankroll) &&
+          bs.startingBankroll > 0
+            ? bs.startingBankroll
+            : bs?.bankroll != null && Number.isFinite(bs.bankroll) && bs.bankroll > 0
+              ? bs.bankroll
+              : null,
+        funBankroll:
+          bs?.funBankroll != null && Number.isFinite(bs.funBankroll) && bs.funBankroll > 0
+            ? bs.funBankroll
+            : null,
+        maxRiskPctPerBet: clampNum(bs?.maxRiskPctPerBet, 1, 2, dbs.maxRiskPctPerBet),
+        riskProfile:
+          bs?.riskProfile === "moderate" || bs?.riskProfile === "aggressive"
+            ? bs.riskProfile
+            : "conservative",
+        stakingMode:
+          bs?.stakingMode === "half_kelly" || bs?.stakingMode === "quarter_kelly"
+            ? bs.stakingMode
+            : "flat",
+        flatStakePct: clampNum(bs?.flatStakePct, 0.1, 2, dbs.flatStakePct),
+        tierStakeMult: {
+          safe: clampNum(bs?.tierStakeMult?.safe, 0.1, 3, dbs.tierStakeMult.safe),
+          balanced: clampNum(bs?.tierStakeMult?.balanced, 0.1, 3, dbs.tierStakeMult.balanced),
+          aggressive: clampNum(
+            bs?.tierStakeMult?.aggressive,
+            0.1,
+            3,
+            dbs.tierStakeMult.aggressive
+          ),
+        },
+        stopLossConsecutiveLosses: clampNum(
+          bs?.stopLossConsecutiveLosses,
+          1,
+          20,
+          dbs.stopLossConsecutiveLosses
+        ),
+        stopLossDailyDrawdownPct: clampNum(
+          bs?.stopLossDailyDrawdownPct,
+          1,
+          50,
+          dbs.stopLossDailyDrawdownPct
+        ),
+        stopLossRollingDays: clampNum(
+          bs?.stopLossRollingDays,
+          7,
+          90,
+          dbs.stopLossRollingDays
+        ),
+        stopLossRollingDrawdownPct: clampNum(
+          bs?.stopLossRollingDrawdownPct,
+          5,
+          50,
+          dbs.stopLossRollingDrawdownPct
+        ),
+        strategyAlertsEnabled: bs?.strategyAlertsEnabled !== false,
+      },
     };
   } catch {
     return defaultRecommendationSettings();
   }
+}
+
+function clampNum(
+  v: number | undefined,
+  min: number,
+  max: number,
+  fallback: number
+): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
+  return Math.min(max, Math.max(min, v));
 }
 
 export function saveRecommendationSettings(settings: RecommendationSettings): void {

@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import {
+  applyPastedTeamRows,
   parsePastedResultGrid,
   parsePastedRows,
 } from "@/lib/prediction-log/parse-pasted-rows";
@@ -13,6 +14,7 @@ import { BatchEntryRow } from "./batch-entry-row";
 import { applyResultPastePatch, BatchResultRow } from "./batch-result-row";
 import { gradeMatchFromFacts } from "@/lib/prediction-log/grade-from-facts";
 import type {
+  BankrollStrategySettings,
   CombinedOddsSettings,
   FrozenBetterAlternative,
   LogMatch,
@@ -25,13 +27,17 @@ interface BatchMatchTableProps {
   league: string;
   date?: string;
   comboSettings?: CombinedOddsSettings;
+  bankrollStrategy?: BankrollStrategySettings;
   teamsQuality?: TeamsQualityStore | null;
   betterAltByMatch?: Record<string, FrozenBetterAlternative>;
   onChange: (matches: LogMatch[]) => void;
   onAddMatch?: () => void;
+  /** Used when paste needs more rows than currently exist. */
+  createEmptyMatch?: () => LogMatch;
 }
 
-const ENTRY_COLS = 4;
+/** Focusable entry cells: Home, Away, Market, Odds, Stake. */
+const ENTRY_COLS = 5;
 
 type FocusableRef = React.RefObject<
   HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null
@@ -43,10 +49,12 @@ export function BatchMatchTable({
   league,
   date = "",
   comboSettings,
+  bankrollStrategy,
   teamsQuality = null,
   betterAltByMatch,
   onChange,
   onAddMatch,
+  createEmptyMatch,
 }: BatchMatchTableProps) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [showFullStats, setShowFullStats] = useState(false);
@@ -176,17 +184,17 @@ export function BatchMatchTable({
       const tr = target.closest("tr");
       const tbody = tr?.parentElement;
       const rowIndex = tr && tbody ? Array.from(tbody.children).indexOf(tr) : 0;
-      const next = [...matches];
-      for (let i = 0; i < rows.length; i++) {
-        const idx = rowIndex + i;
-        if (idx >= next.length) break;
-        next[idx] = {
-          ...next[idx]!,
-          homeTeam: rows[i]!.home,
-          awayTeam: rows[i]!.away,
-        };
-      }
-      onChange(next);
+      const factory =
+        createEmptyMatch ??
+        (() => ({
+          id: `paste-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          homeTeam: "",
+          awayTeam: "",
+          predictions: {},
+          actualResults: {},
+          scored: {},
+        }));
+      onChange(applyPastedTeamRows(matches, rows, rowIndex, factory));
       return;
     }
 
@@ -237,81 +245,84 @@ export function BatchMatchTable({
           {mode === "entry" ? (
             <tr>
               <th className="batch-col-frozen batch-col-num">#</th>
+              <th className="batch-col-frozen batch-col-league">League</th>
               <th className="batch-col-frozen batch-col-team batch-col-home">Home</th>
               <th className="batch-col-frozen batch-col-team batch-col-away">Away</th>
               <th>Market</th>
               <th>Odds</th>
-              <th className="batch-col-pick-secondary">System</th>
-              <th style={{ textAlign: "right" }}>Prob</th>
+              <th>Stake</th>
+              <th className="batch-col-pick-secondary">System Pick</th>
+              <th style={{ textAlign: "right" }}>Prob %</th>
               <th />
             </tr>
           ) : (
             <>
-              <tr className="batch-group-headers">
-                <th className="batch-col-frozen" colSpan={3} />
-                <th colSpan={3} className="batch-group-label">
-                  Pick
-                </th>
-                <th className="batch-group-label">CS</th>
-                <th colSpan={2} className="batch-group-label batch-group-ht">
-                  HT
-                </th>
-                <th colSpan={2} className="batch-group-label batch-group-ft">
-                  FT
-                </th>
-                <th className="batch-group-label">Early</th>
-                <th colSpan={2} />
-                {showFullStats ? (
-                  <>
-                    <th colSpan={2} className="batch-group-label">
-                      Shots
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      SOT
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      Corners
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      Fouls
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      Yel
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      Red
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      Poss
-                    </th>
-                    <th colSpan={2} className="batch-group-label">
-                      Off
-                    </th>
-                    <th className="batch-group-label">1st</th>
-                    <th colSpan={2} className="batch-group-label">
-                      Pen
-                    </th>
-                    <th className="batch-group-label">Abn</th>
-                  </>
-                ) : null}
-              </tr>
+              {showFullStats ? (
+                <tr className="batch-group-headers">
+                  <th className="batch-col-frozen" colSpan={4} />
+                  <th colSpan={2} className="batch-group-label">
+                    Pick
+                  </th>
+                  <th className="batch-group-label">Stake</th>
+                  <th className="batch-group-label" title="Closing odds">
+                    Close
+                  </th>
+                  <th className="batch-group-label batch-group-ft" colSpan={1}>
+                    Score
+                  </th>
+                  <th colSpan={2} />
+                  <th colSpan={2} className="batch-group-label batch-group-ht">
+                    HT
+                  </th>
+                  <th className="batch-group-label">Early</th>
+                  <th colSpan={2} className="batch-group-label">
+                    Shots
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    SOT
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Corners
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Fouls
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Yel
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Red
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Poss
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Off
+                  </th>
+                  <th className="batch-group-label">1st</th>
+                  <th colSpan={2} className="batch-group-label">
+                    Pen
+                  </th>
+                  <th className="batch-group-label">Abn</th>
+                </tr>
+              ) : null}
               <tr>
                 <th className="batch-col-frozen batch-col-num">#</th>
+                <th className="batch-col-frozen batch-col-league">League</th>
                 <th className="batch-col-frozen batch-col-team batch-col-home">Home</th>
                 <th className="batch-col-frozen batch-col-team batch-col-away">Away</th>
                 <th>Market</th>
                 <th className="batch-col-pick-secondary">Pick</th>
-                <th>Prob</th>
-                <th>Pred</th>
-                <th>H</th>
-                <th>A</th>
-                <th>H</th>
-                <th>A</th>
-                <th>Y/N</th>
-                <th>Out</th>
+                <th>Stake</th>
+                <th title="Closing odds (optional, for CLV)">Close</th>
+                <th>Score (H–A)</th>
+                <th>Outcome</th>
                 <th />
                 {showFullStats ? (
                   <>
+                    <th>H</th>
+                    <th>A</th>
+                    <th>Y/N</th>
                     <th>H</th>
                     <th>A</th>
                     <th>H</th>
@@ -348,12 +359,14 @@ export function BatchMatchTable({
                 league={league}
                 date={date}
                 comboSettings={comboSettings!}
+                bankrollStrategy={bankrollStrategy}
                 teamsQuality={teamsQuality}
                 canDelete={matches.length > 1}
                 homeRef={cellRefs[i]![0] as React.RefObject<HTMLInputElement | null>}
                 awayRef={cellRefs[i]![1] as React.RefObject<HTMLInputElement | null>}
                 marketRef={cellRefs[i]![2] as React.RefObject<HTMLSelectElement | null>}
                 oddsRef={cellRefs[i]![3] as React.RefObject<HTMLInputElement | null>}
+                stakeRef={cellRefs[i]![4] as React.RefObject<HTMLInputElement | null>}
                 onChange={(m) => updateMatch(i, m)}
                 onDelete={() => deleteMatch(i)}
                 onCellKeyDown={(e, col) => handleEntryKeyDown(e, i, col)}
@@ -363,6 +376,7 @@ export function BatchMatchTable({
                 key={match.id}
                 index={i}
                 match={match}
+                league={league}
                 showFullStats={showFullStats}
                 expanded={expandedRow === i}
                 onToggleExpand={() => setExpandedRow(expandedRow === i ? null : i)}
@@ -375,6 +389,13 @@ export function BatchMatchTable({
           )}
         </tbody>
       </table>
+      {mode === "entry" && onAddMatch ? (
+        <div className="batch-table-footer">
+          <button type="button" className="btn btn-secondary" onClick={onAddMatch}>
+            + Add match
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -26,6 +26,32 @@ export function parsePastedRows(text: string): PastedRow[] {
   return rows;
 }
 
+/** Fill Home/Away from paste starting at `startIndex`, appending empty rows as needed. */
+export function applyPastedTeamRows<
+  T extends { homeTeam: string; awayTeam: string },
+>(
+  matches: T[],
+  pasted: PastedRow[],
+  startIndex: number,
+  createEmpty: () => T
+): T[] {
+  if (pasted.length === 0) return matches;
+  const start = Math.max(0, startIndex);
+  const next = [...matches];
+  for (let i = 0; i < pasted.length; i++) {
+    const idx = start + i;
+    while (idx >= next.length) {
+      next.push(createEmpty());
+    }
+    next[idx] = {
+      ...next[idx]!,
+      homeTeam: pasted[i]!.home,
+      awayTeam: pasted[i]!.away,
+    };
+  }
+  return next;
+}
+
 /** TSV/CSV paste starting at `startField`, filling fields rightward then rows downward. */
 export function parsePastedResultGrid(
   text: string,

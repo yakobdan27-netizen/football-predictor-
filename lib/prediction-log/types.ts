@@ -159,6 +159,14 @@ export interface LogMatch {
   livescoreUrl?: string;
   /** Livescore event id (Eid). */
   livescoreEventId?: string;
+  /** Stake in bankroll currency units (money metadata only). */
+  stake?: number;
+  /** Suggested stake at entry time (audit). */
+  suggestedStake?: number;
+  /** Soft strategy flags e.g. below_value, over_risk_cap, stop_loss_active. */
+  strategyFlags?: string[];
+  /** Closing decimal odds for CLV (optional; enter after market close). */
+  closingOdds?: number;
 }
 
 export type RecommendationTier = "safe" | "balanced" | "aggressive";
@@ -402,6 +410,35 @@ export interface RecommendationSettings {
   tier3MaxBatchRisk: number;
   tier3AllowAlternativeMarkets: boolean;
   betterAlternativeThresholdPct: number;
+  /** Bankroll / staking / stop-loss rules (strategy layer). */
+  bankrollStrategy: BankrollStrategySettings;
+}
+
+export type StakingMode = "flat" | "quarter_kelly" | "half_kelly";
+
+export type BankrollRiskProfile = "conservative" | "moderate" | "aggressive";
+
+export interface BankrollStrategySettings {
+  /** Total bankroll; null until user sets it. */
+  bankroll: number | null;
+  /** Snapshot baseline for threshold alerts (75/60/50%). */
+  startingBankroll: number | null;
+  /** Optional separate fun bankroll (calculator only). */
+  funBankroll: number | null;
+  /** Max risk per bet as % of bankroll (1–2). */
+  maxRiskPctPerBet: number;
+  riskProfile: BankrollRiskProfile;
+  stakingMode: StakingMode;
+  /** Flat stake as % of bankroll when stakingMode is flat. */
+  flatStakePct: number;
+  tierStakeMult: { safe: number; balanced: number; aggressive: number };
+  stopLossConsecutiveLosses: number;
+  stopLossDailyDrawdownPct: number;
+  /** Rolling window (days) for drawdown stop-loss. */
+  stopLossRollingDays: number;
+  /** Pause when rolling P&L loss reaches this % of bankroll. */
+  stopLossRollingDrawdownPct: number;
+  strategyAlertsEnabled: boolean;
 }
 
 export type ComboCategory =

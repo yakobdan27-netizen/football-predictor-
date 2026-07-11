@@ -16,6 +16,7 @@ Prediction Log → (results saved) → AI Learner + Analysis → Recommendation 
 | **AI Learner** | `/ai-learner` | View learned patterns, club capacities/histories, support notes; export club JSON |
 | **Recommendation** | `/recommendation` | Generate risk-filtered recommended batch with live batch risk score |
 | **Analysis** | `/analysis` | Win rate, odds bands, markets, batches, clubs, systematic judgement |
+| **Risk & Evaluation** | `/risk` | Bankroll health, yield/CLV, drawdown, Monte Carlo reality check |
 
 All four pages share the same KV-backed data store (batches + per-club append-only histories). Saving results on the Log updates club capacities, the Learner, and Analysis automatically.
 
@@ -78,3 +79,17 @@ Available on **Backtest** when you enable them:
 - Compare probabilities across markets (e.g. strong favourite + high shot expectation reinforces the signal).
 - Bookmaker lines are efficient; the goal is a **well-calibrated analytical tool**, not guaranteed profit.
 - Recommendation caps at 4 matches and filters by combined-odds risk — tune settings on the Recommendation page.
+
+## What success looks like
+
+Past performance does not guarantee future results. This app is **decision support**, not a profit guarantee.
+
+| Reality | Implication |
+|---------|-------------|
+| **Variance** | Short samples swing wildly; treat win rate / ROI as noisy until **300+** settled stake bets. |
+| **Vig** | Bookmaker margin means a fair model can still lose money without a true edge over the close. |
+| **CLV over raw P&L** | Beating closing odds (positive CLV) is a better long-term skill signal than a hot week of profit. |
+| **Risk of ruin** | Cap stakes at **1–2%** of bankroll; respect stop-loss pauses (consecutive losses + rolling drawdown). |
+| **Survival** | Success = calibrated picks, bankroll still standing, and improving process — not a fixed win rate. |
+
+Track evaluation on **Risk & Evaluation** (`/risk`): yield, drawdown, optional closing-odds CLV, and a Monte Carlo reality check.

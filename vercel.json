@@ -9,6 +9,9 @@
     "app/api/backtest/route.ts": {
       "maxDuration": 60
     },
+    "app/api/backtest-reco/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/upload/route.ts": {
       "maxDuration": 60
     },

@@ -1,11 +1,19 @@
 "use client";
 
+import { BankrollStrategyPanel } from "./bankroll-strategy-panel";
 import { CombinedOddsSettingsPanel } from "./combined-odds-settings-panel";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import type { MarketMode } from "@/lib/prediction-log/types";
 
 export function SettingsApp() {
-  const { ready, error, comboSettings, setComboOddsSettings } = usePredictionLogData();
+  const {
+    ready,
+    error,
+    comboSettings,
+    setComboOddsSettings,
+    recoSettings,
+    setSettings,
+  } = usePredictionLogData();
 
   if (!ready) {
     return <p style={{ color: "var(--muted)" }}>Loading settings…</p>;
@@ -20,6 +28,8 @@ export function SettingsApp() {
 
   return (
     <div>
+      <BankrollStrategyPanel settings={recoSettings} onChange={setSettings} />
+
       <section className="card" style={{ marginBottom: "1rem" }}>
         <h2 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.75rem" }}>
           Market Preferences

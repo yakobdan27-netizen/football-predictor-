@@ -1,4 +1,8 @@
-import type { LogMarketKey, RecommendationSettings } from "./types";
+import type {
+  BankrollStrategySettings,
+  LogMarketKey,
+  RecommendationSettings,
+} from "./types";
 
 export const RECO_ENGINE_VERSION = 5;
 
@@ -61,6 +65,38 @@ export const SAFE_TIER_MAX_RISK = 0.15;
 export const BALANCED_TIER_MIN_PFINAL = 58;
 export const AGGRESSIVE_TIER_MIN_PFINAL = 52;
 
+/** Absolute stake cap as % of bankroll (risk-of-ruin brief). */
+export const ABSOLUTE_STAKE_CAP_PCT = 2;
+
+export const RISK_PROFILE_MAX_PCT: Record<
+  import("./types").BankrollRiskProfile,
+  number
+> = {
+  conservative: 1,
+  moderate: 1.5,
+  aggressive: 2,
+};
+
+export const MIN_BETS_FOR_MEANINGFUL_METRICS = 300;
+
+export function defaultBankrollStrategySettings(): BankrollStrategySettings {
+  return {
+    bankroll: null,
+    startingBankroll: null,
+    funBankroll: null,
+    maxRiskPctPerBet: 1,
+    riskProfile: "conservative",
+    stakingMode: "flat",
+    flatStakePct: 1,
+    tierStakeMult: { safe: 0.75, balanced: 1, aggressive: 1.25 },
+    stopLossConsecutiveLosses: 3,
+    stopLossDailyDrawdownPct: 10,
+    stopLossRollingDays: 30,
+    stopLossRollingDrawdownPct: 25,
+    strategyAlertsEnabled: true,
+  };
+}
+
 export function defaultRecommendationSettings(): RecommendationSettings {
   return {
     oddsFilteringEnabled: true,
@@ -68,6 +104,7 @@ export function defaultRecommendationSettings(): RecommendationSettings {
     tier3MaxBatchRisk: 0.6,
     tier3AllowAlternativeMarkets: true,
     betterAlternativeThresholdPct: BETTER_ALTERNATIVE_THRESHOLD_PCT,
+    bankrollStrategy: defaultBankrollStrategySettings(),
   };
 }
 

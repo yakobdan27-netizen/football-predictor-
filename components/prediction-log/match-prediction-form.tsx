@@ -429,16 +429,24 @@ export function MatchPredictionForm({
                 return;
               }
               const top = csAnalysis.analysis?.mostLikely;
+              if (!top) {
+                // Keep toggle off when we cannot predict
+                return;
+              }
               onChange({
                 ...match,
-                correctScorePick: top
-                  ? { home: top.home, away: top.away, odds: undefined }
-                  : { home: 1, away: 0, odds: undefined },
+                correctScorePick: { home: top.home, away: top.away, odds: undefined },
               });
             }}
+            disabled={!csEnabled && !csAnalysis.analysis?.mostLikely && !csAnalysis.loading}
           />
           Add correct-score bet for this match
         </label>
+        {!csEnabled && csAnalysis.error ? (
+          <p style={{ margin: "0.5rem 0 0", fontSize: "0.8125rem", color: "var(--muted)" }}>
+            {csAnalysis.error}
+          </p>
+        ) : null}
         {csEnabled && match.correctScorePick ? (
           <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>
             <div>
@@ -574,6 +582,10 @@ export function MatchPredictionForm({
               </p>
             ) : csAnalysis.loading ? (
               <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--muted)" }}>Loading grid…</p>
+            ) : csAnalysis.error ? (
+              <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--muted)" }}>
+                {csAnalysis.error}
+              </p>
             ) : null}
             <CorrectScoreHonestyNote compact />
           </div>

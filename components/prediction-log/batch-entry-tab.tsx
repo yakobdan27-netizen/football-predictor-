@@ -39,6 +39,11 @@ import type {
   PredictionBatch,
   RecommendationSettings,
 } from "@/lib/prediction-log/types";
+import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
+import {
+  aggregateBatchPlacementAlerts,
+  evaluateStopLoss,
+} from "@/lib/prediction-log/strategy-rules";
 
 function emptyMatch(settings: CombinedOddsSettings): LogMatch {
   return {
@@ -83,8 +88,6 @@ function freezeComboProbabilities(
     };
   });
 }
-
-import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
 
 interface BatchEntryTabProps {
   settings: RecommendationSettings;
@@ -221,6 +224,29 @@ export function BatchEntryTab({
       }
     }
 
+    const bs = settings.bankrollStrategy;
+    const stop = evaluateStopLoss(loadBatches(), bs);
+    const alerts = aggregateBatchPlacementAlerts(matches, bs, stop);
+    if (alerts.messages.length > 0) {
+      const riskBits: string[] = [];
+      if (alerts.flags.includes("over_risk_cap") || alerts.flags.includes("over_absolute_cap")) {
+        riskBits.push(
+          "Stakes above max risk increase risk of ruin — keep ≤2% of bankroll when possible."
+        );
+      }
+      if (alerts.flags.includes("stop_loss_active") || stop.stopLossActive) {
+        riskBits.push(
+          "Stop-loss / drawdown rules suggest pausing new bets until bankroll recovers."
+        );
+      }
+      const ok = window.confirm(
+        `Strategy alerts (save still allowed):\n\n• ${alerts.messages.join("\n• ")}${
+          riskBits.length ? `\n\nRisk-of-ruin:\n• ${riskBits.join("\n• ")}` : ""
+        }\n\nSave batch anyway?`
+      );
+      if (!ok) return;
+    }
+
     try {
       await ensureStorageInit();
       const allExisting = loadBatches();
@@ -334,9 +360,11 @@ export function BatchEntryTab({
         league={league}
         date={date}
         comboSettings={comboSettings}
+        bankrollStrategy={settings.bankrollStrategy}
         teamsQuality={teamsQuality}
         onChange={setMatches}
         onAddMatch={addMatch}
+        createEmptyMatch={() => emptyMatch(comboSettings)}
       />
 
       <BatchSummaryStrip
@@ -346,12 +374,10 @@ export function BatchEntryTab({
         date={date}
         batchName={batchName}
         comboSettings={comboSettings}
+        bankrollStrategy={settings.bankrollStrategy}
       />
 
       <div className="batch-actions">
-        <button type="button" className="btn btn-secondary" onClick={addMatch}>
-          + Add match
-        </button>
         <button type="button" className="btn btn-primary" onClick={saveBatch}>
           Save batch
         </button>

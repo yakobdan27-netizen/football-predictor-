@@ -9,6 +9,7 @@ import {
   isLowConcentration,
   type CorrectScoreAnalysis,
 } from "@/lib/prediction-log/correct-score";
+import { CORRECT_SCORE_INSUFFICIENT_MESSAGE } from "@/lib/prediction-log/correct-score-data";
 
 interface CorrectScorePanelProps {
   grid: number[][] | null | undefined;
@@ -19,7 +20,7 @@ export function CorrectScorePanel({ grid, label }: CorrectScorePanelProps) {
   if (!grid?.length) {
     return (
       <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.5rem 0 0" }}>
-        Correct score estimates need club history for a Dixon-Coles grid.
+        {CORRECT_SCORE_INSUFFICIENT_MESSAGE}
       </p>
     );
   }
@@ -161,7 +162,13 @@ export function CorrectScoreOneLiner({
 }: {
   snapshot: { home: number; away: number; probPct: number } | null | undefined;
 }) {
-  if (!snapshot) return null;
+  if (!snapshot) {
+    return (
+      <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+        {CORRECT_SCORE_INSUFFICIENT_MESSAGE}
+      </p>
+    );
+  }
   return (
     <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
       Most likely: {formatScoreline(snapshot.home, snapshot.away)} ({snapshot.probPct}%)
