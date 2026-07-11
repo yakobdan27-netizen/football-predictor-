@@ -1,5 +1,10 @@
-import type { PredictionBatch, LogMatch, LogMarketKey } from "./types";
-import type { ClubRecord, HistoryEntry, HistoryTypeKey } from "./club-record-types";
+import type { PredictionBatch, LogMatch, LogMarketKey, MatchSideLineup } from "./types";
+import type {
+  ClubLineupSnapshot,
+  ClubRecord,
+  HistoryEntry,
+  HistoryTypeKey,
+} from "./club-record-types";
 import { resolveLeagueId } from "./league-registry";
 import { applyCapacity } from "./club-capacity";
 import { applyBayesianFromMatch } from "./bayesian-update";
@@ -28,6 +33,34 @@ function newEntryId(): string {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const RECENT_LINEUPS_CAP = 5;
+
+function appendRecentLineup(
+  record: ClubRecord,
+  side: MatchSideLineup | undefined,
+  date: string,
+  opponentId: string,
+  matchId: string
+): ClubRecord {
+  if (!side?.starting?.length) return record;
+  const prev = record.recentLineups ?? [];
+  if (prev.some((s) => s.date === date && s.opponentId === opponentId)) {
+    return record;
+  }
+  // Also skip duplicate match via same date+starting fingerprint if re-synced
+  const snap: ClubLineupSnapshot = {
+    date,
+    formation: side.formation,
+    starting: side.starting.slice(0, 11),
+    opponentId,
+  };
+  const next = [...prev, snap]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-RECENT_LINEUPS_CAP);
+  void matchId;
+  return { ...record, recentLineups: next };
 }
 
 function appendEntry(
@@ -472,6 +505,21 @@ async function processMatch(
     awayUpdated,
     writeCtx.leagueBaselines ?? null,
     writeCtx.teamsQuality ?? null
+  );
+
+  homeUpdated = appendRecentLineup(
+    homeUpdated,
+    match.teamStats?.lineups?.home,
+    batch.date,
+    awayRecord.clubId,
+    match.id
+  );
+  awayUpdated = appendRecentLineup(
+    awayUpdated,
+    match.teamStats?.lineups?.away,
+    batch.date,
+    homeRecord.clubId,
+    match.id
   );
 
   const leagueId = batch.leagueId ?? resolveLeagueId(batch.league);

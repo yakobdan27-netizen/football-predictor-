@@ -1105,6 +1105,7 @@ const allNoData = blendSignals({
   h2h: { value: 0.5, reliability: 0 },
   you: { value: 0.5, reliability: 0 },
   luck: { value: 0.5, reliability: 0 },
+  lineup: { value: 0.5, reliability: 0 },
 });
 assert.equal(allNoData, 50);
 
@@ -1115,6 +1116,7 @@ const strongSignals = blendSignals({
   h2h: { value: 0.75, reliability: 0.5 },
   you: { value: 0.72, reliability: 1 },
   luck: { value: 0.55, reliability: 1 },
+  lineup: { value: 0.5, reliability: 0 },
 });
 assert.ok(strongSignals > 60);
 assert.ok(strongSignals < 80);
@@ -1126,6 +1128,7 @@ const thinDataSignals = blendSignals({
   h2h: { value: 0.5, reliability: 0 },
   you: { value: 0.5, reliability: 0 },
   luck: { value: 0.5, reliability: 0 },
+  lineup: { value: 0.5, reliability: 0 },
 });
 assert.ok(thinDataSignals > 50);
 assert.ok(thinDataSignals < 95);

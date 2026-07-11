@@ -564,6 +564,45 @@ export function BatchResultRow({
                   </ul>
                 </div>
               ) : null}
+              {match.teamStats?.lineups ? (
+                <div style={{ marginTop: "0.65rem", fontSize: "11px" }}>
+                  <strong>Lineups</strong>
+                  <div style={{ display: "grid", gap: "0.5rem", gridTemplateColumns: "1fr 1fr", marginTop: "0.35rem" }}>
+                    <div>
+                      <div style={{ color: "var(--muted)" }}>
+                        {match.homeTeam}
+                        {match.teamStats.lineups.home.formation
+                          ? ` · ${match.teamStats.lineups.home.formation}`
+                          : ""}
+                      </div>
+                      <div>
+                        XI: {match.teamStats.lineups.home.starting.join(", ") || "—"}
+                      </div>
+                      {match.teamStats.lineups.home.substitutes.length > 0 ? (
+                        <div style={{ color: "var(--muted)" }}>
+                          Subs: {match.teamStats.lineups.home.substitutes.join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div>
+                      <div style={{ color: "var(--muted)" }}>
+                        {match.awayTeam}
+                        {match.teamStats.lineups.away.formation
+                          ? ` · ${match.teamStats.lineups.away.formation}`
+                          : ""}
+                      </div>
+                      <div>
+                        XI: {match.teamStats.lineups.away.starting.join(", ") || "—"}
+                      </div>
+                      {match.teamStats.lineups.away.substitutes.length > 0 ? (
+                        <div style={{ color: "var(--muted)" }}>
+                          Subs: {match.teamStats.lineups.away.substitutes.join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
             <BatchResultAdvanced match={match} onChange={onChange} />
           </td>

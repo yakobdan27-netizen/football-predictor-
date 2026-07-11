@@ -48,6 +48,11 @@ export function SavedBatchesTab({
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+  const [autoFilling, setAutoFilling] = useState(false);
+  const [autoFillMsg, setAutoFillMsg] = useState<string | null>(null);
+  const [autoFillAttempted, setAutoFillAttempted] = useState<Record<string, boolean>>({});
   const [kindFilter, setKindFilter] = useState<"all" | "manual" | "recommended">("all");
   const [tierFilter, setTierFilter] = useState<"all" | "safe" | "balanced" | "aggressive">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "PENDING" | "SETTLED">("all");
@@ -59,12 +64,84 @@ export function SavedBatchesTab({
       setExpandedId(batch.id);
       setDraft(JSON.parse(JSON.stringify(batch)) as PredictionBatch);
       onHighlightConsumed?.();
+      void autoFillFromLivescore(batch.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per highlight
   }, [highlightBatchId, batches, onHighlightConsumed]);
+
+  async function autoFillFromLivescore(batchId: string) {
+    if (autoFillAttempted[batchId]) return;
+    setAutoFillAttempted((prev) => ({ ...prev, [batchId]: true }));
+    setAutoFilling(true);
+    setAutoFillMsg("Auto-filling from Livescore…");
+
+    let remaining: string[] = [];
+    let filledTotal = 0;
+    let failedTotal = 0;
+    const errorParts: string[] = [];
+    let rounds = 0;
+
+    try {
+      do {
+        rounds++;
+        const res = await fetch("/api/scrape-livescore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            batchId,
+            matchIds: remaining.length ? remaining : undefined,
+          }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          filled?: number;
+          failed?: number;
+          remaining?: string[];
+          errors?: string[];
+        };
+
+        if (!res.ok) {
+          throw new Error(data.error ?? "Livescore auto-fill failed");
+        }
+
+        filledTotal += data.filled ?? 0;
+        failedTotal += data.failed ?? 0;
+        if (data.errors?.length) errorParts.push(...data.errors);
+        remaining = data.remaining ?? [];
+
+        await reloadBatchesFromServer();
+        const all = loadBatches();
+        const refreshed = all.find((b) => b.id === batchId);
+        if (refreshed) {
+          setDraft(JSON.parse(JSON.stringify(refreshed)) as PredictionBatch);
+        }
+        onUpdate();
+      } while (remaining.length > 0 && rounds < 15);
+
+      const parts = [
+        filledTotal > 0 ? `Auto-filled ${filledTotal} match(es) from Livescore` : "No matches needed Livescore fill",
+      ];
+      if (failedTotal > 0) parts.push(`${failedTotal} failed — enter manually`);
+      if (remaining.length > 0) parts.push(`${remaining.length} still pending`);
+      if (errorParts.length) parts.push(errorParts.slice(0, 2).join("; "));
+      setAutoFillMsg(parts.join(". "));
+    } catch (e) {
+      setAutoFillMsg(
+        e instanceof Error
+          ? `${e.message} — enter results manually.`
+          : "Livescore auto-fill failed — enter results manually."
+      );
+    } finally {
+      setAutoFilling(false);
+      setTimeout(() => setAutoFillMsg(null), 8000);
+    }
+  }
 
   function openBatch(batch: PredictionBatch) {
     setExpandedId(batch.id);
     setDraft(JSON.parse(JSON.stringify(batch)) as PredictionBatch);
+    void autoFillFromLivescore(batch.id);
   }
 
   function summarizeRecommendedSettlement(batch: PredictionBatch, all: PredictionBatch[]): string {
@@ -218,6 +295,72 @@ export function SavedBatchesTab({
     }
   }
 
+  async function syncLast5FromLivescore() {
+    setBulkSyncing(true);
+    setBulkMsg("Syncing last 5 results per league from Livescore…");
+    let remaining: string[] | undefined;
+    let scraped = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: string[] = [];
+    let rounds = 0;
+
+    try {
+      do {
+        rounds++;
+        const res = await fetch("/api/livescore-bulk-history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            maxLeagues: 1,
+            leagues: remaining?.length ? remaining : undefined,
+          }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          scraped?: number;
+          skippedDuplicates?: number;
+          failed?: number;
+          doneLeagues?: string[];
+          remainingLeagues?: string[];
+          errors?: string[];
+        };
+        if (!res.ok) throw new Error(data.error ?? "Bulk sync failed");
+
+        scraped += data.scraped ?? 0;
+        skipped += data.skippedDuplicates ?? 0;
+        failed += data.failed ?? 0;
+        if (data.errors?.length) errors.push(...data.errors);
+        remaining = data.remainingLeagues ?? [];
+
+        await reloadBatchesFromServer();
+        onUpdate();
+      } while ((remaining?.length ?? 0) > 0 && rounds < 20);
+
+      setBulkMsg(
+        [
+          `Bulk sync done: ${scraped} scraped`,
+          skipped ? `${skipped} duplicates skipped` : null,
+          failed ? `${failed} failed` : null,
+          remaining?.length ? `${remaining.length} leagues left` : null,
+          errors.length ? errors.slice(0, 2).join("; ") : null,
+        ]
+          .filter(Boolean)
+          .join(". ")
+      );
+    } catch (e) {
+      setBulkMsg(
+        e instanceof Error
+          ? `${e.message} — try again later.`
+          : "Bulk sync failed — try again later."
+      );
+    } finally {
+      setBulkSyncing(false);
+      setTimeout(() => setBulkMsg(null), 10000);
+    }
+  }
+
   const visibleBatches = batches.filter((batch) => {
     if (kindFilter !== "all" && (batch.batchKind ?? "manual") !== kindFilter) return false;
     if (tierFilter !== "all" && batch.recommendationTier !== tierFilter) return false;
@@ -277,19 +420,33 @@ export function SavedBatchesTab({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={syncing}
+            disabled={syncing || bulkSyncing}
             onClick={() => void syncFromApi()}
           >
             {syncing ? "Syncing…" : "Sync results from API"}
           </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={bulkSyncing || syncing}
+            onClick={() => void syncLast5FromLivescore()}
+          >
+            {bulkSyncing ? "Bulk syncing…" : "Sync last 5 results (Livescore)"}
+          </button>
           <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-            Fills empty actuals from api-sports.io by batch date and home/away team names.
-            {expandedId ? " Syncing open batch only." : " Syncing all pending batches."}
+            Opening a batch auto-fills finished matches from Livescore (manual entry always works).
+            Bulk sync pulls the last 5 finished 2025/26 results per league into club history.
+            {expandedId ? " API sync targets the open batch only." : ""}
           </span>
         </div>
         {syncMsg && (
           <p style={{ fontSize: "0.8125rem", color: "var(--accent)", marginTop: "0.5rem" }}>
             {syncMsg}
+          </p>
+        )}
+        {bulkMsg && (
+          <p style={{ fontSize: "0.8125rem", color: "var(--accent)", marginTop: "0.5rem" }}>
+            {bulkMsg}
           </p>
         )}
       </div>
@@ -345,6 +502,17 @@ export function SavedBatchesTab({
                 )}
 
                 <h3 style={{ fontSize: "1rem", margin: "0 0 0.75rem" }}>Enter results</h3>
+                {(autoFilling || autoFillMsg) && draft.id === batch.id && (
+                  <p
+                    style={{
+                      fontSize: "0.8125rem",
+                      color: "var(--accent)",
+                      margin: "0 0 0.75rem",
+                    }}
+                  >
+                    {autoFilling ? "Auto-filling from Livescore…" : autoFillMsg}
+                  </p>
+                )}
                 <BatchMatchTable
                   mode="result"
                   matches={draft.matches}

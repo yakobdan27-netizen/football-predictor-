@@ -102,6 +102,20 @@ export interface MatchGoalTiming {
   secondHalfCards?: boolean;
 }
 
+export interface MatchSideLineup {
+  starting: string[];
+  substitutes: string[];
+  /** e.g. "4-3-3" when Livescore provides Fo. */
+  formation?: string;
+}
+
+export interface MatchLineups {
+  home: MatchSideLineup;
+  away: MatchSideLineup;
+}
+
+export type MatchResultSource = "manual" | "livescore" | "api-football" | "livescore-bulk";
+
 export interface MatchTeamStats {
   home: TeamSideStats;
   away: TeamSideStats;
@@ -113,6 +127,8 @@ export interface MatchTeamStats {
   penaltiesAwarded?: { home?: number; away?: number };
   /** When true, learning writers apply a reduced sample weight. */
   abnormalMatch?: boolean;
+  /** Starting XI + substitutes when scraped or entered. */
+  lineups?: MatchLineups;
 }
 
 export interface LogMatch {
@@ -137,6 +153,12 @@ export interface LogMatch {
   primaryGrade?: GradedMarketDetail;
   /** Grade of frozen better-alternative when present and gradable. */
   altGrade?: GradedMarketDetail & { marketLabel: string; predictionLabel: string };
+  /** How FT/stats were last filled (manual remains fallback). */
+  resultSource?: MatchResultSource;
+  /** Canonical Livescore match URL when known. */
+  livescoreUrl?: string;
+  /** Livescore event id (Eid). */
+  livescoreEventId?: string;
 }
 
 export type RecommendationTier = "safe" | "balanced" | "aggressive";
@@ -150,6 +172,8 @@ export interface RecommendedPickMathSnapshot {
     headToHead: number;
     yourAccuracy: number;
     luckyNudge: number;
+    /** Optional supportive lineup/formation context (0–100). */
+    lineupContext?: number;
   };
   reliability: {
     capacityEdge: number;
@@ -157,6 +181,7 @@ export interface RecommendedPickMathSnapshot {
     headToHead: number;
     yourAccuracy: number;
     luckyNudge: number;
+    lineupContext?: number;
   };
   pSignal: number;
   oddsUsed: number | null;
@@ -484,6 +509,12 @@ export interface LeagueAdjustAudit {
   appliedPct: number;
 }
 
+export interface BulkScrapeMeta {
+  season: "2025/2026";
+  source: "livescore-bulk";
+  scrapedAt: string;
+}
+
 export interface PredictionBatch {
   id: string;
   date: string;
@@ -500,6 +531,8 @@ export interface PredictionBatch {
   settlementSummary?: string;
   matches: LogMatch[];
   recommended?: RecommendedBatch;
+  /** Present on Livescore bulk last-5 history batches. */
+  bulkScrapeMeta?: BulkScrapeMeta;
 }
 
 export type OddsBandId = "1.00-1.50" | "1.51-2.00" | "2.01-2.50" | "2.51-3.00";

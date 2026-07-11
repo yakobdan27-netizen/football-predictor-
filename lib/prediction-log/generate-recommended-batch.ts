@@ -115,6 +115,9 @@ function buildPickMathSnapshot(
       headToHead: Math.round(mp.signals.h2h.value * 100),
       yourAccuracy: Math.round(mp.signals.you.value * 100),
       luckyNudge: Math.round(mp.signals.luck.value * 100),
+      ...(mp.signals.lineup.reliability > 0
+        ? { lineupContext: Math.round(mp.signals.lineup.value * 100) }
+        : {}),
     },
     reliability: {
       capacityEdge: Number(mp.signals.cap.reliability.toFixed(2)),
@@ -122,6 +125,9 @@ function buildPickMathSnapshot(
       headToHead: Number(mp.signals.h2h.reliability.toFixed(2)),
       yourAccuracy: Number(mp.signals.you.reliability.toFixed(2)),
       luckyNudge: Number(mp.signals.luck.reliability.toFixed(2)),
+      ...(mp.signals.lineup.reliability > 0
+        ? { lineupContext: Number(mp.signals.lineup.reliability.toFixed(2)) }
+        : {}),
     },
     pSignal: mp.pSignal,
     oddsUsed: odds ?? null,

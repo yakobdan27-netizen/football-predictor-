@@ -126,6 +126,13 @@ export interface ClubStatMetadata {
   lastUpdated: string;
 }
 
+export interface ClubLineupSnapshot {
+  date: string;
+  formation?: string;
+  starting: string[];
+  opponentId: string;
+}
+
 export interface ClubRecord {
   clubId: string;
   clubName: string;
@@ -137,6 +144,8 @@ export interface ClubRecord {
   capacity: ClubCapacity;
   statMetadata?: ClubStatMetadata;
   bayesianMarkets?: ClubBayesianMarkets;
+  /** Last few scraped starting XIs (capped); optional supportive context only. */
+  recentLineups?: ClubLineupSnapshot[];
 }
 
 export interface ClubIndexEntry {

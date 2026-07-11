@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/livescore-bulk-history",
+      "schedule": "0 7 * * *"
+    }
+  ],
   "functions": {
     "app/api/backtest/route.ts": {
       "maxDuration": 60
@@ -28,6 +34,15 @@
       "maxDuration": 60
     },
     "app/api/sync-results/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/scrape-livescore/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/livescore-fixtures/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/livescore-bulk-history/route.ts": {
       "maxDuration": 60
     },
     "app/api/ml-model/route.ts": {

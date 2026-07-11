@@ -35,6 +35,7 @@ import {
 import type {
   CombinedOddsSettings,
   LogMatch,
+  MatchLineups,
   PredictionBatch,
   RecommendationSettings,
 } from "@/lib/prediction-log/types";
@@ -110,6 +111,8 @@ export function BatchEntryTab({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [noReco, setNoReco] = useState(false);
+  const [loadingFixtures, setLoadingFixtures] = useState(false);
+  const [fixtureMsg, setFixtureMsg] = useState<string | null>(null);
 
   function addMatch() {
     setMatches((prev) => [...prev, emptyMatch(comboSettings)]);
@@ -118,6 +121,73 @@ export function BatchEntryTab({
   function handleLeagueChange(newLeague: string) {
     setLeague(newLeague);
     setMatches((prev) => prev.map((m) => sanitizeTeamsForLeague(m, newLeague)));
+  }
+
+  async function loadFixturesFromLivescore() {
+    setError(null);
+    setFixtureMsg(null);
+    setLoadingFixtures(true);
+    try {
+      const res = await fetch("/api/livescore-fixtures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, league, competition: league }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        fixtures?: Array<{
+          eventId: string;
+          homeTeam: string;
+          awayTeam: string;
+          lineups?: MatchLineups;
+        }>;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Failed to load fixtures");
+
+      const fixtures = data.fixtures ?? [];
+      const leagueTeams = new Set(teamsForLeague(league));
+      const usable = fixtures.filter(
+        (f) => leagueTeams.has(f.homeTeam) && leagueTeams.has(f.awayTeam) && f.homeTeam !== f.awayTeam
+      );
+
+      if (!usable.length) {
+        setFixtureMsg(
+          fixtures.length
+            ? `Found ${fixtures.length} Livescore fixture(s) but none matched ${league} team names. Enter teams manually.`
+            : "No Livescore fixtures found for this date. Enter teams manually."
+        );
+        return;
+      }
+
+      const settings = comboSettings;
+      const imported: LogMatch[] = usable.map((f) => ({
+        ...emptyMatch(settings),
+        homeTeam: f.homeTeam,
+        awayTeam: f.awayTeam,
+        livescoreEventId: f.eventId,
+        ...(f.lineups
+          ? { teamStats: { home: {}, away: {}, lineups: f.lineups } }
+          : {}),
+      }));
+
+      setMatches((prev) => {
+        const kept = prev.filter((m) => m.homeTeam.trim() || m.awayTeam.trim());
+        return [...kept, ...imported];
+      });
+      setFixtureMsg(
+        `Loaded ${imported.length} fixture(s) from Livescore` +
+          (usable.some((f) => f.lineups) ? " (lineups attached when published)." : ".")
+      );
+    } catch (e) {
+      setFixtureMsg(
+        e instanceof Error
+          ? `${e.message} — enter teams manually.`
+          : "Fixture load failed — enter teams manually."
+      );
+    } finally {
+      setLoadingFixtures(false);
+    }
   }
 
   async function saveBatch() {
@@ -239,6 +309,22 @@ export function BatchEntryTab({
               ))}
             </select>
           </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loadingFixtures || !date}
+              onClick={() => void loadFixturesFromLivescore()}
+            >
+              {loadingFixtures ? "Loading fixtures…" : "Load fixtures from Livescore"}
+            </button>
+            <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+              Prefills home/away for this date (manual entry always works).
+            </span>
+          </div>
+          {fixtureMsg && (
+            <p style={{ fontSize: "0.8125rem", color: "var(--accent)", margin: 0 }}>{fixtureMsg}</p>
+          )}
         </div>
       </div>
 

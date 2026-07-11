@@ -5,7 +5,7 @@ export type ConfidenceBand = "strong" | "solid" | "coin_flip" | "avoid";
 
 export const FORMULA_CONFIG = {
   K_fullTrustSampleSize: 8,
-  baseWeights: { cap: 0.32, form: 0.22, h2h: 0.18, you: 0.23, luck: 0.05 },
+  baseWeights: { cap: 0.30, form: 0.21, h2h: 0.17, you: 0.22, luck: 0.05, lineup: 0.05 },
   odds: { safeThreshold: 6, spread: 20 },
   lambda_riskSensitivity: 0.45,
   riskCeiling: 0.60,

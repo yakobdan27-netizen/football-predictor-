@@ -32,6 +32,19 @@ export async function setJson(key: string, value: unknown): Promise<void> {
   await vercelKv.set(key, value);
 }
 
+/** Persist JSON with optional TTL (seconds). Memory fallback ignores TTL. */
+export async function setJsonEx(
+  key: string,
+  value: unknown,
+  ttlSeconds: number
+): Promise<void> {
+  if (useMemoryFallback()) {
+    memoryStore.set(key, JSON.stringify(value));
+    return;
+  }
+  await vercelKv.set(key, value, { ex: ttlSeconds });
+}
+
 export async function delKey(key: string): Promise<void> {
   if (useMemoryFallback()) {
     memoryStore.delete(key);

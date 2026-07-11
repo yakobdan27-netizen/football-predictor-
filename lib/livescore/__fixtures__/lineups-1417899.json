@@ -1,0 +1,43 @@
+{
+  "Eid": "1417899",
+  "Lu": [
+    {
+      "Tnb": 1,
+      "Fo": "4-2-3-1",
+      "Ps": [
+        { "Fn": "Unai", "Ln": "Simon", "Fp": "1:1" },
+        { "Fn": "Marc", "Ln": "Cucurella", "Fp": "2:4" },
+        { "Fn": "Aymeric", "Ln": "Laporte", "Fp": "2:3" },
+        { "Fn": "Pau", "Ln": "Cubarsi", "Fp": "2:2" },
+        { "Fn": "Pedro", "Ln": "Porro", "Fp": "2:1" },
+        { "Fn": "Fabian", "Ln": "Ruiz", "Fp": "3:2" },
+        { "Snm": "Rodri", "Fp": "3:1" },
+        { "Fn": "Alex", "Ln": "Baena", "Fp": "4:3" },
+        { "Fn": "Dani", "Ln": "Olmo", "Fp": "4:2" },
+        { "Fn": "Lamine", "Ln": "Yamal", "Fp": "4:1" },
+        { "Fn": "Mikel", "Ln": "Oyarzabal", "Fp": "4:0" },
+        { "Fn": "Pedri", "Ln": "" },
+        { "Fn": "Eric", "Ln": "Garcia" }
+      ]
+    },
+    {
+      "Tnb": 2,
+      "Fo": "4-3-3",
+      "Ps": [
+        { "Fn": "Thibaut", "Ln": "Courtois", "Fp": "1:1" },
+        { "Fn": "Timothy", "Ln": "Castagne", "Fp": "2:1" },
+        { "Fn": "Wout", "Ln": "Faes", "Fp": "2:2" },
+        { "Fn": "Zeno", "Ln": "Debast", "Fp": "2:3" },
+        { "Fn": "Maxim", "Ln": "De Cuyper", "Fp": "2:4" },
+        { "Fn": "Amadou", "Ln": "Onana", "Fp": "3:1" },
+        { "Fn": "Youri", "Ln": "Tielemans", "Fp": "3:2" },
+        { "Fn": "Kevin", "Ln": "De Bruyne", "Fp": "3:3" },
+        { "Fn": "Jeremy", "Ln": "Doku", "Fp": "4:1" },
+        { "Fn": "Romelu", "Ln": "Lukaku", "Fp": "4:2" },
+        { "Fn": "Charles", "Ln": "De Ketelaere", "Fp": "4:3" },
+        { "Fn": "Axel", "Ln": "Witsel" },
+        { "Fn": "Leandro", "Ln": "Trossard" }
+      ]
+    }
+  ]
+}

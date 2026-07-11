@@ -24,6 +24,7 @@ import {
 import { BAYESIAN_CONFIG } from "./bayesian-config";
 import { computeBayesianMatchPrediction } from "./bayesian-predict";
 import { applyLeagueAdjustToPSignal } from "./league-character";
+import { computeLineupContextSignal } from "./lineup-context";
 import type { LeagueAdjustAudit } from "./types";
 
 export interface SignalResult {
@@ -41,6 +42,7 @@ export interface MasterProbabilityResult {
     h2h: SignalResult;
     you: SignalResult;
     luck: SignalResult;
+    lineup: SignalResult;
   };
   breakdown: string;
   dataSampleSize: number;
@@ -221,6 +223,7 @@ export function blendSignals(signals: {
   h2h: SignalResult;
   you: SignalResult;
   luck: SignalResult;
+  lineup: SignalResult;
 }): number {
   const weights = baseWeights;
   const entries: [number, SignalResult][] = [
@@ -229,6 +232,7 @@ export function blendSignals(signals: {
     [weights.h2h, signals.h2h],
     [weights.you, signals.you],
     [weights.luck, signals.luck],
+    [weights.lineup, signals.lineup],
   ];
 
   let weightedSum = 0;
@@ -249,13 +253,24 @@ export function blendSignals(signals: {
  * pulls the result away from 50 (but dampened toward uncertainty).
  */
 export function blendSignalsWithFallback(
-  signals: { cap: SignalResult; form: SignalResult; h2h: SignalResult; you: SignalResult; luck: SignalResult },
+  signals: {
+    cap: SignalResult;
+    form: SignalResult;
+    h2h: SignalResult;
+    you: SignalResult;
+    luck: SignalResult;
+    lineup: SignalResult;
+  },
   userConfidence: number
 ): number {
   const raw = blendSignals(signals);
   const totalReliability =
-    signals.cap.reliability + signals.form.reliability + signals.h2h.reliability +
-    signals.you.reliability + signals.luck.reliability;
+    signals.cap.reliability +
+    signals.form.reliability +
+    signals.h2h.reliability +
+    signals.you.reliability +
+    signals.luck.reliability +
+    signals.lineup.reliability;
   if (totalReliability > 0) return raw;
   return Math.round(50 + (userConfidence - 50) * 0.3);
 }
@@ -312,8 +327,9 @@ export function computeMasterProbability(
   const h2h = computeH2HSignal(homeRecord, awayRecord, marketKey);
   const you = computeYourAccuracy(ctx.analysis, marketKey);
   const luck = computeLuckySignal(pick.odds, luckyNumbers);
+  const lineup = computeLineupContextSignal(homeRecord, awayRecord);
 
-  const signals = { cap, form, h2h, you, luck };
+  const signals = { cap, form, h2h, you, luck, lineup };
   const pCustom = blendSignalsWithFallback(signals, pick.confidence);
   const dataSampleSize = totalDataSampleSize(signals);
   const minSample = Math.min(homeCap?.sampleSize ?? 0, awayCap?.sampleSize ?? 0);
@@ -427,6 +443,7 @@ export function computeMasterProbability(
   if (h2h.reliability > 0) parts.push(`H2H ${(h2h.value * 100).toFixed(0)}%`);
   if (you.reliability > 0) parts.push(`You ${(you.value * 100).toFixed(0)}%`);
   if (luck.reliability > 0) parts.push(`Luck +5%`);
+  if (lineup.reliability > 0) parts.push(`XI ${(lineup.value * 100).toFixed(0)}%`);
   if (ctx.leagueCharacterProfile) parts.push("league");
   const breakdown =
     parts.length > 0
