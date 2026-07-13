@@ -158,7 +158,9 @@ function resolveResultForType(
     return teamStatMarketResult(match, ts.totalShots, marketKey);
   }
   if (type === "shotsOnTarget" && ts?.shotsOnTarget != null) {
-    return teamStatMarketResult(match, ts.shotsOnTarget, "sot_ou");
+    const sideMarket: LogMarketKey = venue === "home" ? "home_sot_ou" : "away_sot_ou";
+    const marketKey: LogMarketKey = match.predictions[sideMarket] ? sideMarket : "sot_ou";
+    return teamStatMarketResult(match, ts.shotsOnTarget, marketKey);
   }
   if (type === "corners" && ts?.corners != null) {
     return teamStatMarketResult(match, ts.corners, "corners_ou");
@@ -170,7 +172,13 @@ function resolveResultForType(
   const marketForType: Partial<Record<HistoryTypeKey, LogMarketKey>> = {
     winLose: "1x2",
     bothTeamsScore: "btts",
-    shotsOnTarget: "sot_ou",
+    shotsOnTarget: venue === "home"
+      ? match.predictions.home_sot_ou
+        ? "home_sot_ou"
+        : "sot_ou"
+      : match.predictions.away_sot_ou
+        ? "away_sot_ou"
+        : "sot_ou",
     totalShots: venue === "home"
       ? match.predictions.home_shots_ou
         ? "home_shots_ou"

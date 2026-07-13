@@ -32,6 +32,8 @@ export function leagueDeltaForMarket(
     marketKey === "home_shots_ou" ||
     marketKey === "away_shots_ou" ||
     marketKey === "sot_ou" ||
+    marketKey === "home_sot_ou" ||
+    marketKey === "away_sot_ou" ||
     marketKey === "corners_ou" ||
     marketKey === "offsides_ou"
   ) {

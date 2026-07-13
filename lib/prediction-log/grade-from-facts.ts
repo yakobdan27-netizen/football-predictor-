@@ -102,6 +102,12 @@ export function deriveActualsFromFacts(
   if (ts.away?.totalShots != null && Number.isFinite(ts.away.totalShots)) {
     out.away_shots_ou = { actual: ts.away.totalShots };
   }
+  if (ts.home?.shotsOnTarget != null && Number.isFinite(ts.home.shotsOnTarget)) {
+    out.home_sot_ou = { actual: ts.home.shotsOnTarget };
+  }
+  if (ts.away?.shotsOnTarget != null && Number.isFinite(ts.away.shotsOnTarget)) {
+    out.away_sot_ou = { actual: ts.away.shotsOnTarget };
+  }
 
   return out;
 }

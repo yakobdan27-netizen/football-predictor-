@@ -3,21 +3,15 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  generateTieredRecommendationBatchesAsync,
+  generateBestRecommendationBatchAsync,
   saveLuckyNumbers,
   upsertBatch,
 } from "@/lib/prediction-log/storage";
 import { parseLuckyNumbersInput, formatLuckyNumbers } from "@/lib/prediction-log/lucky-numbers";
-import type { PredictionBatch, RecommendationTier } from "@/lib/prediction-log/types";
+import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { RecommendationSettingsPanel } from "./recommendation-settings-panel";
-import { RecommendationBatchSummaryCard } from "./recommendation-batch-summary-card";
+import { UnifiedRecommendationCard } from "./unified-recommendation-card";
 import { usePredictionLogData } from "./use-prediction-log-data";
-
-const TIER_ORDER: Record<RecommendationTier, number> = {
-  safe: 0,
-  balanced: 1,
-  aggressive: 2,
-};
 
 function batchHasPredictions(batch: PredictionBatch): boolean {
   return batch.matches.some((m) => Object.keys(m.predictions).length > 0);
@@ -45,22 +39,22 @@ export function RecommendationApp() {
     () =>
       batches
         .filter((b) => b.batchKind === "recommended" && b.recommended)
-        .sort((a, b) => {
-          const tierDelta =
-            TIER_ORDER[a.recommendationTier ?? "balanced"] -
-            TIER_ORDER[b.recommendationTier ?? "balanced"];
-          if (tierDelta !== 0) return tierDelta;
-          return b.createdAt.localeCompare(a.createdAt);
-        }),
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [batches]
   );
+
+  const batchById = useMemo(() => {
+    const map = new Map<string, PredictionBatch>();
+    for (const b of batches) map.set(b.id, b);
+    return map;
+  }, [batches]);
 
   const [selectedId, setSelectedId] = useState<string>("");
   const [generating, setGenerating] = useState(false);
   const [luckyInput, setLuckyInput] = useState(
     () => formatLuckyNumbers(luckyNumbers?.numbers ?? [])
   );
-  const [lastGeneratedIds, setLastGeneratedIds] = useState<string[]>([]);
+  const [lastGeneratedId, setLastGeneratedId] = useState<string>("");
 
   const effectiveId = selectedId || eligible[0]?.id || "";
 
@@ -75,17 +69,14 @@ export function RecommendationApp() {
     try {
       const nums = parseLuckyNumbersInput(luckyInput);
       saveLuckyNumbers(nums);
-      const tierBatches = await generateTieredRecommendationBatchesAsync(
+      const best = await generateBestRecommendationBatchAsync(
         batch,
         recoSettings,
         learnerEnabled,
         nums
       );
-      for (const tierBatch of tierBatches) {
-        await upsertBatch(tierBatch);
-      }
-      const savedIds = tierBatches.map((tb) => tb.id);
-      setLastGeneratedIds(savedIds);
+      await upsertBatch(best);
+      setLastGeneratedId(best.id);
       await refresh();
     } finally {
       setGenerating(false);
@@ -165,9 +156,9 @@ export function RecommendationApp() {
         {generating ? "Generating…" : "Generate Recommendation"}
       </button>
 
-      {lastGeneratedIds.length > 0 && (
+      {lastGeneratedId && (
         <p style={{ margin: "0 0 1rem", fontSize: "0.8125rem", color: "var(--muted)" }}>
-          Saved: {lastGeneratedIds.join(", ")}. Settle results on the{" "}
+          Saved: {lastGeneratedId}. Settle results on the{" "}
           <Link href="/prediction-log" style={{ color: "var(--accent)" }}>
             Prediction Log
           </Link>
@@ -183,7 +174,11 @@ export function RecommendationApp() {
       ) : (
         <div style={{ display: "grid", gap: "1rem" }}>
           {recommendedBatches.map((batch) => (
-            <RecommendationBatchSummaryCard key={batch.id} batch={batch} />
+            <UnifiedRecommendationCard
+              key={batch.id}
+              batch={batch}
+              sourceBatch={batch.sourceBatchId ? batchById.get(batch.sourceBatchId) ?? null : null}
+            />
           ))}
         </div>
       )}

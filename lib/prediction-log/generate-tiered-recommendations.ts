@@ -5,16 +5,12 @@ import {
 } from "./generate-recommended-batch";
 import { overlayLearnerOnBatch } from "./learner-recommendations";
 import {
-  AGGRESSIVE_TIER_MIN_PFINAL,
   BALANCED_TIER_MIN_PFINAL,
   RECO_ENGINE_VERSION,
-  SAFE_TIER_MAX_MATCHES,
-  SAFE_TIER_MAX_RISK,
 } from "./recommendation-config";
 import { computeBatchRisk, activeLegsFromRecommended } from "./dynamic-batch-risk";
 import { compareWeakestByConcentration } from "./correct-score";
 import { attachCorrectScoreToBatch } from "./correct-score-freeze";
-import { passesBayesianIntervalGate } from "./bayesian-tier";
 import { FORMULA_CONFIG, confidenceBand } from "./master-probability-config";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import type { ScoredMatchCandidate } from "./match-risk-score";
@@ -24,7 +20,6 @@ import {
   collectPriorOccupiedMarkets,
   filterCandidatesByOccupiedMarkets,
   formatSameDateDedupNotice,
-  occupiedFromCandidates,
 } from "./same-date-market-dedup";
 import { resolveLeagueCharacterProfile } from "./league-profiles";
 import type {
@@ -37,7 +32,6 @@ import type {
   RecommendationSettings,
   RecommendedBatch,
   RecommendedMatch,
-  RecommendationTier,
   TeamCharacteristicsStore,
 } from "./types";
 import type { TeamsQualityStore } from "./teams-quality-types";
@@ -46,48 +40,17 @@ import {
   type TierFreezeMetadata,
 } from "./freeze-batch-snapshot";
 
-const CORE_MARKETS = new Set(["1x2", "double_chance", "btts", "home_goals_ou", "away_goals_ou"]);
+const BEST_BATCH_LABEL = "Recommended Prediction";
 
-const TIER_META: Record<
-  RecommendationTier,
-  { label: string; batchLabel: string; suffix: string }
-> = {
-  safe: {
-    label: "EXTREMELY SAFE – Minimal Risk",
-    batchLabel: "Extremely Safe",
-    suffix: "SAFE",
-  },
-  balanced: {
-    label: "RECOMMENDED – Balanced & Reliable",
-    batchLabel: "Recommended",
-    suffix: "BAL",
-  },
-  aggressive: {
-    label: "AGGRESSIVE – Best Alternative Markets",
-    batchLabel: "Aggressive",
-    suffix: "AGG",
-  },
-};
-
-export interface TieredRecommendationResult {
+export interface BestRecommendationResult {
   sourceBatch: PredictionBatch;
-  tiers: PredictionBatch[];
+  best: PredictionBatch;
 }
 
 function sortByStrength(a: ScoredMatchCandidate, b: ScoredMatchCandidate): number {
   const aScore = a.pick.pSignal ?? a.combinedScore;
   const bScore = b.pick.pSignal ?? b.combinedScore;
   return bScore - aScore || b.combinedScore - a.combinedScore || b.riskAdjustedScore - a.riskAdjustedScore;
-}
-
-function marketIsCore(candidate: ScoredMatchCandidate): boolean {
-  return CORE_MARKETS.has(candidate.marketKey);
-}
-
-function signalAgreement(candidate: ScoredMatchCandidate): number {
-  const signals = candidate.pick.mathSnapshot?.signals;
-  if (!signals) return 0;
-  return Object.values(signals).filter((value) => value >= 55).length;
 }
 
 function isAlternativeCandidate(candidate: ScoredMatchCandidate): boolean {
@@ -216,51 +179,6 @@ function trimByConstraints(
   return { selected: remaining, removed };
 }
 
-function selectSafeCandidates(
-  pool: ScoredMatchCandidate[],
-  allBatches: PredictionBatch[],
-  analysis: AnalysisHistory,
-  minPFinal: number,
-  teamsQuality?: TeamsQualityStore | null,
-  leagueCharacterProfile?: LeagueCharacterProfile | null
-): { selected: ScoredMatchCandidate[]; removed: ScoredMatchCandidate[] } {
-  const sorted = [...pool].sort((a, b) => {
-    const agreementDelta = signalAgreement(b) - signalAgreement(a);
-    return agreementDelta || sortByStrength(a, b);
-  });
-  if (sorted.length === 0) return { selected: [], removed: [] };
-
-  const selected: ScoredMatchCandidate[] = [sorted[0]!];
-  for (const candidate of sorted.slice(1, SAFE_TIER_MAX_MATCHES + 2)) {
-    if (selected.length >= SAFE_TIER_MAX_MATCHES) break;
-    if (
-      !passesBayesianIntervalGate(
-        "safe",
-        candidate.pick.mathSnapshot?.statLayer?.bayesianLayer?.intervalWidth
-      )
-    ) {
-      continue;
-    }
-    const next = [...selected, candidate];
-    const risk = selectionRisk(next, allBatches, analysis, teamsQuality, leagueCharacterProfile);
-    if (
-      risk.rBatch <= SAFE_TIER_MAX_RISK &&
-      (risk.batchConfidence == null || risk.batchConfidence >= minPFinal)
-    ) {
-      selected.push(candidate);
-    }
-  }
-  return trimByConstraints(
-    selected,
-    allBatches,
-    analysis,
-    SAFE_TIER_MAX_RISK,
-    minPFinal,
-    teamsQuality,
-    leagueCharacterProfile
-  );
-}
-
 function pickSourceMatch(sourceBatch: PredictionBatch, matchId: string): LogMatch {
   const match = sourceBatch.matches.find((entry) => entry.id === matchId);
   if (!match) {
@@ -381,10 +299,9 @@ function freezeRecommendedBatch(
   };
 }
 
-function createTierBatch(
+function createBestBatch(
   sourceBatch: PredictionBatch,
   recommended: RecommendedBatch,
-  tier: RecommendationTier,
   recommendationBaseId: string,
   allBatches: PredictionBatch[],
   analysis: AnalysisHistory,
@@ -396,24 +313,22 @@ function createTierBatch(
   leagueCharacterProfile?: LeagueCharacterProfile | null
 ): PredictionBatch {
   const generatedAt = new Date().toISOString();
-  const recommendationId = `${recommendationBaseId}-${TIER_META[tier].suffix}`;
+  const recommendationId = recommendationBaseId;
 
   const batch: PredictionBatch = {
     id: recommendationId,
     recommendationId,
     batchKind: "recommended",
     sourceBatchId: sourceBatch.id,
-    recommendationTier: tier,
     recommendationStatus: "PENDING",
     date: batchMatchDay(sourceBatch, allBatches),
     league: sourceBatch.league,
-    batchName: `${sourceBatch.batchName} – ${TIER_META[tier].batchLabel}`,
+    batchName: `${sourceBatch.batchName} – ${BEST_BATCH_LABEL}`,
     createdAt: generatedAt,
     matches: materializeBatchMatches(sourceBatch, recommended),
     recommended: {
       ...recommended,
-      displayName: TIER_META[tier].label,
-      tier,
+      displayName: BEST_BATCH_LABEL,
       generatedAt,
       engineVersion: RECO_ENGINE_VERSION,
     },
@@ -434,12 +349,12 @@ function createTierBatch(
   );
 }
 
-function ensureNonEmpty(pool: ScoredMatchCandidate[]): ScoredMatchCandidate[] {
-  return pool.length > 0 ? pool : [];
-}
-
-function selectTierCandidates(
-  tier: RecommendationTier,
+/**
+ * Best market per match across ALL candidate legs (ranked by strength / pFinal),
+ * then a single confidence floor + risk ceiling trim. This is the pool that both
+ * the selected leg and the "better option" are drawn from, so they always agree.
+ */
+function selectBestCandidates(
   artifacts: RecommendationArtifacts,
   allBatches: PredictionBatch[],
   analysis: AnalysisHistory,
@@ -447,57 +362,22 @@ function selectTierCandidates(
   teamsQuality?: TeamsQualityStore | null,
   leagueCharacterProfile?: LeagueCharacterProfile | null
 ): { selected: ScoredMatchCandidate[]; trimRemoved: ScoredMatchCandidate[] } {
-  if (tier === "safe") {
-    const corePool = artifacts.candidates.filter((candidate) => marketIsCore(candidate));
-    const pool = ensureNonEmpty(corePool.length > 0 ? corePool : artifacts.candidates);
-    const { selected, removed } = selectSafeCandidates(
-      pool,
-      allBatches,
-      analysis,
-      settings.tier1MinPFinal,
-      teamsQuality,
-      leagueCharacterProfile
-    );
-    return {
-      selected: selected.length > 0 ? selected : pool.slice(0, 1),
-      trimRemoved: removed,
-    };
-  }
-
-  if (tier === "aggressive") {
-    const pool = groupBestCandidatesByMatch(
-      artifacts.allLegCandidates,
-      settings.tier3AllowAlternativeMarkets
-    )
-      .filter((candidate) => candidate.passesHardFilters)
-      .sort(sortByStrength);
-    const fallbackPool =
-      pool.length > 0
-        ? pool
-        : [...artifacts.candidates].filter((candidate) => candidate.passesHardFilters).sort(sortByStrength);
-    const { selected, removed } = trimByConstraints(
-      fallbackPool,
-      allBatches,
-      analysis,
-      settings.tier3MaxBatchRisk,
-      AGGRESSIVE_TIER_MIN_PFINAL,
-      teamsQuality,
-      leagueCharacterProfile
-    );
-    return {
-      selected: selected.length > 0 ? selected : fallbackPool.slice(0, 1),
-      trimRemoved: removed,
-    };
-  }
-
-  const pool = [...artifacts.candidates]
+  const bestPerMatch = groupBestCandidatesByMatch(
+    artifacts.allLegCandidates,
+    settings.tier3AllowAlternativeMarkets
+  )
     .filter((candidate) => candidate.passesHardFilters)
-    .filter((candidate) =>
-      passesBayesianIntervalGate("balanced", candidate.pick.mathSnapshot?.statLayer?.bayesianLayer?.intervalWidth)
-    );
-  const balancedPool = pool.length > 0 ? pool : [...artifacts.candidates].filter((c) => c.passesHardFilters);
+    .sort(sortByStrength);
+
+  const pool =
+    bestPerMatch.length > 0
+      ? bestPerMatch
+      : [...artifacts.candidates]
+          .filter((candidate) => candidate.passesHardFilters)
+          .sort(sortByStrength);
+
   const { selected, removed } = trimByConstraints(
-    balancedPool.sort(sortByStrength),
+    pool,
     allBatches,
     analysis,
     FORMULA_CONFIG.riskCeiling,
@@ -505,8 +385,9 @@ function selectTierCandidates(
     teamsQuality,
     leagueCharacterProfile
   );
+
   return {
-    selected: selected.length > 0 ? selected : balancedPool.slice(0, 1),
+    selected: selected.length > 0 ? selected : pool.slice(0, 1),
     trimRemoved: removed,
   };
 }
@@ -534,7 +415,7 @@ function maybeOverlayLearner(
   };
 }
 
-export function generateTieredRecommendationBatches(
+export function generateBestRecommendationBatch(
   sourceBatch: PredictionBatch,
   allBatches: PredictionBatch[],
   analysis: AnalysisHistory,
@@ -552,7 +433,7 @@ export function generateTieredRecommendationBatches(
     mlClassifier?: import("./ml-model-store").MlClassifierStore | null;
     leagueProfiles?: import("./types").LeagueProfilesStore | null;
   }
-): TieredRecommendationResult {
+): BestRecommendationResult {
   const leagueCharacterProfile = resolveLeagueCharacterProfile(
     statExtras?.leagueProfiles ?? null,
     sourceBatch.league,
@@ -580,166 +461,146 @@ export function generateTieredRecommendationBatches(
   const claimedInSession = new Set(priorOccupied.keys);
   const sessionLabels: string[] = [...priorOccupied.batchNames];
 
-  const tiers: PredictionBatch[] = [];
-  for (const tier of ["safe", "balanced", "aggressive"] as RecommendationTier[]) {
-    const tierPool =
-      tier === "aggressive" ? artifacts.allLegCandidates : artifacts.candidates;
+  const bestSelection = selectBestCandidates(
+    artifacts,
+    allBatches,
+    analysis,
+    settings,
+    teamsQuality,
+    leagueCharacterProfile
+  );
+  let selected = bestSelection.selected;
+  const trimRemoved = bestSelection.trimRemoved;
+  const dedupSourceLabel =
+    sessionLabels.length > 0 ? sessionLabels.join(", ") : "an earlier batch";
+  let { eligible, removed } = filterCandidatesByOccupiedMarkets(
+    selected,
+    claimedInSession,
+    dedupSourceLabel
+  );
 
-    const tierSelection = selectTierCandidates(
-      tier,
-      artifacts,
-      allBatches,
-      analysis,
-      settings,
-      teamsQuality,
-      leagueCharacterProfile
-    );
-    let selected = tierSelection.selected;
-    const trimRemoved = tierSelection.trimRemoved;
-    const dedupSourceLabel =
-      sessionLabels.length > 0 ? sessionLabels.join(", ") : "an earlier tier";
-    let { eligible, removed } = filterCandidatesByOccupiedMarkets(
-      selected,
+  if (eligible.length === 0 && selected.length > 0) {
+    const fallbackPool = [...artifacts.allLegCandidates]
+      .filter((candidate) => candidate.passesHardFilters)
+      .sort(sortByStrength);
+    const fallback = filterCandidatesByOccupiedMarkets(
+      fallbackPool,
       claimedInSession,
       dedupSourceLabel
     );
-
-    if (eligible.length === 0 && selected.length > 0) {
-      const fallbackPool = [...tierPool]
-        .filter((candidate) => candidate.passesHardFilters)
-        .sort(sortByStrength);
-      const fallback = filterCandidatesByOccupiedMarkets(
-        fallbackPool,
-        claimedInSession,
-        dedupSourceLabel
-      );
-      eligible = fallback.eligible;
-      removed = [
-        ...removed,
-        ...selected,
-        ...fallback.removed.filter(
-          (candidate) =>
-            !removed.some(
-              (entry) =>
-                entry.matchId === candidate.matchId && entry.marketKey === candidate.marketKey
-            )
-        ),
-      ];
-    }
-
-    selected = eligible;
-    const selection = selectionFromCandidates(selected, artifacts.candidates, removed);
-    let recommended = buildRecommendedBatchFromSelection(
-      sourceBatch,
-      artifacts.ctx,
-      artifacts.candidates,
-      selection,
-      TIER_META[tier].label,
-      tier
-    );
-
-    if (!recommended) {
-      const emptyNotice = formatSameDateDedupNotice(
-        removed.length,
-        sessionLabels.length > 0 ? sessionLabels : [TIER_META[tier].batchLabel]
-      );
-      recommended = {
-        displayName: TIER_META[tier].label,
-        generatedAt: new Date().toISOString(),
-        engineVersion: RECO_ENGINE_VERSION,
-        tier,
-        matches: [],
-        acceptAll: false,
-        summary: {
-          totalCombinedOdds: null,
-          riskLevel: "high",
-          matchesIncluded: 0,
-          matchesDropped: sourceBatch.matches.length,
-          summaryJudgment:
-            emptyNotice ||
-            "No unoccupied markets remained for this tier after same-date deduplication.",
-          exclusions: removed.map((candidate) => ({
-            matchId: candidate.matchId,
-            homeTeam: candidate.homeTeam,
-            awayTeam: candidate.awayTeam,
-            reason: candidate.exclusionReason ?? emptyNotice,
-          })),
-        },
-        gameList: [],
-      };
-    }
-
-    if (removed.length > 0) {
-      const notice = formatSameDateDedupNotice(removed.length, sessionLabels);
-      const dedupExclusions = removed.map((candidate) => ({
-        matchId: candidate.matchId,
-        homeTeam: candidate.homeTeam,
-        awayTeam: candidate.awayTeam,
-        reason: candidate.exclusionReason ?? notice,
-      }));
-      recommended = {
-        ...recommended,
-        summary: {
-          ...recommended.summary,
-          summaryJudgment: notice
-            ? `${recommended.summary.summaryJudgment} ${notice}`
-            : recommended.summary.summaryJudgment,
-          exclusions: [...recommended.summary.exclusions, ...dedupExclusions],
-        },
-        gameList: recommended.gameList.map((entry) => {
-          const removedEntry = removed.find((candidate) => candidate.matchId === entry.matchId);
-          if (!removedEntry || entry.selected) return entry;
-          return {
-            ...entry,
-            skipReason: removedEntry.exclusionReason ?? entry.skipReason,
-          };
-        }),
-      };
-    }
-
-    const learnerBatch = maybeOverlayLearner(
-      recommended,
-      sourceBatch,
-      learnerEnabled,
-      learnerStats,
-      settings,
-      teamCharacteristics
-    );
-
-    for (const key of occupiedFromCandidates(selected)) {
-      claimedInSession.add(key);
-    }
-    if (!sessionLabels.includes(TIER_META[tier].batchLabel)) {
-      sessionLabels.push(TIER_META[tier].batchLabel);
-    }
-
-    const freezeMetadata: TierFreezeMetadata = {
-      tier,
-      allLegCandidates: artifacts.allLegCandidates,
-      preTrimSelected: tierSelection.selected,
-      postTrimSelected: selected,
-      removedFromDedup: removed,
-      trimRemoved,
-    };
-
-    tiers.push(
-      createTierBatch(
-        sourceBatch,
-        learnerBatch,
-        tier,
-        recommendationBaseId,
-        allBatches,
-        analysis,
-        settings,
-        learnerEnabled,
-        luckyNumbers,
-        freezeMetadata,
-        teamsQuality,
-        leagueCharacterProfile
-      )
-    );
+    eligible = fallback.eligible;
+    removed = [
+      ...removed,
+      ...selected,
+      ...fallback.removed.filter(
+        (candidate) =>
+          !removed.some(
+            (entry) =>
+              entry.matchId === candidate.matchId && entry.marketKey === candidate.marketKey
+          )
+      ),
+    ];
   }
 
+  selected = eligible;
+  const selection = selectionFromCandidates(selected, artifacts.candidates, removed);
+  let recommended = buildRecommendedBatchFromSelection(
+    sourceBatch,
+    artifacts.ctx,
+    artifacts.candidates,
+    selection,
+    BEST_BATCH_LABEL
+  );
 
-  return { sourceBatch, tiers };
+  if (!recommended) {
+    const emptyNotice = formatSameDateDedupNotice(
+      removed.length,
+      sessionLabels.length > 0 ? sessionLabels : [BEST_BATCH_LABEL]
+    );
+    recommended = {
+      displayName: BEST_BATCH_LABEL,
+      generatedAt: new Date().toISOString(),
+      engineVersion: RECO_ENGINE_VERSION,
+      matches: [],
+      acceptAll: false,
+      summary: {
+        totalCombinedOdds: null,
+        riskLevel: "high",
+        matchesIncluded: 0,
+        matchesDropped: sourceBatch.matches.length,
+        summaryJudgment:
+          emptyNotice ||
+          "No unoccupied markets remained after same-date deduplication.",
+        exclusions: removed.map((candidate) => ({
+          matchId: candidate.matchId,
+          homeTeam: candidate.homeTeam,
+          awayTeam: candidate.awayTeam,
+          reason: candidate.exclusionReason ?? emptyNotice,
+        })),
+      },
+      gameList: [],
+    };
+  }
+
+  if (removed.length > 0) {
+    const notice = formatSameDateDedupNotice(removed.length, sessionLabels);
+    const dedupExclusions = removed.map((candidate) => ({
+      matchId: candidate.matchId,
+      homeTeam: candidate.homeTeam,
+      awayTeam: candidate.awayTeam,
+      reason: candidate.exclusionReason ?? notice,
+    }));
+    recommended = {
+      ...recommended,
+      summary: {
+        ...recommended.summary,
+        summaryJudgment: notice
+          ? `${recommended.summary.summaryJudgment} ${notice}`
+          : recommended.summary.summaryJudgment,
+        exclusions: [...recommended.summary.exclusions, ...dedupExclusions],
+      },
+      gameList: recommended.gameList.map((entry) => {
+        const removedEntry = removed.find((candidate) => candidate.matchId === entry.matchId);
+        if (!removedEntry || entry.selected) return entry;
+        return {
+          ...entry,
+          skipReason: removedEntry.exclusionReason ?? entry.skipReason,
+        };
+      }),
+    };
+  }
+
+  const learnerBatch = maybeOverlayLearner(
+    recommended,
+    sourceBatch,
+    learnerEnabled,
+    learnerStats,
+    settings,
+    teamCharacteristics
+  );
+
+  const freezeMetadata: TierFreezeMetadata = {
+    tier: "balanced",
+    allLegCandidates: artifacts.allLegCandidates,
+    preTrimSelected: bestSelection.selected,
+    postTrimSelected: selected,
+    removedFromDedup: removed,
+    trimRemoved,
+  };
+
+  const best = createBestBatch(
+    sourceBatch,
+    learnerBatch,
+    recommendationBaseId,
+    allBatches,
+    analysis,
+    settings,
+    learnerEnabled,
+    luckyNumbers,
+    freezeMetadata,
+    teamsQuality,
+    leagueCharacterProfile
+  );
+
+  return { sourceBatch, best };
 }

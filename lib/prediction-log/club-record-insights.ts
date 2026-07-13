@@ -23,6 +23,8 @@ export function marketToHistoryType(market: LogMarketKey): HistoryTypeKey | null
     case "btts":
       return "bothTeamsScore";
     case "sot_ou":
+    case "home_sot_ou":
+    case "away_sot_ou":
       return "shotsOnTarget";
     case "shots_ou":
     case "home_shots_ou":

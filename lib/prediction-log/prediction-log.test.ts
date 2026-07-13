@@ -3,7 +3,7 @@ import { scoreMarket, scoreMatch } from "./scoring";
 import { recomputeAnalysis } from "./analysis";
 import { buildExportCsv, buildOddsAnalysisCsv, buildComparisonCsv } from "./export";
 import { generateRecommendedBatch } from "./generate-recommended-batch";
-import { generateTieredRecommendationBatches } from "./generate-tiered-recommendations";
+import { generateBestRecommendationBatch } from "./generate-tiered-recommendations";
 import {
   collectPriorOccupiedMarkets,
   filterCandidatesByOccupiedMarkets,
@@ -1168,8 +1168,8 @@ assert.ok(mpRisk.batchConfidence != null);
 // End-to-end: generateRecommendedBatch attaches pSignal
 assert.ok(coldReco!.matches[0]!.predictions.btts!.pSignal != null);
 
-// Tiered recommendations: three saved tiers with frozen math
-const tiered = generateTieredRecommendationBatches(
+// Unified best recommendation: ONE collapsed batch with frozen math
+const bestResult = generateBestRecommendationBatch(
   bigBatch,
   [bigBatch],
   coldAnalysis,
@@ -1182,29 +1182,19 @@ const tiered = generateTieredRecommendationBatches(
   null,
   []
 );
-assert.equal(tiered.tiers.length, 3);
-const safeTier = tiered.tiers.find((batch) => batch.recommendationTier === "safe");
-const balancedTier = tiered.tiers.find((batch) => batch.recommendationTier === "balanced");
-const aggressiveTier = tiered.tiers.find((batch) => batch.recommendationTier === "aggressive");
-assert.ok(safeTier);
-assert.ok(balancedTier);
-assert.ok(aggressiveTier);
-assert.equal(safeTier!.batchKind, "recommended");
-assert.equal(safeTier!.recommendationStatus, "PENDING");
-assert.equal(safeTier!.sourceBatchId, bigBatch.id);
-assert.ok(/^REC-\d{8}-\d{3}-SAFE$/.test(safeTier!.id));
-assert.ok(/^REC-\d{8}-\d{3}-BAL$/.test(balancedTier!.id));
-assert.ok(/^REC-\d{8}-\d{3}-AGG$/.test(aggressiveTier!.id));
-assert.ok(safeTier!.recommended?.mathSnapshot);
-assert.ok(balancedTier!.recommended?.mathSnapshot);
-assert.ok(aggressiveTier!.recommended?.mathSnapshot);
-assert.ok((safeTier!.recommended?.matches.length ?? 0) <= 3);
-assert.ok((aggressiveTier!.recommended?.matches.length ?? 0) >= (balancedTier!.recommended?.matches.length ?? 0));
-// Later tiers may be smaller after same-date market deduplication
-assert.ok((balancedTier!.recommended?.matches.length ?? 0) <= (safeTier!.recommended?.matches.length ?? 0));
+const bestBatch = bestResult.best;
+assert.ok(bestBatch);
+assert.equal(bestBatch.batchKind, "recommended");
+assert.equal(bestBatch.recommendationStatus, "PENDING");
+assert.equal(bestBatch.sourceBatchId, bigBatch.id);
+// No tier suffix on the unified recommendation id
+assert.ok(/^REC-\d{8}-\d{3}$/.test(bestBatch.id));
+assert.equal(bestBatch.recommendationTier, undefined);
+assert.ok(bestBatch.recommended?.mathSnapshot);
+assert.ok((bestBatch.recommended?.matches.length ?? 0) >= 1);
 
-// Tier 3 alternative-market toggle is carried into the frozen snapshot
-const aggressiveWithAlt = generateTieredRecommendationBatches(
+// Alternative-market toggle is carried into the frozen snapshot
+const bestWithAlt = generateBestRecommendationBatch(
   weakBatch,
   [weakBatch],
   weakAnalysis,
@@ -1216,8 +1206,8 @@ const aggressiveWithAlt = generateTieredRecommendationBatches(
   null,
   null,
   []
-).tiers.find((batch) => batch.recommendationTier === "aggressive");
-const aggressiveWithoutAlt = generateTieredRecommendationBatches(
+).best;
+const bestWithoutAlt = generateBestRecommendationBatch(
   weakBatch,
   [weakBatch],
   weakAnalysis,
@@ -1229,20 +1219,18 @@ const aggressiveWithoutAlt = generateTieredRecommendationBatches(
   null,
   null,
   []
-).tiers.find((batch) => batch.recommendationTier === "aggressive");
-assert.ok(aggressiveWithAlt);
-assert.ok(aggressiveWithoutAlt);
+).best;
 assert.equal(
-  aggressiveWithAlt!.recommended?.mathSnapshot?.settingsSnapshot.tier3AllowAlternativeMarkets,
+  bestWithAlt.recommended?.mathSnapshot?.settingsSnapshot.tier3AllowAlternativeMarkets,
   true
 );
 assert.equal(
-  aggressiveWithoutAlt!.recommended?.mathSnapshot?.settingsSnapshot.tier3AllowAlternativeMarkets,
+  bestWithoutAlt.recommended?.mathSnapshot?.settingsSnapshot.tier3AllowAlternativeMarkets,
   false
 );
 
 // Extended frozen snapshot: market comparison, system pick, better alternative, workflow
-const extMath = safeTier!.recommended?.mathSnapshot;
+const extMath = bestBatch.recommended?.mathSnapshot;
 assert.ok(extMath?.marketComparisonByMatch);
 assert.ok(extMath?.systemPickByMatch);
 assert.ok(extMath?.betterAlternativeByMatch);
@@ -1250,7 +1238,7 @@ assert.ok(extMath?.workflowLog && extMath.workflowLog.length > 0);
 assert.ok(extMath?.reductionSteps != null);
 assert.equal(extMath?.settingsSnapshot.betterAlternativeThresholdPct, 8);
 
-const firstMatchId = safeTier!.recommended?.matches[0]?.id;
+const firstMatchId = bestBatch.recommended?.matches[0]?.id;
 if (firstMatchId) {
   const comparison = extMath!.marketComparisonByMatch![firstMatchId];
   assert.ok(Array.isArray(comparison) && comparison.length > 0);
@@ -1329,6 +1317,28 @@ assert.equal(syncedSideShots.actualResults.home_shots_ou?.actual, 14);
 assert.equal(syncedSideShots.scored.home_shots_ou, "correct");
 assert.equal(syncedSideShots.actualResults.away_shots_ou?.actual, 9);
 assert.equal(syncedSideShots.scored.away_shots_ou, "correct");
+
+// Team stats sync: per-side home/away shots on target O/U
+const sideSotMatch: LogMatch = {
+  id: "ts-side-sot",
+  homeTeam: "Arsenal",
+  awayTeam: "Chelsea",
+  predictions: {
+    home_sot_ou: { prediction: "over", line: 2.5, confidence: 60 },
+    away_sot_ou: { prediction: "under", line: 2.5, confidence: 55 },
+  },
+  actualResults: {},
+  scored: {},
+  teamStats: {
+    home: { shotsOnTarget: 4 },
+    away: { shotsOnTarget: 2 },
+  },
+};
+const syncedSideSot = applyTeamStatsSync(sideSotMatch);
+assert.equal(syncedSideSot.actualResults.home_sot_ou?.actual, 4);
+assert.equal(syncedSideSot.scored.home_sot_ou, "correct");
+assert.equal(syncedSideSot.actualResults.away_sot_ou?.actual, 2);
+assert.equal(syncedSideSot.scored.away_sot_ou, "correct");
 
 // Team stats sync: first half result auto-scores ht_1x2
 const htMatch: LogMatch = {
@@ -1608,7 +1618,7 @@ const tierDedupSource: PredictionBatch = {
   ],
 };
 
-const tierDedup = generateTieredRecommendationBatches(
+const dedupBest = generateBestRecommendationBatch(
   tierDedupSource,
   [tierDedupSource],
   coldAnalysis,
@@ -1620,10 +1630,8 @@ const tierDedup = generateTieredRecommendationBatches(
   null,
   null,
   []
-);
-const tierSafe = tierDedup.tiers.find((batch) => batch.recommendationTier === "safe");
-const tierBalanced = tierDedup.tiers.find((batch) => batch.recommendationTier === "balanced");
-assert.ok(tierSafe && tierBalanced);
+).best;
+assert.ok(dedupBest.recommended);
 
 function occupiedFromRecommended(batch: PredictionBatch): string[] {
   return (batch.recommended?.matches ?? []).flatMap((match) =>
@@ -1633,12 +1641,10 @@ function occupiedFromRecommended(batch: PredictionBatch): string[] {
   );
 }
 
-const safeOccupied = occupiedFromRecommended(tierSafe!);
-const balancedOccupied = occupiedFromRecommended(tierBalanced!);
-for (const key of balancedOccupied) {
-  assert.ok(!safeOccupied.includes(key), "balanced tier repeated safe market: " + key);
-}
-assert.equal(tierSafe!.date, "2026-06-12");
+// A single unified batch never repeats the same market twice within itself
+const dedupOccupied = occupiedFromRecommended(dedupBest);
+assert.equal(new Set(dedupOccupied).size, dedupOccupied.length);
+assert.equal(dedupBest.date, "2026-06-12");
 
 // Combined odds: scoring and selection
 const comboGrid = [

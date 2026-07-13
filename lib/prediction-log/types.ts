@@ -12,6 +12,8 @@ export type LogMarketKey =
   | "home_shots_ou"
   | "away_shots_ou"
   | "sot_ou"
+  | "home_sot_ou"
+  | "away_sot_ou"
   | "corners_ou"
   | "throw_ins_ou"
   | "offsides_ou";
@@ -226,6 +228,39 @@ export interface FrozenMarketEntry {
   /** Raw pick value for post-result grading (optional on older snapshots). */
   prediction?: string;
   line?: number;
+  /** Professional value edge (model% − fair implied%), pct points. */
+  edgePct?: number;
+  /** Expected value per 1 unit staked at the entered price. */
+  evPerUnit?: number;
+}
+
+/** Frozen professional (price-aware) read for a single recommended leg. */
+export interface FrozenProfessionalRead {
+  /** Blended probability + value + consensus rating, 0–100. */
+  ratingPct: number;
+  /** Whether a valid price backed the edge/EV numbers. */
+  hasPrice: boolean;
+  edgePct: number;
+  evPerUnit: number;
+  kellyFraction: number;
+  impliedPct: number;
+  fairImpliedPct: number;
+  valueTier: "strong" | "positive" | "fair" | "negative";
+  agreementPct: number;
+  agreementLabel: "aligned" | "mixed" | "divergent";
+  verdict: string;
+}
+
+/** Frozen professional read for the whole accumulator slip. */
+export interface FrozenProfessionalSlip {
+  legs: number;
+  valueLegs: number;
+  avgEdgePct: number | null;
+  comboModelProbPct: number | null;
+  comboOdds: number | null;
+  comboEvPerUnit: number | null;
+  weakestValueLeg: string | null;
+  headline: string;
 }
 
 export interface FrozenSystemPick {
@@ -280,6 +315,10 @@ export interface RecommendedBatchMathSnapshot {
   marketComparisonByMatch?: Record<string, FrozenMarketEntry[]>;
   systemPickByMatch?: Record<string, FrozenSystemPick>;
   betterAlternativeByMatch?: Record<string, FrozenBetterAlternative>;
+  /** Professional price-aware read per match (edge, EV, consensus, rating). */
+  professionalByMatch?: Record<string, FrozenProfessionalRead>;
+  /** Professional read for the whole accumulator slip. */
+  professionalSummary?: FrozenProfessionalSlip;
   /** Good / Risky / Avoid vs selected market (frozen at generation). */
   pickCommentByMatch?: Record<
     string,

@@ -91,6 +91,8 @@ export function matchNeedsStatistics(match: LogMatch): boolean {
     "home_shots_ou",
     "away_shots_ou",
     "sot_ou",
+    "home_sot_ou",
+    "away_sot_ou",
     "corners_ou",
     "throw_ins_ou",
     "offsides_ou",

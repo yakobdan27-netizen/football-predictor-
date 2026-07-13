@@ -59,6 +59,28 @@ test("applyTeamStatsSync still scores FT + home/away shots", () => {
   assert.equal(m.actualResults.away_shots_ou?.actual, 9);
 });
 
+test("applyTeamStatsSync scores home/away shots on target", () => {
+  const m = applyTeamStatsSync(
+    baseMatch({
+      predictions: {
+        sot_ou: { prediction: "over", line: 4.5, confidence: 55 },
+        home_sot_ou: { prediction: "over", line: 2.5, confidence: 50 },
+        away_sot_ou: { prediction: "under", line: 2.5, confidence: 50 },
+      },
+      teamStats: {
+        home: { shotsOnTarget: 4 },
+        away: { shotsOnTarget: 2 },
+      },
+    })
+  );
+  assert.equal(m.actualResults.sot_ou?.actual, 6);
+  assert.equal(m.scored.sot_ou, "correct");
+  assert.equal(m.actualResults.home_sot_ou?.actual, 4);
+  assert.equal(m.scored.home_sot_ou, "correct");
+  assert.equal(m.actualResults.away_sot_ou?.actual, 2);
+  assert.equal(m.scored.away_sot_ou, "correct");
+});
+
 test("resolveFirstGoalSide prefers explicit firstGoalSide over HT proxy", () => {
   const withExplicit = baseMatch({
     teamStats: {

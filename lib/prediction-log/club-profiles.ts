@@ -129,6 +129,8 @@ function marketBucket(
     case "home_shots_ou":
     case "away_shots_ou":
     case "sot_ou":
+    case "home_sot_ou":
+    case "away_sot_ou":
     case "corners_ou":
       return "numeric";
     default:
@@ -138,7 +140,7 @@ function marketBucket(
 
 function numericKey(market: LogMarketKey): keyof ClubProfileMetrics["numericLines"] | null {
   if (market === "shots_ou" || market === "home_shots_ou" || market === "away_shots_ou") return "shots";
-  if (market === "sot_ou") return "sot";
+  if (market === "sot_ou" || market === "home_sot_ou" || market === "away_sot_ou") return "sot";
   if (market === "corners_ou") return "corners";
   return null;
 }

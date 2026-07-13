@@ -2,6 +2,8 @@ import { LOG_MARKET_MAP, pickOptionsForMarket } from "./markets-config";
 import type {
   FrozenBetterAlternative,
   FrozenMarketEntry,
+  FrozenProfessionalRead,
+  FrozenProfessionalSlip,
   FrozenSystemPick,
   LogMarketKey,
   PredictionBatch,
@@ -107,6 +109,33 @@ export function getMarketComparisonForMatch(
   matchId: string
 ): FrozenMarketEntry[] {
   return batch.recommended?.mathSnapshot?.marketComparisonByMatch?.[matchId] ?? [];
+}
+
+export function getProfessionalForMatch(
+  batch: PredictionBatch,
+  matchId: string
+): FrozenProfessionalRead | null {
+  return batch.recommended?.mathSnapshot?.professionalByMatch?.[matchId] ?? null;
+}
+
+export function getProfessionalSummary(
+  batch: PredictionBatch
+): FrozenProfessionalSlip | null {
+  return batch.recommended?.mathSnapshot?.professionalSummary ?? null;
+}
+
+export function valueTierColor(tier: FrozenProfessionalRead["valueTier"]): string {
+  if (tier === "strong") return "var(--accent)";
+  if (tier === "positive") return "#4fb477";
+  if (tier === "fair") return "var(--muted)";
+  return "var(--warn)";
+}
+
+export function valueTierLabel(tier: FrozenProfessionalRead["valueTier"]): string {
+  if (tier === "strong") return "Prime value";
+  if (tier === "positive") return "Value";
+  if (tier === "fair") return "Fair price";
+  return "No edge";
 }
 
 export function formatBetterAlternativeLine(alt: FrozenBetterAlternative | null): {

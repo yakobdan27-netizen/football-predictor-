@@ -13,6 +13,8 @@ import type {
   AnalysisHistory,
   FrozenBetterAlternative,
   FrozenMarketEntry,
+  FrozenProfessionalRead,
+  FrozenProfessionalSlip,
   FrozenSystemPick,
   FrozenWorkflowStep,
   LogMarketKey,
@@ -22,7 +24,14 @@ import type {
   RecommendationTier,
   RecommendedBatch,
   RecommendedBatchMathSnapshot,
+  RecommendedPick,
 } from "./types";
+import {
+  buildProfessionalRead,
+  computeEdgeMetrics,
+  summarizeSlipValue,
+  type ProfessionalLegInput,
+} from "./professional-estimator";
 import type { TeamsQualityStore } from "./teams-quality-types";
 import type { LeagueCharacterProfile } from "./types";
 import { BETTER_ALTERNATIVE_THRESHOLD_PCT } from "./recommendation-config";
@@ -136,6 +145,8 @@ export function buildMarketComparison(
         computeCandidatePFinal(candidate, risk.rBatch, teamsQuality, leagueCharacterProfile))
       : computeCandidatePFinal(candidate, risk.rBatch, teamsQuality, leagueCharacterProfile);
 
+    const edge = computeEdgeMetrics(pFinal, candidate.pick.odds);
+
     entries.push({
       marketKey: candidate.marketKey,
       marketLabel: LOG_MARKET_MAP[candidate.marketKey]?.label ?? candidate.marketKey,
@@ -150,6 +161,7 @@ export function buildMarketComparison(
       selected: isSelected,
       prediction: candidate.pick.prediction,
       line: candidate.pick.line,
+      ...(edge.valid ? { edgePct: edge.edgePct, evPerUnit: edge.evPerUnit } : {}),
     });
   }
 
@@ -201,6 +213,36 @@ export function buildBetterAlternative(
     isOptimal: false,
     prediction: best.prediction,
     line: best.line,
+  };
+}
+
+function freezeProfessionalRead(
+  pFinalPct: number,
+  pick: RecommendedPick
+): FrozenProfessionalRead {
+  const stat = pick.mathSnapshot?.statLayer;
+  const read = buildProfessionalRead({
+    pFinalPct,
+    odds: pick.odds,
+    estimators: {
+      pDc: stat?.pDc,
+      pMl: stat?.pMl,
+      pBayes: stat?.bayesianLayer?.pMarket,
+      pCustom: stat?.pCustom,
+    },
+  });
+  return {
+    ratingPct: read.ratingPct,
+    hasPrice: read.edge.valid,
+    edgePct: read.edge.edgePct,
+    evPerUnit: read.edge.evPerUnit,
+    kellyFraction: read.edge.kellyFraction,
+    impliedPct: read.edge.impliedPct,
+    fairImpliedPct: read.edge.fairImpliedPct,
+    valueTier: read.edge.valueTier,
+    agreementPct: Math.round(read.agreement.agreement * 100),
+    agreementLabel: read.agreement.label,
+    verdict: read.verdict,
   };
 }
 
@@ -278,6 +320,8 @@ export function buildExtendedMathSnapshot(
   const marketComparisonByMatch: Record<string, FrozenMarketEntry[]> = {};
   const systemPickByMatch: Record<string, FrozenSystemPick> = {};
   const betterAlternativeByMatch: Record<string, FrozenBetterAlternative> = {};
+  const professionalByMatch: Record<string, FrozenProfessionalRead> = {};
+  const slipLegs: ProfessionalLegInput[] = [];
   const pickCommentByMatch: Record<
     string,
     { label: "good" | "risky" | "avoid"; message: string }
@@ -314,7 +358,19 @@ export function buildExtendedMathSnapshot(
       betterAlt,
       riskyGapPct: threshold,
     });
+
+    const selectedPick = selectedEntry?.[1];
+    if (selectedPick && selectedPFinal != null) {
+      professionalByMatch[rm.id] = freezeProfessionalRead(selectedPFinal, selectedPick);
+      slipLegs.push({
+        matchLabel: `${rm.homeTeam} vs ${rm.awayTeam}`,
+        modelPct: selectedPFinal,
+        odds: selectedPick.odds,
+      });
+    }
   }
+
+  const professionalSummary: FrozenProfessionalSlip = summarizeSlipValue(slipLegs);
 
   const legs = activeLegsFromRecommended(batch);
   const reductionSteps = computeReductionPlan(legs, {
@@ -341,6 +397,8 @@ export function buildExtendedMathSnapshot(
     marketComparisonByMatch,
     systemPickByMatch,
     betterAlternativeByMatch,
+    professionalByMatch,
+    professionalSummary,
     pickCommentByMatch,
     workflowLog,
     reductionSteps,

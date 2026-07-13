@@ -185,8 +185,10 @@ export function inferPickSide(marketKey: LogMarketKey, prediction: string): Pick
     return "neutral";
   }
 
-  if (marketKey === "home_goals_ou" || marketKey === "home_shots_ou") return "home";
-  if (marketKey === "away_goals_ou" || marketKey === "away_shots_ou") return "away";
+  if (marketKey === "home_goals_ou" || marketKey === "home_shots_ou" || marketKey === "home_sot_ou")
+    return "home";
+  if (marketKey === "away_goals_ou" || marketKey === "away_shots_ou" || marketKey === "away_sot_ou")
+    return "away";
 
   if (marketKey === "win_one_half") {
     if (p.includes("home")) return "home";

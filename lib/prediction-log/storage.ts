@@ -26,7 +26,7 @@ import {
 } from "./team-characteristics";
 import { recomputeAnalysis } from "./analysis";
 import { generateRecommendedBatch } from "./generate-recommended-batch";
-import { generateTieredRecommendationBatches } from "./generate-tiered-recommendations";
+import { generateBestRecommendationBatch } from "./generate-tiered-recommendations";
 import { generateLearnerRecommendedBatch } from "./learner-recommendations";
 import { attachCorrectScoreToBatch } from "./correct-score-freeze";
 import { loadClubRecordsForBatch } from "./club-record-insights";
@@ -659,12 +659,12 @@ export async function generateBatchRecommendationAsync(
   return generateBatchRecommendation(batch, settings, learnerEnabled, clubRecords, null, luckyNumbers);
 }
 
-export async function generateTieredRecommendationBatchesAsync(
+export async function generateBestRecommendationBatchAsync(
   batch: PredictionBatch,
   settings: RecommendationSettings,
   learnerEnabled = false,
   luckyNumbers: number[] = []
-): Promise<PredictionBatch[]> {
+): Promise<PredictionBatch> {
   const clubRecords = await loadClubRecordsForBatchFromCache(batch);
   const all = batchesCache;
   const analysis = recomputeAnalysis(all);
@@ -676,11 +676,11 @@ export async function generateTieredRecommendationBatchesAsync(
     try {
       await fetchTeamsQuality();
     } catch {
-      /* proceed without tier data */
+      /* proceed without quality data */
     }
   }
 
-  return generateTieredRecommendationBatches(
+  return generateBestRecommendationBatch(
     batch,
     all,
     analysis,
@@ -698,7 +698,7 @@ export async function generateTieredRecommendationBatchesAsync(
       mlClassifier: getStatEngineExtras().mlClassifier,
       leagueProfiles: getStatEngineExtras().leagueProfiles,
     }
-  ).tiers;
+  ).best;
 }
 
 export async function refreshBatchLearnerRecommendation(

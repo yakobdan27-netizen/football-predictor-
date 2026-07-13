@@ -483,7 +483,7 @@ export function marketHintFromKey(
   market: string
 ): "goals" | "shots" | "offsides" | "general" {
   if (market.includes("goals") || market === "btts" || market === "1x2") return "goals";
-  if (market.includes("shots") || market === "sot_ou") return "shots";
+  if (market.includes("shots") || market === "sot_ou" || market.includes("sot")) return "shots";
   if (market.includes("offside")) return "offsides";
   return "general";
 }

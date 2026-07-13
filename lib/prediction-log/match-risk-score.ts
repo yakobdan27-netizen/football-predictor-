@@ -26,6 +26,7 @@ import {
 } from "./recommendation-config";
 import { isClubWeakFromContext } from "./club-record-insights";
 import { isValueBet, valueGapPercent } from "./systematic-odds";
+import { computeEdgeMetrics } from "./professional-estimator";
 import type {
   EvidencePoint,
   LogMarketKey,
@@ -263,7 +264,18 @@ export function bestLegForMatch(
   legs.sort((a, b) => {
     const aPSignal = a.pick.pSignal ?? a.combinedScore;
     const bPSignal = b.pick.pSignal ?? b.combinedScore;
-    return bPSignal - aPSignal || b.combinedScore - a.combinedScore || b.riskAdjustedScore - a.riskAdjustedScore;
+    // Probability stays the primary criterion (unchanged). Among legs of equal
+    // probability we prefer the one that pays a genuine value edge — the
+    // professional tie-break. Purely additive: it never overrides pSignal or
+    // the hard filters, it only breaks ties that combinedScore used to.
+    const aEdge = computeEdgeMetrics(aPSignal, a.pick.odds).edgePct;
+    const bEdge = computeEdgeMetrics(bPSignal, b.pick.odds).edgePct;
+    return (
+      bPSignal - aPSignal ||
+      bEdge - aEdge ||
+      b.combinedScore - a.combinedScore ||
+      b.riskAdjustedScore - a.riskAdjustedScore
+    );
   });
   return legs[0]!;
 }
