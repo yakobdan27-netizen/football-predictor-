@@ -11,6 +11,7 @@ import { scoreMatch } from "./scoring";import type {
   ScoreResult,
 } from "./types";
 import { SCHEMA_VERSION } from "./types";
+import { matchLeague } from "./match-league";
 
 function emptyStats(): MarketAccuracyStats {
   return { correct: 0, wrong: 0, push: 0, pct: null };
@@ -44,7 +45,7 @@ export function flattenScoredRows(batches: PredictionBatch[]): ScoredRow[] {
         rows.push({
           batchId: batch.id,
           batchName: batch.batchName,
-          league: batch.league,
+          league: matchLeague(match, batch.league),
           date: batch.date,
           homeTeam: match.homeTeam,
           awayTeam: match.awayTeam,

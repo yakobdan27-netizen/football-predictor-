@@ -20,6 +20,7 @@ import {
 } from "./club-store";
 import { buildMatchupCache, saveMatchupCache } from "./matchup-cache";
 import { matchLearningWeight } from "./match-learning";
+import { matchLeague } from "./match-league";
 import type { LeagueBaselinesStore } from "./league-baselines";
 import type { TeamsQualityStore } from "./teams-quality-types";
 
@@ -226,8 +227,9 @@ async function processMatch(
   match: LogMatch,
   writeCtx: ClubHistoryWriteContext = {}
 ): Promise<LogMatch> {
-  const homeRecord = await findOrCreateClub(match.homeTeam, batch.league);
-  const awayRecord = await findOrCreateClub(match.awayTeam, batch.league);
+  const league = matchLeague(match, batch.league);
+  const homeRecord = await findOrCreateClub(match.homeTeam, league);
+  const awayRecord = await findOrCreateClub(match.awayTeam, league);
 
   const { home: homeWrites, away: awayWrites } = mapMatchPredictionsToWrites(
     match,
@@ -530,7 +532,7 @@ async function processMatch(
     match.id
   );
 
-  const leagueId = batch.leagueId ?? resolveLeagueId(batch.league);
+  const leagueId = resolveLeagueId(league);
   if (homeUpdated.leagueId !== leagueId) homeUpdated = { ...homeUpdated, leagueId };
   if (awayUpdated.leagueId !== leagueId) awayUpdated = { ...awayUpdated, leagueId };
 

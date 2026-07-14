@@ -5,6 +5,11 @@ import { BatchMatchTable } from "./batch-match-table";
 import { BatchSummaryStrip } from "./batch-summary-strip";
 import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
 import {
+  deriveBatchLeague,
+  matchLeague,
+  normalizeMatchLeagues,
+} from "@/lib/prediction-log/match-league";
+import {
   hydrateComboFromEntry,
   resolveMarketMode,
   validateMatchLeg,
@@ -45,11 +50,12 @@ import {
   evaluateStopLoss,
 } from "@/lib/prediction-log/strategy-rules";
 
-function emptyMatch(settings: CombinedOddsSettings): LogMatch {
+function emptyMatch(settings: CombinedOddsSettings, league: string): LogMatch {
   return {
     id: newId(),
     homeTeam: "",
     awayTeam: "",
+    league,
     predictions: {},
     actualResults: {},
     scored: {},
@@ -57,18 +63,9 @@ function emptyMatch(settings: CombinedOddsSettings): LogMatch {
   };
 }
 
-function sanitizeTeamsForLeague(match: LogMatch, league: string): LogMatch {
-  const teams = new Set(teamsForLeague(league));
-  return {
-    ...match,
-    homeTeam: teams.has(match.homeTeam) ? match.homeTeam : "",
-    awayTeam: teams.has(match.awayTeam) ? match.awayTeam : "",
-  };
-}
-
 function freezeComboProbabilities(
   matches: LogMatch[],
-  league: string,
+  batchLeague: string,
   date: string,
   clubRecords: Record<string, ClubRecord>,
   clubIndex: ClubIndex | null,
@@ -76,6 +73,7 @@ function freezeComboProbabilities(
 ): LogMatch[] {
   return matches.map((m) => {
     if (resolveMarketMode(m) !== "combined" || !m.comboPick?.comboId) return m;
+    const league = matchLeague(m, batchLeague);
     const prob = computeEntryLegProbability(m, league, clubRecords, clubIndex, allBatches);
     return {
       ...m,
@@ -106,10 +104,11 @@ export function BatchEntryTab({
 }: BatchEntryTabProps) {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
-  const [league, setLeague] = useState<string>(LEAGUE_OPTIONS[0]);
+  const [defaultLeague, setDefaultLeague] = useState<string>(LEAGUE_OPTIONS[0]);
+  const [fixtureLeague, setFixtureLeague] = useState<string>(LEAGUE_OPTIONS[0]);
   const [batchName, setBatchName] = useState("");
   const [matches, setMatches] = useState<LogMatch[]>(() => [
-    emptyMatch(comboSettings ?? loadCombinedOddsSettings()),
+    emptyMatch(comboSettings ?? loadCombinedOddsSettings(), LEAGUE_OPTIONS[0]),
   ]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -118,12 +117,7 @@ export function BatchEntryTab({
   const [fixtureMsg, setFixtureMsg] = useState<string | null>(null);
 
   function addMatch() {
-    setMatches((prev) => [...prev, emptyMatch(comboSettings)]);
-  }
-
-  function handleLeagueChange(newLeague: string) {
-    setLeague(newLeague);
-    setMatches((prev) => prev.map((m) => sanitizeTeamsForLeague(m, newLeague)));
+    setMatches((prev) => [...prev, emptyMatch(comboSettings, defaultLeague)]);
   }
 
   async function loadFixturesFromLivescore() {
@@ -134,7 +128,7 @@ export function BatchEntryTab({
       const res = await fetch("/api/livescore-fixtures", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, league, competition: league }),
+        body: JSON.stringify({ date, league: fixtureLeague, competition: fixtureLeague }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
@@ -149,7 +143,7 @@ export function BatchEntryTab({
       if (!res.ok) throw new Error(data.error ?? "Failed to load fixtures");
 
       const fixtures = data.fixtures ?? [];
-      const leagueTeams = new Set(teamsForLeague(league));
+      const leagueTeams = new Set(teamsForLeague(fixtureLeague));
       const usable = fixtures.filter(
         (f) => leagueTeams.has(f.homeTeam) && leagueTeams.has(f.awayTeam) && f.homeTeam !== f.awayTeam
       );
@@ -157,7 +151,7 @@ export function BatchEntryTab({
       if (!usable.length) {
         setFixtureMsg(
           fixtures.length
-            ? `Found ${fixtures.length} Livescore fixture(s) but none matched ${league} team names. Enter teams manually.`
+            ? `Found ${fixtures.length} Livescore fixture(s) but none matched ${fixtureLeague} team names. Enter teams manually.`
             : "No Livescore fixtures found for this date. Enter teams manually."
         );
         return;
@@ -165,9 +159,10 @@ export function BatchEntryTab({
 
       const settings = comboSettings;
       const imported: LogMatch[] = usable.map((f) => ({
-        ...emptyMatch(settings),
+        ...emptyMatch(settings, fixtureLeague),
         homeTeam: f.homeTeam,
         awayTeam: f.awayTeam,
+        league: fixtureLeague,
         livescoreEventId: f.eventId,
         ...(f.lineups
           ? { teamStats: { home: {}, away: {}, lineups: f.lineups } }
@@ -201,8 +196,9 @@ export function BatchEntryTab({
     }
     for (let i = 0; i < matches.length; i++) {
       const m = matches[i]!;
-      if (!isValidFixture(m.homeTeam, m.awayTeam, league)) {
-        setError(`Match ${i + 1}: select home and away from the ${league} list (must differ).`);
+      const rowLeague = matchLeague(m, defaultLeague);
+      if (!isValidFixture(m.homeTeam, m.awayTeam, rowLeague)) {
+        setError(`Match ${i + 1}: select home and away from the ${rowLeague} list (must differ).`);
         return;
       }
       const legErr = validateMatchLeg(m);
@@ -251,19 +247,28 @@ export function BatchEntryTab({
       await ensureStorageInit();
       const allExisting = loadBatches();
       const clubIndex = await refreshClubIndex();
+      const normalizedMatches = normalizeMatchLeagues(matches, defaultLeague);
+      const batchLeague = deriveBatchLeague(normalizedMatches, defaultLeague);
       const stubBatch: PredictionBatch = {
         id: "freeze-stub",
         date,
-        league,
+        league: batchLeague,
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
         batchKind: "manual",
-        matches,
+        matches: normalizedMatches,
       };
       const clubRecords = await loadClubRecordsForBatch(stubBatch, clubIndex, fetchClubRecord);
       const preparedMatches = freezeCorrectScoreOnMatches(
-        freezeComboProbabilities(matches, league, date, clubRecords, clubIndex, allExisting),
-        league,
+        freezeComboProbabilities(
+          normalizedMatches,
+          batchLeague,
+          date,
+          clubRecords,
+          clubIndex,
+          allExisting
+        ),
+        batchLeague,
         clubRecords,
         clubIndex,
         allExisting
@@ -272,7 +277,7 @@ export function BatchEntryTab({
       const batch: PredictionBatch = {
         id: newId(),
         date,
-        league,
+        league: batchLeague,
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
         batchKind: "manual",
@@ -321,12 +326,20 @@ export function BatchEntryTab({
               onChange={(e) => setDate(e.target.value)}
             />
           </div>
-          <div>
-            <label className="label">League</label>
+          <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
+            Set the league on each match row below. A single batch can mix leagues (e.g. Premier League + La
+            Liga).
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
             <select
               className="select"
-              value={league}
-              onChange={(e) => handleLeagueChange(e.target.value)}
+              value={fixtureLeague}
+              onChange={(e) => {
+                setFixtureLeague(e.target.value);
+                setDefaultLeague(e.target.value);
+              }}
+              style={{ maxWidth: "220px" }}
+              aria-label="League for fixture import"
             >
               {LEAGUE_OPTIONS.map((l) => (
                 <option key={l} value={l}>
@@ -334,8 +347,6 @@ export function BatchEntryTab({
                 </option>
               ))}
             </select>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
             <button
               type="button"
               className="btn btn-secondary"
@@ -345,7 +356,7 @@ export function BatchEntryTab({
               {loadingFixtures ? "Loading fixtures…" : "Load fixtures from Livescore"}
             </button>
             <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-              Prefills home/away for this date (manual entry always works).
+              Import fixtures for the selected league and date (manual entry always works).
             </span>
           </div>
           {fixtureMsg && (
@@ -357,20 +368,20 @@ export function BatchEntryTab({
       <BatchMatchTable
         mode="entry"
         matches={matches}
-        league={league}
+        defaultLeague={defaultLeague}
         date={date}
         comboSettings={comboSettings}
         bankrollStrategy={settings.bankrollStrategy}
         teamsQuality={teamsQuality}
         onChange={setMatches}
         onAddMatch={addMatch}
-        createEmptyMatch={() => emptyMatch(comboSettings)}
+        createEmptyMatch={() => emptyMatch(comboSettings, defaultLeague)}
       />
 
       <BatchSummaryStrip
         mode="entry"
         matches={matches}
-        league={league}
+        defaultLeague={defaultLeague}
         date={date}
         batchName={batchName}
         comboSettings={comboSettings}

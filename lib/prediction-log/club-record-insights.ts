@@ -9,6 +9,7 @@ import {
   MIN_CLUB_PROFILE_SAMPLE,
 } from "./club-profile-insights";
 import type { ClubIndex, ClubRecord, HistoryTypeKey } from "./club-record-types";
+import { matchLeague } from "./match-league";
 import type { RecommendationContext } from "./recommendation-context";
 import type { ScoredMatchCandidate } from "./match-risk-score";
 import type { ClubProfilesStore, LogMarketKey, LogMatch, PredictionBatch } from "./types";
@@ -200,14 +201,15 @@ export async function loadClubRecordsForBatch(
   if (!clubIndex) return {};
   const ids = new Set<string>();
   for (const m of batch.matches) {
+    const league = matchLeague(m, batch.league);
     if (m.homeClubId) ids.add(m.homeClubId);
     else {
-      const e = findClubInIndex(clubIndex, m.homeTeam, batch.league);
+      const e = findClubInIndex(clubIndex, m.homeTeam, league);
       if (e) ids.add(e.clubId);
     }
     if (m.awayClubId) ids.add(m.awayClubId);
     else {
-      const e = findClubInIndex(clubIndex, m.awayTeam, batch.league);
+      const e = findClubInIndex(clubIndex, m.awayTeam, league);
       if (e) ids.add(e.clubId);
     }
   }

@@ -137,6 +137,8 @@ export interface LogMatch {
   id: string;
   homeTeam: string;
   awayTeam: string;
+  /** Per-match league (allows mixed-league batches). Falls back to batch.league when unset. */
+  league?: string;
   homeClubId?: string;
   awayClubId?: string;
   predictions: Partial<Record<LogMarketKey, MarketPrediction>>;

@@ -33,12 +33,13 @@ import type {
   LogMatch,
   PredictionBatch,
 } from "@/lib/prediction-log/types";
+import { matchLeague } from "@/lib/prediction-log/match-league";
 
 interface BatchSummaryStripProps {
   mode: "entry" | "result";
   matches?: LogMatch[];
   batch?: PredictionBatch;
-  league?: string;
+  defaultLeague?: string;
   date?: string;
   batchName?: string;
   comboSettings?: CombinedOddsSettings;
@@ -65,7 +66,7 @@ export function BatchSummaryStrip({
   mode,
   matches: entryMatches,
   batch,
-  league = "",
+  defaultLeague = "",
   date = "",
   batchName = "",
   comboSettings,
@@ -103,10 +104,11 @@ export function BatchSummaryStrip({
       await ensureStorageInit();
       const batches = loadBatches();
       const clubIndex = await refreshClubIndex();
+      const batchLeague = batch?.league ?? defaultLeague;
       const stub: PredictionBatch = {
         id: "strip-stub",
         date,
-        league,
+        league: batchLeague,
         batchName: batchName || "batch",
         createdAt: new Date().toISOString(),
         batchKind: "manual",
@@ -118,6 +120,7 @@ export function BatchSummaryStrip({
       const oddsList: number[] = [];
       for (const m of matches) {
         if (!m.homeTeam || !m.awayTeam) continue;
+        const rowLeague = matchLeague(m, batchLeague);
         const modeM = resolveMarketMode(m);
         if (modeM === "combined") {
           if (m.comboPick?.odds && isValidOdds(m.comboPick.odds)) {
@@ -125,7 +128,7 @@ export function BatchSummaryStrip({
           }
           const prob = computeEntryLegProbability(
             m,
-            league,
+            rowLeague,
             clubRecords,
             clubIndex,
             batches
@@ -159,7 +162,7 @@ export function BatchSummaryStrip({
     return () => {
       cancelled = true;
     };
-  }, [mode, matches, league, date, batchName, comboSettings]);
+  }, [mode, matches, defaultLeague, batch?.league, date, batchName, comboSettings]);
 
   if (matches.length === 0) return null;
 

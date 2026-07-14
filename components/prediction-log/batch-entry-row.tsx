@@ -11,6 +11,9 @@ import {
   marketOptionFromMatch,
 } from "@/lib/prediction-log/batch-market-options";
 import { resolveMarketMode } from "@/lib/prediction-log/match-entry-helpers";
+import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
+import { leagueShortLabel, matchLeague } from "@/lib/prediction-log/match-league";
+import { teamsForLeague } from "@/lib/prediction-log/teams";
 import { defaultBankrollStrategySettings } from "@/lib/prediction-log/recommendation-config";
 import {
   matchLoggedOdds,
@@ -34,7 +37,7 @@ function probClass(p: number | null): string {
 interface BatchEntryRowProps {
   index: number;
   match: LogMatch;
-  league: string;
+  defaultLeague: string;
   date: string;
   comboSettings: CombinedOddsSettings;
   bankrollStrategy?: BankrollStrategySettings;
@@ -53,7 +56,7 @@ interface BatchEntryRowProps {
 export function BatchEntryRow({
   index,
   match,
-  league,
+  defaultLeague,
   date,
   comboSettings,
   bankrollStrategy,
@@ -69,6 +72,7 @@ export function BatchEntryRow({
   onCellKeyDown,
 }: BatchEntryRowProps) {
   const bs = bankrollStrategy ?? defaultBankrollStrategySettings();
+  const league = matchLeague(match, defaultLeague);
   const options = useMemo(
     () =>
       buildMarketOptions(
@@ -158,8 +162,28 @@ export function BatchEntryRow({
   return (
     <tr>
       <td className="batch-col-frozen batch-col-num">{index + 1}</td>
-      <td className="batch-col-frozen batch-col-league" title={league} tabIndex={-1}>
-        <span className="batch-ellipsis">{league || "—"}</span>
+      <td className="batch-col-frozen batch-col-league" tabIndex={-1}>
+        <select
+          className="batch-league-select"
+          value={league}
+          title={league}
+          onChange={(e) => {
+            const newLeague = e.target.value;
+            const teams = new Set(teamsForLeague(newLeague, teamsQuality));
+            onChange({
+              ...match,
+              league: newLeague,
+              homeTeam: teams.has(match.homeTeam) ? match.homeTeam : "",
+              awayTeam: teams.has(match.awayTeam) ? match.awayTeam : "",
+            });
+          }}
+        >
+          {LEAGUE_OPTIONS.map((l) => (
+            <option key={l} value={l}>
+              {leagueShortLabel(l)}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="batch-col-frozen batch-col-team batch-col-home">
         <TeamAutocompleteCell

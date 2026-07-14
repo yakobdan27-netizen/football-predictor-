@@ -15,6 +15,7 @@ import {
   fetchClubRecord,
 } from "@/lib/prediction-log/storage";
 import { isValidOdds } from "@/lib/prediction-log/odds-bands";
+import { matchLeague } from "@/lib/prediction-log/match-league";
 import type { CombinedOddsSettings, LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
 
 interface MatchSummaryRow {
@@ -29,7 +30,7 @@ interface MatchSummaryRow {
 
 interface BatchEntrySummaryProps {
   batchName: string;
-  league: string;
+  defaultLeague: string;
   date: string;
   matches: LogMatch[];
   comboSettings: CombinedOddsSettings;
@@ -37,7 +38,7 @@ interface BatchEntrySummaryProps {
 
 export function BatchEntrySummary({
   batchName,
-  league,
+  defaultLeague,
   date,
   matches,
   comboSettings,
@@ -53,7 +54,7 @@ export function BatchEntrySummary({
       const stub: PredictionBatch = {
         id: "summary-stub",
         date,
-        league,
+        league: defaultLeague,
         batchName: batchName || "batch",
         createdAt: new Date().toISOString(),
         batchKind: "manual",
@@ -63,8 +64,9 @@ export function BatchEntrySummary({
       const next: MatchSummaryRow[] = [];
       for (const m of matches) {
         if (!m.homeTeam || !m.awayTeam) continue;
+        const rowLeague = matchLeague(m, defaultLeague);
         const mode = resolveMarketMode(m);
-        const prob = computeEntryLegProbability(m, league, clubRecords, clubIndex, batches);
+        const prob = computeEntryLegProbability(m, rowLeague, clubRecords, clubIndex, batches);
         const odds =
           mode === "combined"
             ? m.comboPick?.odds && m.comboPick.odds > 0
@@ -90,7 +92,7 @@ export function BatchEntrySummary({
     return () => {
       cancelled = true;
     };
-  }, [batchName, league, date, matches, comboSettings]);
+  }, [batchName, defaultLeague, date, matches, comboSettings]);
 
   if (rows.length === 0) return null;
 
@@ -113,7 +115,7 @@ export function BatchEntrySummary({
       <strong>Batch summary</strong>
       {batchName ? (
         <div style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-          {batchName} · {league}
+          {batchName} · {defaultLeague}
         </div>
       ) : null}
       <div style={{ marginTop: "0.75rem", display: "grid", gap: "0.65rem" }}>

@@ -11,6 +11,7 @@ import { scoreRecommendedBatchCombos } from "@/lib/prediction-log/combo-scoring"
 import { loadCombinedOddsSettings } from "@/lib/prediction-log/combo-settings";
 import { recomputeAnalysis } from "@/lib/prediction-log/analysis";
 import { LOG_MARKET_MAP } from "@/lib/prediction-log/markets-config";
+import { batchLeagueDisplay, normalizeMatchLeagues } from "@/lib/prediction-log/match-league";
 import {
   loadBatches,
   deleteBatch,
@@ -140,7 +141,11 @@ export function SavedBatchesTab({
 
   function openBatch(batch: PredictionBatch) {
     setExpandedId(batch.id);
-    setDraft(JSON.parse(JSON.stringify(batch)) as PredictionBatch);
+    const normalized: PredictionBatch = {
+      ...batch,
+      matches: normalizeMatchLeagues(batch.matches, batch.league),
+    };
+    setDraft(JSON.parse(JSON.stringify(normalized)) as PredictionBatch);
     void autoFillFromLivescore(batch.id);
   }
 
@@ -477,7 +482,7 @@ export function SavedBatchesTab({
             >
               <strong>{batch.batchName}</strong>
               <div style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                {batch.league} · {batch.date} · {batch.matches.length} matches · {scoredLabel}
+                {batchLeagueDisplay(batch)} · {batch.date} · {batch.matches.length} matches · {scoredLabel}
               </div>
               {batch.batchKind === "recommended" && (
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.35rem" }}>
@@ -516,7 +521,7 @@ export function SavedBatchesTab({
                 <BatchMatchTable
                   mode="result"
                   matches={draft.matches}
-                  league={draft.league}
+                  defaultLeague={draft.league}
                   betterAltByMatch={
                     draft.recommended?.mathSnapshot?.betterAlternativeByMatch
                   }

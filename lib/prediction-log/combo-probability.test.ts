@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { buildScoreMatrix, jointProbFromGrid, jointProbPercent } from "@/lib/predictor/score-matrix";
-import { comboGridProbabilityPercent } from "./combo-markets-config";
+import { comboGridProbabilityPercent, EXTENDED_COMBO_FAMILY_IDS } from "./combo-markets-config";
 import { computeComboPFinal } from "./combo-probability";
 import { defaultCombinedOddsSettings } from "./combo-settings";
-import { evaluateMatchCombos, buildComboAccumulator } from "./combo-selection";
+import { evaluateBatchCombos, evaluateMatchCombos, buildComboAccumulator } from "./combo-selection";
 import { scoreComboLeg } from "./combo-scoring";
 import type { PredictionBatch, RecommendedPickMathSnapshot } from "./types";
 
@@ -138,5 +138,70 @@ assert.ok(matchResult.allEvaluated.length > 0);
 
 assert.equal(scoreComboLeg("home_btts_yes", { "1x2": { actual: "home" }, btts: { actual: "yes" } }), "correct");
 assert.equal(scoreComboLeg("home_btts_yes", { "1x2": { actual: "home" }, btts: { actual: "no" } }), "wrong");
+
+// --- Section 2G "new combos" — grid-based joint probability, never multiplied ---
+
+// Result + Total: Home Win + Over 2.5 -> sum grid[h][a] where h>a && h+a>=3
+const homeOver25 = jointProbPercent(normGrid, (h, a) => h > a && h + a > 2.5);
+assert.equal(comboGridProbabilityPercent("home_over_2_5", { grid: normGrid }), homeOver25);
+
+// BTTS No + Total: BTTS No + Over 1.5 -> sum grid[h][a] where (h=0 or a=0) && h+a>=2
+const bttsNoOver15 = jointProbPercent(normGrid, (h, a) => (h === 0 || a === 0) && h + a > 1.5);
+assert.equal(comboGridProbabilityPercent("btts_no_over_1_5", { grid: normGrid }), bttsNoOver15);
+const bttsNoUnder35 = jointProbPercent(normGrid, (h, a) => (h === 0 || a === 0) && h + a < 3.5);
+assert.equal(comboGridProbabilityPercent("btts_no_under_3_5", { grid: normGrid }), bttsNoUnder35);
+
+// Double Chance + BTTS Yes: 1X + BTTS Yes -> sum grid[h][a] where h>=a && h>=1 && a>=1 (already existed)
+const dc1xBttsYes = jointProbPercent(normGrid, (h, a) => h >= a && h >= 1 && a >= 1);
+assert.equal(comboGridProbabilityPercent("1x_btts_yes", { grid: normGrid }), dc1xBttsYes);
+
+// Double Chance + Total: X2 + Under 3.5 (new) and 1X/X2/12 line variants
+const x2Under35 = jointProbPercent(normGrid, (h, a) => a >= h && h + a < 3.5);
+assert.equal(comboGridProbabilityPercent("x2_under_3_5", { grid: normGrid }), x2Under35);
+const dcTwelveOver15 = jointProbPercent(normGrid, (h, a) => h !== a && h + a > 1.5);
+assert.equal(comboGridProbabilityPercent("12_over_1_5", { grid: normGrid }), dcTwelveOver15);
+
+// Every id referenced by the extended-page family filter must resolve to a real, evaluable combo.
+for (const id of EXTENDED_COMBO_FAMILY_IDS) {
+  const pct = comboGridProbabilityPercent(id, { grid: normGrid });
+  assert.ok(pct != null, `EXTENDED_COMBO_FAMILY_IDS entry "${id}" did not resolve to a grid predicate`);
+}
+
+// Grading: new combo ids must score correctly from FT actuals.
+assert.equal(
+  scoreComboLeg("btts_no_over_1_5", { "1x2": { actual: "home" }, home_goals_ou: { actual: 2 }, away_goals_ou: { actual: 0 } }),
+  "correct"
+);
+assert.equal(
+  scoreComboLeg("btts_no_over_1_5", { "1x2": { actual: "home" }, home_goals_ou: { actual: 1 }, away_goals_ou: { actual: 1 } }),
+  "wrong"
+);
+assert.equal(
+  scoreComboLeg("12_under_3_5", { "1x2": { actual: "away" }, home_goals_ou: { actual: 1 }, away_goals_ou: { actual: 1 } }),
+  "correct"
+);
+assert.equal(
+  scoreComboLeg("12_under_3_5", { "1x2": { actual: "draw" }, home_goals_ou: { actual: 1 }, away_goals_ou: { actual: 1 } }),
+  "wrong"
+);
+
+// evaluateBatchCombos: tier defaults to "balanced" (non-breaking) and accepts an explicit tier + comboFilter.
+const defaultTierResult = evaluateBatchCombos(batch, settings, null, [batch]);
+assert.ok(defaultTierResult.matches.length > 0);
+
+const filteredResult = evaluateBatchCombos(
+  batch,
+  settings,
+  null,
+  [batch],
+  undefined,
+  undefined,
+  "balanced",
+  (combo) => EXTENDED_COMBO_FAMILY_IDS.includes(combo.id)
+);
+assert.ok(
+  filteredResult.matches[0]!.allEvaluated.every((c) => EXTENDED_COMBO_FAMILY_IDS.includes(c.comboId)),
+  "comboFilter must restrict evaluated combos to the extended family ids"
+);
 
 console.log("combo-probability tests passed");

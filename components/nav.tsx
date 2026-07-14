@@ -10,6 +10,8 @@ const links = [
   { href: "/leagues", label: "League", icon: "🌍", desktopLabel: "Leagues" },
   { href: "/ai-learner", label: "AI", icon: "🧠", desktopLabel: "AI Learner" },
   { href: "/recommendation", label: "Reco", icon: "🎯", desktopLabel: "Recommendation" },
+  { href: "/combined-odds", label: "Combo", icon: "🎲", desktopLabel: "Combined Odds" },
+  { href: "/combined-odds-extended", label: "Combo+", icon: "➕", desktopLabel: "Extended Combos" },
   { href: "/settings", label: "Set", icon: "⚙️", desktopLabel: "Settings" },
   { href: "/analysis", label: "Stats", icon: "📊", desktopLabel: "Analysis" },
   { href: "/risk", label: "Risk", icon: "🛡️", desktopLabel: "Risk & Eval" },
@@ -22,6 +24,9 @@ export function Nav() {
     if (href === "/") return pathname === "/";
     if (href === "/leagues") {
       return pathname.startsWith("/leagues") || pathname.startsWith("/league-analysis");
+    }
+    if (href === "/combined-odds") {
+      return pathname === "/combined-odds" || pathname.startsWith("/combined-odds/");
     }
     return pathname.startsWith(href);
   };

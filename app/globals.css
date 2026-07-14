@@ -570,7 +570,7 @@ table.data-table td {
 /* Compact batch match table */
 .batch-table-wrap {
   --batch-num-w: 2.25rem;
-  --batch-league-w: 5.5rem;
+  --batch-league-w: 6.25rem;
   --batch-team-w: 6.5rem;
   --batch-row-h: 34px;
   overflow-x: auto;
@@ -588,7 +588,7 @@ table.data-table td {
 @media (min-width: 768px) {
   .batch-table-wrap {
     --batch-num-w: 2.5rem;
-    --batch-league-w: 7.5rem;
+    --batch-league-w: 8.25rem;
     --batch-team-w: 9rem;
     --batch-row-h: 34px;
     margin: 0 0 0.75rem;
@@ -766,6 +766,18 @@ table.data-table td {
   min-width: var(--batch-league-w);
   max-width: var(--batch-league-w);
   color: var(--muted);
+}
+
+.batch-table .batch-league-select {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.15rem 0.1rem;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  color: inherit;
 }
 
 .batch-table .batch-col-home {

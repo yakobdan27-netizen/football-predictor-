@@ -200,6 +200,46 @@ const COMBO_EVALUATORS: Record<
     const t = totalGoals(ar, ts);
     return b != null && t != null ? !b && t < 2.5 : null;
   },
+  btts_no_over_1_5: (ar, ts) => {
+    const b = bttsFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return b != null && t != null ? !b && t > 1.5 : null;
+  },
+  btts_no_under_3_5: (ar, ts) => {
+    const b = bttsFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return b != null && t != null ? !b && t < 3.5 : null;
+  },
+  "1x_over_2_5": (ar, ts) => {
+    const r = resultFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return r != null && t != null ? (r === "home" || r === "draw") && t > 2.5 : null;
+  },
+  "1x_under_3_5": (ar, ts) => {
+    const r = resultFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return r != null && t != null ? (r === "home" || r === "draw") && t < 3.5 : null;
+  },
+  x2_over_2_5: (ar, ts) => {
+    const r = resultFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return r != null && t != null ? (r === "away" || r === "draw") && t > 2.5 : null;
+  },
+  x2_under_3_5: (ar, ts) => {
+    const r = resultFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return r != null && t != null ? (r === "away" || r === "draw") && t < 3.5 : null;
+  },
+  "12_over_1_5": (ar, ts) => {
+    const r = resultFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return r != null && t != null ? r !== "draw" && t > 1.5 : null;
+  },
+  "12_under_3_5": (ar, ts) => {
+    const r = resultFromActuals(ar, ts);
+    const t = totalGoals(ar, ts);
+    return r != null && t != null ? r !== "draw" && t < 3.5 : null;
+  },
   home_2_3_goals: (ar, ts) => {
     const r = resultFromActuals(ar, ts);
     const t = totalGoals(ar, ts);

@@ -19,12 +19,14 @@ import type {
   FrozenBetterAlternative,
   LogMatch,
 } from "@/lib/prediction-log/types";
+import { matchLeague } from "@/lib/prediction-log/match-league";
 import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
 
 interface BatchMatchTableProps {
   mode: "entry" | "result";
   matches: LogMatch[];
-  league: string;
+  /** Default league for new rows; per-match league is on each LogMatch. */
+  defaultLeague?: string;
   date?: string;
   comboSettings?: CombinedOddsSettings;
   bankrollStrategy?: BankrollStrategySettings;
@@ -46,7 +48,7 @@ type FocusableRef = React.RefObject<
 export function BatchMatchTable({
   mode,
   matches,
-  league,
+  defaultLeague = "",
   date = "",
   comboSettings,
   bankrollStrategy,
@@ -356,7 +358,7 @@ export function BatchMatchTable({
                 key={match.id}
                 index={i}
                 match={match}
-                league={league}
+                defaultLeague={defaultLeague}
                 date={date}
                 comboSettings={comboSettings!}
                 bankrollStrategy={bankrollStrategy}
@@ -376,7 +378,7 @@ export function BatchMatchTable({
                 key={match.id}
                 index={i}
                 match={match}
-                league={league}
+                league={matchLeague(match, defaultLeague)}
                 showFullStats={showFullStats}
                 expanded={expandedRow === i}
                 onToggleExpand={() => setExpandedRow(expandedRow === i ? null : i)}

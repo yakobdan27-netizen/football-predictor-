@@ -6,6 +6,7 @@ import type { TeamsQualityStore } from "./teams-quality-types";
 import type {
   AnalysisHistory,
   CombinedOddsSettings,
+  ComboMarketDef,
   FrozenMarketEntry,
   LearnerStatsStore,
   PredictionBatch,
@@ -87,7 +88,8 @@ export function evaluateMatchCombos(
   settings: CombinedOddsSettings,
   tier: RecommendationTier,
   teamsQuality?: TeamsQualityStore | null,
-  learnerStats?: LearnerStatsStore | null
+  learnerStats?: LearnerStatsStore | null,
+  comboFilter?: (combo: ComboMarketDef) => boolean
 ): MatchComboResult {
   const math = batch.recommended?.mathSnapshot;
   const selected = getSelectedPickForMatch(rm);
@@ -142,6 +144,7 @@ export function evaluateMatchCombos(
   const evaluated: ComboCandidate[] = [];
 
   for (const combo of enabledComboMarkets(settings.markets)) {
+    if (comboFilter && !comboFilter(combo)) continue;
     const result = computeComboPFinal({
       combo,
       grid,
@@ -302,9 +305,10 @@ export function evaluateBatchCombos(
   analysis: AnalysisHistory | null,
   allBatches: PredictionBatch[],
   teamsQuality?: TeamsQualityStore | null,
-  learnerStats?: LearnerStatsStore | null
+  learnerStats?: LearnerStatsStore | null,
+  tier: RecommendationTier = "balanced",
+  comboFilter?: (combo: ComboMarketDef) => boolean
 ): { matches: MatchComboResult[]; accumulator: ComboAccumulatorResult } {
-  const tier = batch.recommendationTier ?? "balanced";
   const recommended = batch.recommended;
   if (!recommended) {
     return {
@@ -324,7 +328,7 @@ export function evaluateBatchCombos(
   }
 
   const matches = recommended.matches.map((rm) =>
-    evaluateMatchCombos(batch, rm, settings, tier, teamsQuality, learnerStats)
+    evaluateMatchCombos(batch, rm, settings, tier, teamsQuality, learnerStats, comboFilter)
   );
   const accumulator = buildComboAccumulator(
     matches,

@@ -33,6 +33,16 @@ export const DEFAULT_COMBO_MARKETS: ComboMarketDef[] = [
   { id: "btts_yes_over_2_5", label: "BTTS Yes + Over 2.5", enabled: true, category: "btts_goals" },
   { id: "btts_yes_over_3_5", label: "BTTS Yes + Over 3.5", enabled: true, category: "btts_goals" },
   { id: "btts_no_under_2_5", label: "BTTS No + Under 2.5", enabled: true, category: "btts_goals" },
+  // C2. BTTS No + Total (extended line variants)
+  { id: "btts_no_over_1_5", label: "BTTS No + Over 1.5", enabled: true, category: "btts_goals" },
+  { id: "btts_no_under_3_5", label: "BTTS No + Under 3.5", enabled: true, category: "btts_goals" },
+  // B2. Double Chance + Total (extended line variants)
+  { id: "1x_over_2_5", label: "Home or Draw (1X) + Over 2.5", enabled: true, category: "dc_goals" },
+  { id: "1x_under_3_5", label: "Home or Draw (1X) + Under 3.5", enabled: true, category: "dc_goals" },
+  { id: "x2_over_2_5", label: "Away or Draw (X2) + Over 2.5", enabled: true, category: "dc_goals" },
+  { id: "x2_under_3_5", label: "Away or Draw (X2) + Under 3.5", enabled: true, category: "dc_goals" },
+  { id: "12_over_1_5", label: "Home or Away (12) + Over 1.5", enabled: true, category: "dc_goals" },
+  { id: "12_under_3_5", label: "Home or Away (12) + Under 3.5", enabled: true, category: "dc_goals" },
   // D. Result + Total Goals band
   { id: "home_2_3_goals", label: "Home Win + 2–3 goals", enabled: true, category: "goal_band" },
   { id: "away_2_3_goals", label: "Away Win + 2–3 goals", enabled: true, category: "goal_band" },
@@ -78,6 +88,40 @@ export const DEFAULT_COMBO_MARKETS: ComboMarketDef[] = [
     enabled: true,
     category: "team_total",
   },
+];
+
+/**
+ * The four Section 2G combo families ("new combos" brief), shown exclusively on
+ * `/combined-odds-extended`. Ids are reused from `DEFAULT_COMBO_MARKETS` above wherever the
+ * math is identical to a Section A-F combo; only genuinely missing line variants got new ids.
+ */
+export const EXTENDED_COMBO_FAMILY_IDS: string[] = [
+  // Result + Total
+  "home_over_1_5",
+  "home_over_2_5",
+  "home_under_3_5",
+  "away_over_1_5",
+  "away_over_2_5",
+  "away_under_3_5",
+  "draw_under_2_5",
+  // At Least One Team Not To Score (BTTS No) + Total
+  "btts_no_over_1_5",
+  "btts_no_under_2_5",
+  "btts_no_under_3_5",
+  // Double Chance + Both Teams To Score (BTTS Yes)
+  "1x_btts_yes",
+  "x2_btts_yes",
+  "12_btts_yes",
+  // Double Chance + Total
+  "1x_over_1_5",
+  "1x_over_2_5",
+  "1x_under_3_5",
+  "x2_over_1_5",
+  "x2_over_2_5",
+  "x2_under_3_5",
+  "12_over_1_5",
+  "12_over_2_5",
+  "12_under_3_5",
 ];
 
 function homeWin(h: number, a: number): boolean {
@@ -140,6 +184,14 @@ const FT_PREDICATES: Record<string, (h: number, a: number) => boolean> = {
   btts_yes_over_2_5: (h, a) => bttsYes(h, a) && totalOver(h, a, 2.5),
   btts_yes_over_3_5: (h, a) => bttsYes(h, a) && totalOver(h, a, 3.5),
   btts_no_under_2_5: (h, a) => bttsNo(h, a) && totalUnder(h, a, 2.5),
+  btts_no_over_1_5: (h, a) => bttsNo(h, a) && totalOver(h, a, 1.5),
+  btts_no_under_3_5: (h, a) => bttsNo(h, a) && totalUnder(h, a, 3.5),
+  "1x_over_2_5": (h, a) => dc1x(h, a) && totalOver(h, a, 2.5),
+  "1x_under_3_5": (h, a) => dc1x(h, a) && totalUnder(h, a, 3.5),
+  x2_over_2_5: (h, a) => dcx2(h, a) && totalOver(h, a, 2.5),
+  x2_under_3_5: (h, a) => dcx2(h, a) && totalUnder(h, a, 3.5),
+  "12_over_1_5": (h, a) => dc12(h, a) && totalOver(h, a, 1.5),
+  "12_under_3_5": (h, a) => dc12(h, a) && totalUnder(h, a, 3.5),
   home_2_3_goals: (h, a) => homeWin(h, a) && goalBand(h, a, 2, 3),
   away_2_3_goals: (h, a) => awayWin(h, a) && goalBand(h, a, 2, 3),
   draw_0_2_goals: (h, a) => draw(h, a) && goalBand(h, a, 0, 2),

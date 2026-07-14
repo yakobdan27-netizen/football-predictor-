@@ -8,6 +8,7 @@ import { entryValueFromGrid } from "./combo-entry-probability";
 import { computeDixonColes } from "./statistics-engine";
 import { computeLeagueBaselines } from "./league-baselines";
 import { findClubInIndex } from "./club-index";
+import { matchLeague } from "./match-league";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import type { LogMatch, PredictionBatch } from "./types";
 
@@ -105,12 +106,13 @@ export function freezeCorrectScoreOnMatch(
 
 export function freezeCorrectScoreOnMatches(
   matches: LogMatch[],
-  league: string,
+  batchLeague: string,
   clubRecords: Record<string, ClubRecord>,
   clubIndex: ClubIndex | null,
   allBatches: PredictionBatch[]
 ): LogMatch[] {
   return matches.map((m) => {
+    const league = matchLeague(m, batchLeague);
     const grid = scoreGridForMatch(m, league, clubRecords, clubIndex, allBatches);
     return freezeCorrectScoreOnMatch(m, grid);
   });
