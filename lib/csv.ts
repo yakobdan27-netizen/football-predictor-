@@ -84,9 +84,15 @@ export function parseCsv(text: string): MatchRow[] {
 
     const away = row.AwayTeam ?? row.away_team;
 
-    const fthg = parseInt(row.FTHG ?? row.fthg ?? row.home_goals ?? "", 10);
+    const fthg = parseInt(
+      row.FTHG ?? row.fthg ?? row.HomeScore ?? row.home_score ?? row.home_goals ?? "",
+      10
+    );
 
-    const ftag = parseInt(row.FTAG ?? row.ftag ?? row.away_goals ?? "", 10);
+    const ftag = parseInt(
+      row.FTAG ?? row.ftag ?? row.AwayScore ?? row.away_score ?? row.away_goals ?? "",
+      10
+    );
 
 
 
@@ -201,13 +207,20 @@ export function parseDateForDb(d?: string): string | null {
 
   if (parts.length === 3) {
 
-    const day = parts[0].padStart(2, "0");
+    let day: string;
+    let month: string;
+    let year: number;
 
-    const month = parts[1].padStart(2, "0");
-
-    let year = parseInt(parts[2], 10);
-
-    if (year < 100) year += year > 50 ? 1900 : 2000;
+    if (parseInt(parts[0], 10) > 31) {
+      year = parseInt(parts[0], 10);
+      month = parts[1].padStart(2, "0");
+      day = parts[2].padStart(2, "0");
+    } else {
+      day = parts[0].padStart(2, "0");
+      month = parts[1].padStart(2, "0");
+      year = parseInt(parts[2], 10);
+      if (year < 100) year += year > 50 ? 1900 : 2000;
+    }
 
     return `${year}-${month}-${day}`;
 

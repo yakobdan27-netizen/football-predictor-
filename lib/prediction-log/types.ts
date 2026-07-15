@@ -139,6 +139,12 @@ export interface LogMatch {
   awayTeam: string;
   /** Per-match league (allows mixed-league batches). Falls back to batch.league when unset. */
   league?: string;
+  /**
+   * True per-match date (YYYY-MM-DD), for batches that bundle many matches spanning a
+   * date range under one `batch.date` (e.g. bulk reference-fixture imports). Falls back
+   * to `batch.date` when unset — normal single-gameday batches don't need this.
+   */
+  matchDate?: string;
   homeClubId?: string;
   awayClubId?: string;
   predictions: Partial<Record<LogMarketKey, MarketPrediction>>;

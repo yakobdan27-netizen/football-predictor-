@@ -228,13 +228,14 @@ async function processMatch(
   writeCtx: ClubHistoryWriteContext = {}
 ): Promise<LogMatch> {
   const league = matchLeague(match, batch.league);
+  const effectiveDate = match.matchDate ?? batch.date;
   const homeRecord = await findOrCreateClub(match.homeTeam, league);
   const awayRecord = await findOrCreateClub(match.awayTeam, league);
 
   const { home: homeWrites, away: awayWrites } = mapMatchPredictionsToWrites(
     match,
     batch.id,
-    batch.date,
+    effectiveDate,
     homeRecord.clubId,
     awayRecord.clubId,
     match.homeTeam,
@@ -244,7 +245,7 @@ async function processMatch(
   let homeUpdated = applyWrites(homeRecord, homeWrites, {
     batchId: batch.id,
     matchId: match.id,
-    date: batch.date,
+    date: effectiveDate,
     venue: "home",
     opponentId: awayRecord.clubId,
     opponentName: match.awayTeam,
@@ -254,7 +255,7 @@ async function processMatch(
   let awayUpdated = applyWrites(awayRecord, awayWrites, {
     batchId: batch.id,
     matchId: match.id,
-    date: batch.date,
+    date: effectiveDate,
     venue: "away",
     opponentId: homeRecord.clubId,
     opponentName: match.homeTeam,
@@ -267,7 +268,7 @@ async function processMatch(
     const sampleWeight = matchLearningWeight(ts);
     if (ts.home.yellowCards != null) {
       homeUpdated = appendEntry(homeUpdated, "yellowCards", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -281,7 +282,7 @@ async function processMatch(
     }
     if (ts.home.redCards != null) {
       homeUpdated = appendEntry(homeUpdated, "redCards", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -295,7 +296,7 @@ async function processMatch(
     }
     if (ts.home.fouls != null) {
       homeUpdated = appendEntry(homeUpdated, "fouls", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -309,7 +310,7 @@ async function processMatch(
     }
     if (ts.home.possession != null) {
       homeUpdated = appendEntry(homeUpdated, "possession", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -323,7 +324,7 @@ async function processMatch(
     }
     if (ts.home.totalShots != null) {
       homeUpdated = appendEntry(homeUpdated, "totalShots", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -337,7 +338,7 @@ async function processMatch(
     }
     if (ts.home.shotsOnTarget != null) {
       homeUpdated = appendEntry(homeUpdated, "shotsOnTarget", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -351,7 +352,7 @@ async function processMatch(
     }
     if (ts.home.corners != null) {
       homeUpdated = appendEntry(homeUpdated, "corners", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -365,7 +366,7 @@ async function processMatch(
     }
     if (ts.home.offsides != null) {
       homeUpdated = appendEntry(homeUpdated, "offsides", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: awayRecord.clubId,
@@ -379,7 +380,7 @@ async function processMatch(
     }
     if (ts.away.yellowCards != null) {
       awayUpdated = appendEntry(awayUpdated, "yellowCards", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -393,7 +394,7 @@ async function processMatch(
     }
     if (ts.away.redCards != null) {
       awayUpdated = appendEntry(awayUpdated, "redCards", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -407,7 +408,7 @@ async function processMatch(
     }
     if (ts.away.fouls != null) {
       awayUpdated = appendEntry(awayUpdated, "fouls", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -421,7 +422,7 @@ async function processMatch(
     }
     if (ts.away.possession != null) {
       awayUpdated = appendEntry(awayUpdated, "possession", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -435,7 +436,7 @@ async function processMatch(
     }
     if (ts.away.totalShots != null) {
       awayUpdated = appendEntry(awayUpdated, "totalShots", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -449,7 +450,7 @@ async function processMatch(
     }
     if (ts.away.shotsOnTarget != null) {
       awayUpdated = appendEntry(awayUpdated, "shotsOnTarget", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -463,7 +464,7 @@ async function processMatch(
     }
     if (ts.away.corners != null) {
       awayUpdated = appendEntry(awayUpdated, "corners", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -477,7 +478,7 @@ async function processMatch(
     }
     if (ts.away.offsides != null) {
       awayUpdated = appendEntry(awayUpdated, "offsides", {
-        date: batch.date,
+        date: effectiveDate,
         batchId: batch.id,
         matchId: match.id,
         opponentId: homeRecord.clubId,
@@ -520,14 +521,14 @@ async function processMatch(
   homeUpdated = appendRecentLineup(
     homeUpdated,
     match.teamStats?.lineups?.home,
-    batch.date,
+    effectiveDate,
     awayRecord.clubId,
     match.id
   );
   awayUpdated = appendRecentLineup(
     awayUpdated,
     match.teamStats?.lineups?.away,
-    batch.date,
+    effectiveDate,
     homeRecord.clubId,
     match.id
   );
