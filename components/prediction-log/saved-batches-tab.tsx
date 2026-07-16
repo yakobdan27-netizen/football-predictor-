@@ -439,7 +439,9 @@ export function SavedBatchesTab({
             {bulkSyncing ? "Bulk syncing…" : "Sync last 5 results (Livescore)"}
           </button>
           <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-            Opening a batch auto-fills finished matches from Livescore (manual entry always works).
+            Sync results from API fills empty actuals from api-sports.io by batch date and home/away
+            team names.
+            Opening a batch also auto-fills finished matches from Livescore (manual entry always works).
             Bulk sync pulls the last 5 finished 2025/26 results per league into club history.
             {expandedId ? " API sync targets the open batch only." : ""}
           </span>

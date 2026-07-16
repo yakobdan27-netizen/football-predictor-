@@ -41,8 +41,13 @@ export function buildMarketOptions(
 
   if (showSingle) {
     for (const def of LOG_MARKETS) {
-      if (def.kind === "numeric" && def.lineOptions) {
-        for (const line of def.lineOptions) {
+      const hasLineOptions =
+        (def.kind === "numeric" ||
+          def.kind === "asian_handicap" ||
+          def.kind === "european_handicap") &&
+        def.lineOptions;
+      if (hasLineOptions) {
+        for (const line of def.lineOptions!) {
           for (const pick of pickOptionsForMarket(def.key, homeTeam, awayTeam, line)) {
             options.push({
               kind: "single",

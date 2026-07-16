@@ -10,6 +10,7 @@ import { enabledComboMarkets } from "@/lib/prediction-log/combo-markets-config";
 import {
   defaultPrediction,
   LOG_MARKETS,
+  marketHasLineOptions,
   pickOptionsForMarket,
 } from "@/lib/prediction-log/markets-config";
 import {
@@ -185,9 +186,9 @@ export function MatchPredictionForm({
             </label>
           </div>
 
-          {def.kind === "numeric" && def.lineOptions && (
+          {marketHasLineOptions(def) && (
             <div className="chip-scroll" style={{ marginBottom: "0.5rem" }}>
-              {def.lineOptions.map((l) => (
+              {def.lineOptions!.map((l) => (
                 <button
                   key={l}
                   type="button"

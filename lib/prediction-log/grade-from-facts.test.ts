@@ -28,13 +28,14 @@ function baseMatch(overrides: Partial<LogMatch> = {}): LogMatch {
   };
 }
 
-test("FT goals grade 1x2 / DC / BTTS", () => {
+test("FT goals grade 1x2 / DC / BTTS / total goals", () => {
   const m = gradeMatchFromFacts(
     baseMatch({
       predictions: {
         "1x2": { prediction: "home", confidence: 60 },
         double_chance: { prediction: "1x", confidence: 55 },
         btts: { prediction: "yes", confidence: 50 },
+        total_goals_ou: { prediction: "under", line: 4.5, confidence: 50 },
       },
       teamStats: { home: { goals: 2 }, away: { goals: 1 } },
     })
@@ -42,6 +43,7 @@ test("FT goals grade 1x2 / DC / BTTS", () => {
   assert.equal(m.scored["1x2"], "correct");
   assert.equal(m.scored.double_chance, "correct");
   assert.equal(m.scored.btts, "correct");
+  assert.equal(m.scored.total_goals_ou, "correct");
   assert.equal(m.primaryGrade?.result, "correct");
 });
 

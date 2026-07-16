@@ -1,5 +1,10 @@
 import type { LogMarketKey, LeagueCharacterProfile } from "./types";
 import type { ClubRecord, ClubStatMetadata } from "./club-record-types";
+import {
+  asianHandicapProb,
+  europeanHandicapProb,
+  halfTimeScoreGrid,
+} from "./handicap";
 import { getLeagueBaseline, type LeagueBaselinesStore } from "./league-baselines";
 import { scaleLambdasForLeague } from "./league-character";
 import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
@@ -74,7 +79,8 @@ export function pickProbFromMatrix(
   probs: MatrixMarketProbs,
   marketKey: LogMarketKey,
   prediction: string,
-  line?: number
+  line?: number,
+  ctx?: { scoreGrid?: number[][]; lambdaHome?: number; lambdaAway?: number }
 ): number {
   const p = prediction.toLowerCase().trim();
 
@@ -92,6 +98,52 @@ export function pickProbFromMatrix(
   if (marketKey === "btts") {
     if (p === "yes" || p === "over") return probs.bttsYes;
     return probs.bttsNo;
+  }
+  if (marketKey === "total_goals_ou") {
+    const lineKey = line != null ? String(line) : "2.5";
+    const ou = probs.overUnder[lineKey] ?? probs.overUnder["2.5"];
+    if (!ou) return 0.5;
+    return p === "over" ? ou.over : ou.under;
+  }
+  if (marketKey === "handicap" || marketKey === "ht_handicap") {
+    const side = p === "away" ? "away" : "home";
+    if (line == null) {
+      // #region agent log
+      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'D',location:'statistics-engine.ts:pickProbFromMatrix',message:'handicap missing line → 0.5',data:{marketKey,prediction:p,hasCtx:!!ctx},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return 0.5;
+    }
+    const grid =
+      marketKey === "ht_handicap" && ctx?.lambdaHome != null && ctx?.lambdaAway != null
+        ? halfTimeScoreGrid(ctx.lambdaHome, ctx.lambdaAway)
+        : ctx?.scoreGrid;
+    if (!grid) {
+      // #region agent log
+      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'D',location:'statistics-engine.ts:pickProbFromMatrix',message:'handicap missing scoreGrid → 0.5',data:{marketKey,prediction:p,line,hasCtx:!!ctx,hasScoreGrid:!!ctx?.scoreGrid},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return 0.5;
+    }
+    return asianHandicapProb(grid, line, side);
+  }
+  if (marketKey === "three_way_handicap") {
+    if (line == null) {
+      // #region agent log
+      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'F',location:'statistics-engine.ts:pickProbFromMatrix',message:'three_way missing line → 0.33',data:{prediction:p,hasCtx:!!ctx},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return 0.33;
+    }
+    const grid = ctx?.scoreGrid;
+    if (!grid) {
+      // #region agent log
+      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'E',location:'statistics-engine.ts:pickProbFromMatrix',message:'three_way missing scoreGrid → raw 1x2',data:{prediction:p,line,rawHome:probs.home,rawDraw:probs.draw,rawAway:probs.away},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (p === "home") return probs.home;
+      if (p === "away") return probs.away;
+      return probs.draw;
+    }
+    if (p === "home") return europeanHandicapProb(grid, line, "home");
+    if (p === "away") return europeanHandicapProb(grid, line, "away");
+    return europeanHandicapProb(grid, line, "draw");
   }
   const lineKey = line != null ? String(line) : "2.5";
   const ou = probs.overUnder[lineKey] ?? probs.overUnder["2.5"];
@@ -125,7 +177,11 @@ export function computeDixonColes(
     STAT_ENGINE_CONFIG.SCORE_GRID_MAX
   );
   const marketProbs = marketProbsFromMatrix(scoreGrid);
-  const marketProb = pickProbFromMatrix(marketProbs, marketKey, prediction, line);
+  const marketProb = pickProbFromMatrix(marketProbs, marketKey, prediction, line, {
+    scoreGrid,
+    lambdaHome,
+    lambdaAway,
+  });
 
   return { scoreGrid, lambdaHome, lambdaAway, marketProb, marketProbs };
 }

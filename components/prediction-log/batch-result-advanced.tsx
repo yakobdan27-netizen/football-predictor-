@@ -2,7 +2,7 @@
 
 import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
 import { cloneMatchTeamStats } from "@/lib/prediction-log/match-learning";
-import { LOG_MARKETS, LOG_MARKET_MAP } from "@/lib/prediction-log/markets-config";
+import { LOG_MARKETS, LOG_MARKET_MAP, marketHasLineOptions } from "@/lib/prediction-log/markets-config";
 import { scoreMatch } from "@/lib/prediction-log/scoring";
 import type { GoalTimingCurve, LogMarketKey, LogMatch, MarketActual, TeamSideStats } from "@/lib/prediction-log/types";
 
@@ -92,7 +92,7 @@ function MiniInput({
 
 export function BatchResultAdvanced({ match, onChange }: BatchResultAdvancedProps) {
   const numericMarkets = LOG_MARKETS.filter(
-    (m) => m.kind === "numeric" && match.predictions[m.key]
+    (m) => marketHasLineOptions(m) && match.predictions[m.key]
   );
 
   return (

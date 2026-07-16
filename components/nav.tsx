@@ -12,6 +12,7 @@ const links = [
   { href: "/recommendation", label: "Reco", icon: "🎯", desktopLabel: "Recommendation" },
   { href: "/combined-odds", label: "Combo", icon: "🎲", desktopLabel: "Combined Odds" },
   { href: "/combined-odds-extended", label: "Combo+", icon: "➕", desktopLabel: "Extended Combos" },
+  { href: "/half-comparison-analysis", label: "Half", icon: "⏱️", desktopLabel: "Half Comparison" },
   { href: "/settings", label: "Set", icon: "⚙️", desktopLabel: "Settings" },
   { href: "/analysis", label: "Stats", icon: "📊", desktopLabel: "Analysis" },
   { href: "/risk", label: "Risk", icon: "🛡️", desktopLabel: "Risk & Eval" },

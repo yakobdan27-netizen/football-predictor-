@@ -6,7 +6,8 @@ export default function AnalysisPage() {
     <div>
       <h1 className="page-title">Stats</h1>
       <p className="page-sub">
-        Exports, logging tips, batch comparisons, and performance breakdown from your saved data.
+        Recommendation workbench (generate + full math), model diagnostics, exports, and performance
+        from your saved data.
       </p>
       <Suspense fallback={<p className="page-sub">Loading stats…</p>}>
         <AnalysisApp />

@@ -5,7 +5,8 @@ export default function RecommendationPage() {
     <div>
       <h1 className="page-title">Prediction Recommendation</h1>
       <p className="page-sub">
-        Generate recommendations from your saved predictions. Review batch summaries here — open Stats for full analysis.
+        Batch decision sheet — system pick, selected market, and better alternatives at a glance.
+        Generate recommendations and open full analysis on Stats.
       </p>
       <RecommendationApp />
     </div>

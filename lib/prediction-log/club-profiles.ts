@@ -113,6 +113,9 @@ function marketBucket(
   switch (market) {
     case "1x2":
     case "ht_1x2":
+    case "handicap":
+    case "ht_handicap":
+    case "three_way_handicap":
       return "result1x2";
     case "double_chance":
       return "doubleChance";
@@ -120,6 +123,7 @@ function marketBucket(
       return "btts";
     case "home_goals_ou":
     case "away_goals_ou":
+    case "total_goals_ou":
       return "overUnderGoals";
     case "more_goals_half":
     case "draw_one_half":
@@ -221,7 +225,7 @@ function computeStreaks(events: ClubPickEvent[]): ClubStreakStats {
       streaks.maxUnderStreak = Math.max(streaks.maxUnderStreak, curUnder);
     }
 
-    if (e.market === "1x2" || e.market === "ht_1x2") {
+    if (e.market === "1x2" || e.market === "ht_1x2" || e.market === "handicap" || e.market === "ht_handicap" || e.market === "three_way_handicap") {
       curWin = isWin ? curWin + 1 : 0;
     }
   }

@@ -19,6 +19,8 @@ interface StatMatchDiagnosticsProps {
   analysis: AnalysisHistory | null;
   teamsQuality: TeamsQualityStore | null;
   mlClassifier: MlClassifierStore | null;
+  /** Prefer this batch id / recommendationId when present (deep-link). */
+  initialBatchId?: string | null;
 }
 
 export function StatMatchDiagnostics({
@@ -26,14 +28,27 @@ export function StatMatchDiagnostics({
   analysis,
   teamsQuality,
   mlClassifier,
+  initialBatchId,
 }: StatMatchDiagnosticsProps) {
-  const [batchId, setBatchId] = useState(batches[0]?.id ?? "");
+  const resolvedInitial =
+    batches.find((b) => b.id === initialBatchId || b.recommendationId === initialBatchId)?.id ??
+    batches[0]?.id ??
+    "";
+  const [batchId, setBatchId] = useState(resolvedInitial);
   const [matchId, setMatchId] = useState("");
   const [homeRecord, setHomeRecord] = useState<ClubRecord | null>(null);
   const [awayRecord, setAwayRecord] = useState<ClubRecord | null>(null);
   const [retraining, setRetraining] = useState(false);
   const [retrainMsg, setRetrainMsg] = useState<string | null>(null);
   const [modelInfo, setModelInfo] = useState(mlClassifier);
+
+  useEffect(() => {
+    if (!initialBatchId) return;
+    const match =
+      batches.find((b) => b.id === initialBatchId || b.recommendationId === initialBatchId)?.id ??
+      null;
+    if (match && match !== batchId) setBatchId(match);
+  }, [initialBatchId, batches, batchId]);
 
   const batch = batches.find((b) => b.id === batchId) ?? null;
   const matches = batch?.matches ?? [];

@@ -1,6 +1,11 @@
+import { formatHandicapLine } from "./handicap";
 import type { LogMarketKey, MarketPrediction } from "./types";
 
-export type MarketKind = "categorical" | "numeric";
+export type MarketKind =
+  | "categorical"
+  | "numeric"
+  | "asian_handicap"
+  | "european_handicap";
 
 export interface LogMarketDef {
   key: LogMarketKey;
@@ -28,6 +33,13 @@ export const LOG_MARKETS: LogMarketDef[] = [
   { key: "double_chance", label: "Double chance", kind: "categorical" },
   { key: "btts", label: "Both teams to score", kind: "categorical" },
   {
+    key: "total_goals_ou",
+    label: "Total goals O/U",
+    kind: "numeric",
+    defaultLine: 2.5,
+    lineOptions: [1.5, 2.5, 3.5],
+  },
+  {
     key: "home_goals_ou",
     label: "Home team goals O/U",
     kind: "numeric",
@@ -40,6 +52,27 @@ export const LOG_MARKETS: LogMarketDef[] = [
     kind: "numeric",
     defaultLine: 0.5,
     lineOptions: [0.5, 1.5, 2.5],
+  },
+  {
+    key: "handicap",
+    label: "Handicap (Asian)",
+    kind: "asian_handicap",
+    defaultLine: -0.5,
+    lineOptions: [-2.5, -1.5, -0.5, 0, 0.5, 1.5, 2.5],
+  },
+  {
+    key: "ht_handicap",
+    label: "First half handicap (Asian)",
+    kind: "asian_handicap",
+    defaultLine: -0.5,
+    lineOptions: [-1.5, -0.5, 0, 0.5, 1.5],
+  },
+  {
+    key: "three_way_handicap",
+    label: "3-way handicap (European)",
+    kind: "european_handicap",
+    defaultLine: -1,
+    lineOptions: [-2, -1, 0, 1, 2],
   },
   { key: "ht_1x2", label: "First half result", kind: "categorical" },
   { key: "more_goals_half", label: "More goals (1H vs 2H)", kind: "categorical" },
@@ -119,7 +152,18 @@ export function defaultPrediction(key: LogMarketKey): MarketPrediction {
   switch (key) {
     case "1x2":
     case "ht_1x2":
-      return { prediction: "home", confidence: 50 };
+    case "three_way_handicap": {
+      const pred = { prediction: "home", confidence: 50 } as MarketPrediction;
+      // #region agent log
+      if (key === "three_way_handicap") {
+        fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'F',location:'markets-config.ts:defaultPrediction',message:'three_way_handicap default omits line',data:{key,line:pred.line,defaultLine:def.defaultLine},timestamp:Date.now()})}).catch(()=>{});
+      }
+      // #endregion
+      return pred;
+    }
+    case "handicap":
+    case "ht_handicap":
+      return { prediction: "home", line: def.defaultLine ?? -0.5, confidence: 50 };
     case "double_chance":
       return { prediction: "1x", confidence: 50 };
     case "btts":
@@ -150,11 +194,26 @@ export function pickOptionsForMarket(
   switch (key) {
     case "1x2":
     case "ht_1x2":
+    case "three_way_handicap":
       return [
         { value: "home", label: short(home) || "Home" },
         { value: "draw", label: "Draw" },
         { value: "away", label: short(away) || "Away" },
       ];
+    case "handicap":
+    case "ht_handicap": {
+      const lineLabel = line != null ? formatHandicapLine(line) : "?";
+      return [
+        {
+          value: "home",
+          label: `${short(home) || "Home"} (${lineLabel})`,
+        },
+        {
+          value: "away",
+          label: `${short(away) || "Away"} (${line != null ? formatHandicapLine(-line) : "?"})`,
+        },
+      ];
+    }
     case "double_chance":
       return [
         { value: "1x", label: "1X" },
@@ -186,12 +245,27 @@ export function pickOptionsForMarket(
   }
 }
 
+export function marketHasLineOptions(def: LogMarketDef): boolean {
+  return (
+    (def.kind === "numeric" ||
+      def.kind === "asian_handicap" ||
+      def.kind === "european_handicap") &&
+    !!def.lineOptions?.length
+  );
+}
+
 export function actualOptionsForMarket(
   key: LogMarketKey,
   home: string,
   away: string
 ): { value: string; label: string }[] | null {
   const def = LOG_MARKET_MAP[key];
-  if (def.kind === "numeric") return null;
+  if (
+    def.kind === "numeric" ||
+    def.kind === "asian_handicap" ||
+    def.kind === "european_handicap"
+  ) {
+    return null;
+  }
   return pickOptionsForMarket(key, home, away);
 }

@@ -13,7 +13,7 @@ function clubWinLosePick(
   prediction: string,
   side: "home" | "away"
 ): string {
-  if (market === "1x2" || market === "ht_1x2") {
+  if (market === "1x2" || market === "ht_1x2" || market === "handicap" || market === "ht_handicap" || market === "three_way_handicap") {
     if (side === "home") {
       if (prediction === "home") return "win";
       if (prediction === "draw") return "draw";
@@ -51,9 +51,12 @@ export function mapMatchPredictionsToWrites(
     const odds = pred.odds;
 
     switch (key) {
-      case "1x2":
-      case "ht_1x2":
-      case "win_one_half":
+    case "1x2":
+    case "ht_1x2":
+    case "handicap":
+    case "ht_handicap":
+    case "three_way_handicap":
+    case "win_one_half":
         home.push({
           clubSide: "home",
           type: "winLose",
@@ -70,6 +73,20 @@ export function mapMatchPredictionsToWrites(
       case "btts":
         home.push({ clubSide: "home", type: "bothTeamsScore", predicted: pred.prediction, odds });
         away.push({ clubSide: "away", type: "bothTeamsScore", predicted: pred.prediction, odds });
+        break;
+      case "total_goals_ou":
+        home.push({
+          clubSide: "home",
+          type: "overUnder",
+          predicted: `${pred.prediction}${pred.line != null ? `@${pred.line}` : ""}`,
+          odds,
+        });
+        away.push({
+          clubSide: "away",
+          type: "overUnder",
+          predicted: `${pred.prediction}${pred.line != null ? `@${pred.line}` : ""}`,
+          odds,
+        });
         break;
       case "home_goals_ou":
         home.push({

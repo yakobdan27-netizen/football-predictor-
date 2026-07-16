@@ -18,6 +18,9 @@ export function marketToHistoryType(market: LogMarketKey): HistoryTypeKey | null
   switch (market) {
     case "1x2":
     case "ht_1x2":
+    case "handicap":
+    case "ht_handicap":
+    case "three_way_handicap":
     case "win_one_half":
     case "double_chance":
       return "winLose";
@@ -37,6 +40,7 @@ export function marketToHistoryType(market: LogMarketKey): HistoryTypeKey | null
       return "offsides";
     case "home_goals_ou":
     case "away_goals_ou":
+    case "total_goals_ou":
     case "more_goals_half":
     case "draw_one_half":
       return "overUnder";

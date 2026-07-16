@@ -1,3 +1,4 @@
+import { asianHandicapResult, europeanHandicapResult } from "./handicap";
 import { LOG_MARKET_MAP } from "./markets-config";
 import type { LogMarketKey, ScoreResult } from "./types";
 
@@ -58,6 +59,27 @@ function scoreNumeric(
   return p === side ? "correct" : "wrong";
 }
 
+function scoreAsianHandicap(
+  prediction: string,
+  line: number | undefined,
+  goalDiff: number
+): ScoreResult {
+  if (line == null) return null;
+  const outcome = asianHandicapResult(goalDiff, line);
+  if (outcome === "push") return "push";
+  return scoreCategorical(prediction, outcome);
+}
+
+function scoreEuropeanHandicap(
+  prediction: string,
+  line: number | undefined,
+  goalDiff: number
+): ScoreResult {
+  if (line == null) return null;
+  const outcome = europeanHandicapResult(goalDiff, line);
+  return scoreCategorical(prediction, outcome);
+}
+
 export function scoreMarket(
   key: LogMarketKey,
   prediction: string,
@@ -66,6 +88,16 @@ export function scoreMarket(
 ): ScoreResult {
   if (isBlankActual(actual ?? undefined)) return null;
   const def = LOG_MARKET_MAP[key];
+  if (def.kind === "asian_handicap") {
+    const goalDiff = typeof actual === "number" ? actual : parseFloat(String(actual).trim());
+    if (!Number.isFinite(goalDiff)) return null;
+    return scoreAsianHandicap(prediction, line, goalDiff);
+  }
+  if (def.kind === "european_handicap") {
+    const goalDiff = typeof actual === "number" ? actual : parseFloat(String(actual).trim());
+    if (!Number.isFinite(goalDiff)) return null;
+    return scoreEuropeanHandicap(prediction, line, goalDiff);
+  }
   if (def.kind === "categorical") {
     return scoreCategorical(prediction, actual as string | number);
   }

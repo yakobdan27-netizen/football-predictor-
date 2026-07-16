@@ -26,8 +26,17 @@ export function leagueDeltaForMarket(
     delta += (traitValue(profile, "home_advantage_index") ?? 0) * 0.05;
   }
   if (
+    marketKey === "handicap" ||
+    marketKey === "ht_handicap" ||
+    marketKey === "three_way_handicap"
+  ) {
+    delta += (traitValue(profile, "favourite_reliability") ?? 0) * 0.002;
+    delta += (traitValue(profile, "home_advantage_index") ?? 0) * 0.04;
+  }
+  if (
     marketKey === "home_goals_ou" ||
     marketKey === "away_goals_ou" ||
+    marketKey === "total_goals_ou" ||
     marketKey === "shots_ou" ||
     marketKey === "home_shots_ou" ||
     marketKey === "away_shots_ou" ||
@@ -40,7 +49,7 @@ export function leagueDeltaForMarket(
     delta += (traitValue(profile, "goals_per_match_avg") ?? 0) * 0.02;
     delta += (traitValue(profile, "tempo_index") ?? 0) * 0.001;
   }
-  if (marketKey === "ht_1x2" || marketKey === "more_goals_half") {
+  if (marketKey === "ht_1x2" || marketKey === "more_goals_half" || marketKey === "ht_handicap") {
     delta += (traitValue(profile, "half_dominance") ?? 0) * 0.03;
   }
   return Math.max(-LEAGUE_ADJUST_CAP, Math.min(LEAGUE_ADJUST_CAP, delta));

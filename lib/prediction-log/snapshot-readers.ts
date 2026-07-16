@@ -61,6 +61,32 @@ export function getTierAccentColor(tier: PredictionBatch["recommendationTier"]):
   return "#5aa0ff";
 }
 
+/** Human-readable tier for summary cards (Extreme Safe / Balanced / Aggressive). */
+export function tierDisplayLabel(tier: PredictionBatch["recommendationTier"]): string {
+  if (tier === "safe") return "Extreme Safe";
+  if (tier === "aggressive") return "Aggressive";
+  if (tier === "balanced") return "Balanced";
+  return "Balanced";
+}
+
+export function formatSystemPickLine(pick: FrozenSystemPick | null): string {
+  if (!pick) return "—";
+  return pick.label;
+}
+
+/** Resolve a batch by `recommendationId` or internal `id` (for `?batch=` deep links). */
+export function resolveBatchByQuery(
+  batches: PredictionBatch[],
+  query: string | null | undefined
+): PredictionBatch | null {
+  if (!query) return null;
+  const q = query.trim();
+  if (!q) return null;
+  return (
+    batches.find((b) => b.recommendationId === q || b.id === q) ?? null
+  );
+}
+
 export function buildMatchSummaryRows(
   batch: PredictionBatch,
   recommended: RecommendedBatch

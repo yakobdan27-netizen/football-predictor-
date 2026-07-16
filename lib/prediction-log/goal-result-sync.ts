@@ -1,4 +1,5 @@
 import type { LogMarketKey, LogMatch, MarketActual } from "./types";
+import { goalDifference } from "./handicap";
 
 export type ResultSide = "home" | "draw" | "away";
 
@@ -79,6 +80,16 @@ export function applyGoalsToActuals(
   }
   if (predictions.home_goals_ou) setActual(actualResults, "home_goals_ou", homeGoals, overwrite);
   if (predictions.away_goals_ou) setActual(actualResults, "away_goals_ou", awayGoals, overwrite);
+  if (predictions.total_goals_ou) {
+    setActual(actualResults, "total_goals_ou", homeGoals + awayGoals, overwrite);
+  }
+  if (predictions.handicap || predictions.three_way_handicap) {
+    const diff = goalDifference(homeGoals, awayGoals);
+    if (predictions.handicap) setActual(actualResults, "handicap", diff, overwrite);
+    if (predictions.three_way_handicap) {
+      setActual(actualResults, "three_way_handicap", diff, overwrite);
+    }
+  }
   if (predictions.double_chance) {
     setActual(
       actualResults,
@@ -105,6 +116,9 @@ export function applyHalfTimeGoalsToActuals(
   const htRes = ftResult(hthg, htag);
 
   if (predictions.ht_1x2) setActual(actualResults, "ht_1x2", htRes, overwrite);
+  if (predictions.ht_handicap) {
+    setActual(actualResults, "ht_handicap", goalDifference(hthg, htag), overwrite);
+  }
   if (predictions.more_goals_half) {
     const g1 = hthg + htag;
     const g2 = homeGoals - hthg + (awayGoals - htag);

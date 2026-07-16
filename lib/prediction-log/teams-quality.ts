@@ -173,7 +173,13 @@ export type PickSide = "home" | "away" | "neutral";
 export function inferPickSide(marketKey: LogMarketKey, prediction: string): PickSide {
   const p = prediction.toLowerCase().trim();
 
-  if (marketKey === "1x2" || marketKey === "ht_1x2") {
+  if (marketKey === "1x2" || marketKey === "ht_1x2" || marketKey === "three_way_handicap") {
+    if (p === "home" || p === "1" || p === "h") return "home";
+    if (p === "away" || p === "2" || p === "a") return "away";
+    return "neutral";
+  }
+
+  if (marketKey === "handicap" || marketKey === "ht_handicap") {
     if (p === "home" || p === "1" || p === "h") return "home";
     if (p === "away" || p === "2" || p === "a") return "away";
     return "neutral";

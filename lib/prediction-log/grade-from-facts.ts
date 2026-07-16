@@ -4,6 +4,7 @@ import {
   ftResult,
   winOneHalfActual,
 } from "./goal-result-sync";
+import { goalDifference } from "./handicap";
 import { LOG_MARKETS, LOG_MARKET_MAP } from "./markets-config";
 import {
   resolveMarketMode,
@@ -50,8 +51,11 @@ export function deriveActualsFromFacts(
     const result = ftResult(hg!, ag!);
     out["1x2"] = { actual: result };
     out.btts = { actual: hg! > 0 && ag! > 0 ? "yes" : "no" };
+    out.total_goals_ou = { actual: hg! + ag! };
     out.home_goals_ou = { actual: hg! };
     out.away_goals_ou = { actual: ag! };
+    out.handicap = { actual: goalDifference(hg!, ag!) };
+    out.three_way_handicap = { actual: goalDifference(hg!, ag!) };
     out.double_chance = {
       actual: doubleChanceActual(result, match.predictions.double_chance?.prediction),
     };
@@ -62,6 +66,7 @@ export function deriveActualsFromFacts(
   if (bothSet(hth, ath) && bothSet(hg, ag)) {
     const htRes = ftResult(hth!, ath!);
     out.ht_1x2 = { actual: htRes };
+    out.ht_handicap = { actual: goalDifference(hth!, ath!) };
     const g1 = hth! + ath!;
     const g2 = hg! - hth! + (ag! - ath!);
     out.more_goals_half = {
@@ -81,6 +86,7 @@ export function deriveActualsFromFacts(
     };
   } else if (bothSet(hth, ath)) {
     out.ht_1x2 = { actual: ftResult(hth!, ath!) };
+    out.ht_handicap = { actual: goalDifference(hth!, ath!) };
   } else if (ts.firstHalfResult) {
     out.ht_1x2 = { actual: ts.firstHalfResult };
   }

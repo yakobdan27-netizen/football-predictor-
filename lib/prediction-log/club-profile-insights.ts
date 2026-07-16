@@ -15,6 +15,9 @@ function marketMetricKey(
   switch (market) {
     case "1x2":
     case "ht_1x2":
+    case "handicap":
+    case "ht_handicap":
+    case "three_way_handicap":
       return "result1x2";
     case "double_chance":
       return "doubleChance";
@@ -22,6 +25,7 @@ function marketMetricKey(
       return "btts";
     case "home_goals_ou":
     case "away_goals_ou":
+    case "total_goals_ou":
       return "overUnderGoals";
     case "more_goals_half":
     case "draw_one_half":

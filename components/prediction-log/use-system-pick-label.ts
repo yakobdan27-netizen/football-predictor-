@@ -118,6 +118,9 @@ export function useSystemPickLabel(
           let bestLabel = "—";
           let bestProb = -1;
           for (const opt of options) {
+            // #region agent log
+            fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'D',location:'use-system-pick-label.ts:loop',message:'system pick calls pickProb without scoreGrid ctx',data:{marketKey,opt:opt.value,line,hasScoreGrid:!!dc.scoreGrid},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
             const p = pickProbFromMatrix(dc.marketProbs, marketKey, opt.value, line);
             if (p > bestProb) {
               bestProb = p;
