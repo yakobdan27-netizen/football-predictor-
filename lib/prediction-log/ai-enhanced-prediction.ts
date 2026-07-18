@@ -63,7 +63,7 @@ export function deriveLearnerCorrections(stats: LearnerStatsStore | null | undef
   }
 
   const risky = stats.batchPatterns.find(
-    (p) => p.label.includes("> 8") && p.sample >= 3 && (p.winRate ?? 100) < 40
+    (p) => p.label.includes("> 8") && p.totalBatches >= 3 && (p.winRate ?? 100) < 40
   );
   if (risky) {
     homeLambdaFactor -= 0.02;
