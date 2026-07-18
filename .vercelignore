@@ -2,7 +2,9 @@ node_modules
 .next
 .env.local
 .env*.local
-/data
+/data/raw
+/data/clean
+/data/reference
 ingestion
 *.py
 __pycache__
