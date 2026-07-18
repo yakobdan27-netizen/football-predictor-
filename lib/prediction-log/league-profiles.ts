@@ -18,6 +18,7 @@ import type {
   PredictionBatch,
 } from "./types";
 import { LEAGUE_PROFILE_SCHEMA_VERSION } from "./types";
+import { mergeSeedIntoLeagueProfiles } from "./league-seed-profiles";
 
 const MIN_TRAIT_SAMPLE = 5;
 
@@ -468,12 +469,15 @@ export function recomputeLeagueProfiles(
     leagues[key] = { ...league, characterProfile: profile };
   }
 
-  return {
+  const liveStore = {
     schemaVersion: LEAGUE_PROFILE_SCHEMA_VERSION,
     updatedAt: new Date().toISOString(),
-    leagues,
+    leagues: Object.fromEntries(
+      Object.entries(leagues).map(([k, v]) => [k, { ...v, dataSource: "live" as const }])
+    ),
     manualFields: existing?.manualFields ?? {},
   };
+  return mergeSeedIntoLeagueProfiles(liveStore);
 }
 
 export function saveManualLeagueField(

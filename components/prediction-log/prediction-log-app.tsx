@@ -58,6 +58,11 @@ export function PredictionLogApp() {
     [refresh]
   );
 
+  const handleViewBatch = useCallback((batchId: string) => {
+    setHighlightBatchId(batchId);
+    setTab("saved");
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -102,6 +107,7 @@ export function PredictionLogApp() {
           learnerEnabled={learnerEnabled}
           teamsQuality={teamsQuality}
           onSaved={handleSaved}
+          onViewBatch={handleViewBatch}
         />
       )}
       {tab === "saved" && (

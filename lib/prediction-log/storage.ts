@@ -107,6 +107,12 @@ export async function initStorage(): Promise<void> {
   const idxRes = await fetch("/api/clubs");
   const idxData = await idxRes.json();
   if (idxRes.ok) clubIndexCache = idxData.index ?? null;
+  // Cold-start league profiles from 2021–26 seed baselines (merged with live)
+  try {
+    updateLeagueProfiles();
+  } catch {
+    /* non-blocking */
+  }
   try {
     await fetchTeamsQuality();
   } catch {

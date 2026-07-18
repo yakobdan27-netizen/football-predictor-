@@ -3,11 +3,13 @@
 import { useMemo } from "react";
 import { computeLearnerPatterns, overallWinRate, totalMatchesInBatches, totalSavedBatches } from "@/lib/prediction-log/learner-patterns";
 import { buildGlobalCalibrationReport } from "@/lib/prediction-log/global-calibration";
+import { AI_ENHANCED_MIN_SAMPLES } from "@/lib/prediction-log/ai-enhanced-prediction";
 import { LearnerAdvicePanel } from "./learner-advice-panel";
 import { LearnedPatternsPanel } from "./learned-patterns-panel";
 import { ClubCapacityBrowser } from "./club-capacity-browser";
 import { CalibrationDashboard } from "./calibration-dashboard";
 import { MarketReliabilityBoard } from "./market-reliability-board";
+import { EnhancedMatchupPanel } from "./enhanced-matchup-panel";
 import { usePredictionLogData } from "./use-prediction-log-data";
 
 export function AiLearnerApp() {
@@ -46,6 +48,8 @@ export function AiLearnerApp() {
   }
 
   const winRate = overallWinRate(learnerStats);
+  const scored = learnerStats.totalScoredPicks;
+  const enhancementReady = scored >= AI_ENHANCED_MIN_SAMPLES;
 
   async function exportClubs() {
     const res = await fetch("/api/clubs/export");
@@ -107,7 +111,23 @@ export function AiLearnerApp() {
           </div>
           <div className="stat-label">Learning status</div>
         </div>
+        <div className="card">
+          <div
+            className="stat-value"
+            style={{
+              fontSize: "1rem",
+              color: enhancementReady ? "var(--accent)" : "var(--accent2)",
+            }}
+          >
+            {enhancementReady ? "AI Enhanced" : "Reference Only"}
+          </div>
+          <div className="stat-label">
+            Matchup mode ({scored}/{AI_ENHANCED_MIN_SAMPLES} scored)
+          </div>
+        </div>
       </div>
+
+      <EnhancedMatchupPanel learnerStats={learnerStats} />
 
       <div className="card" style={{ marginBottom: "1rem", fontSize: "0.8125rem", color: "var(--muted)" }}>
         <strong style={{ color: "inherit" }}>Update log</strong>

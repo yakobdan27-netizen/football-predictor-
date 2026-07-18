@@ -242,6 +242,31 @@ export function SavedBatchesTab({
       updateTeamCharacteristics();
       updateLeagueProfiles();
 
+      // Non-blocking audit log for AI learner pipeline (does not affect save)
+      for (const m of projectedBatch.matches) {
+        const hg = m.teamStats?.home?.goals;
+        const ag = m.teamStats?.away?.goals;
+        if (hg == null || ag == null) continue;
+        const marketKey = Object.keys(m.predictions)[0];
+        const pred = marketKey ? m.predictions[marketKey as LogMarketKey]?.prediction : undefined;
+        void fetch("/api/manual-prediction", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            batchId: projectedBatch.id,
+            matchId: m.id,
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            league: projectedBatch.league,
+            predictedScore: pred,
+            actualScore: `${hg}-${ag}`,
+            confidence: marketKey
+              ? m.predictions[marketKey as LogMarketKey]?.confidence
+              : undefined,
+          }),
+        }).catch(() => {});
+      }
+
       let finalBatch = projectedBatch;
       if (learnerEnabled && recoSettings && projectedBatch.batchKind !== "recommended") {
         const refreshed = await refreshBatchLearnerRecommendation(projectedBatch.id, recoSettings);

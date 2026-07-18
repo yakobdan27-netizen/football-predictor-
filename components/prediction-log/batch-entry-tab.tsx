@@ -37,6 +37,10 @@ import { computeEntryLegProbability, entryValueFromGrid } from "@/lib/prediction
 import {
   freezeCorrectScoreOnMatches,
 } from "@/lib/prediction-log/correct-score-freeze";
+import {
+  findCrossBatchDuplicates,
+  type DuplicateHit,
+} from "@/lib/prediction-log/cross-batch-duplicate-check";
 import type {
   CombinedOddsSettings,
   LogMatch,
@@ -49,6 +53,7 @@ import {
   aggregateBatchPlacementAlerts,
   evaluateStopLoss,
 } from "@/lib/prediction-log/strategy-rules";
+import { DuplicateBlockModal } from "./duplicate-block-modal";
 
 function emptyMatch(settings: CombinedOddsSettings, league: string): LogMatch {
   return {
@@ -93,6 +98,7 @@ interface BatchEntryTabProps {
   learnerEnabled: boolean;
   teamsQuality?: TeamsQualityStore | null;
   onSaved: (batchId: string) => void;
+  onViewBatch?: (batchId: string) => void;
 }
 
 export function BatchEntryTab({
@@ -101,6 +107,7 @@ export function BatchEntryTab({
   learnerEnabled,
   teamsQuality = null,
   onSaved,
+  onViewBatch,
 }: BatchEntryTabProps) {
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
@@ -115,6 +122,7 @@ export function BatchEntryTab({
   const [noReco, setNoReco] = useState(false);
   const [loadingFixtures, setLoadingFixtures] = useState(false);
   const [fixtureMsg, setFixtureMsg] = useState<string | null>(null);
+  const [duplicateHits, setDuplicateHits] = useState<DuplicateHit[] | null>(null);
 
   function addMatch() {
     setMatches((prev) => [...prev, emptyMatch(comboSettings, defaultLeague)]);
@@ -287,6 +295,15 @@ export function BatchEntryTab({
         matches: preparedMatches,
       };
 
+      const duplicates = findCrossBatchDuplicates({
+        incomingBatch: batch,
+        allBatches: allExisting,
+      });
+      if (duplicates.length > 0) {
+        setDuplicateHits(duplicates);
+        return;
+      }
+
       await upsertBatch(batch);
       const all = loadBatches();
       const savedBatch = all.find((b) => b.id === batch.id) ?? batch;
@@ -309,6 +326,16 @@ export function BatchEntryTab({
 
   return (
     <div>
+      {duplicateHits ? (
+        <DuplicateBlockModal
+          duplicates={duplicateHits}
+          onCancel={() => setDuplicateHits(null)}
+          onViewBatch={(batchId) => {
+            setDuplicateHits(null);
+            onViewBatch?.(batchId);
+          }}
+        />
+      ) : null}
       <div className="card" style={{ marginBottom: "1rem" }}>
         <div style={{ display: "grid", gap: "0.75rem" }}>
           <div>

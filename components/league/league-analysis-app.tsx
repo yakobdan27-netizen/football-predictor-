@@ -9,13 +9,14 @@ import { LeagueTraitTables } from "./league-trait-tables";
 import { GoalTimingChart } from "./goal-timing-chart";
 import { LeagueOverridePanel } from "./league-override-panel";
 import { LeagueEngineImpact } from "./league-engine-impact";
+import { LeagueMatchupCard } from "./league-matchup-card";
 import type { League } from "@/lib/prediction-log/types";
 
 export function LeagueAnalysisApp() {
   const { ready, leagueProfiles, learnerStats, refresh } = usePredictionLogData();
   const metas = useMemo(() => allLeagueMetas(), []);
   const seasons = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(["2025/26", "2024/25", "2023/24", "2022/23", "2021/22"]);
     for (const key of Object.keys(leagueProfiles?.leagues ?? {})) {
       const season = key.split("::")[1];
       if (season) set.add(season);
@@ -69,7 +70,35 @@ export function LeagueAnalysisApp() {
         <button type="button" className="btn btn-secondary" onClick={() => void refresh()}>
           Refresh profiles
         </button>
+        {league?.dataSource ? (
+          <span
+            style={{
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              padding: "0.25rem 0.55rem",
+              borderRadius: 4,
+              alignSelf: "center",
+              background:
+                league.dataSource === "seed"
+                  ? "color-mix(in srgb, var(--accent2) 20%, transparent)"
+                  : league.dataSource === "blended"
+                    ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+                    : "transparent",
+              color:
+                league.dataSource === "live" ? "var(--muted)" : "inherit",
+              border: league.dataSource === "live" ? "1px solid var(--border, #333)" : undefined,
+            }}
+          >
+            {league.dataSource === "seed"
+              ? "Seed prior (2021–26)"
+              : league.dataSource === "blended"
+                ? "Seed + live results"
+                : "Live results"}
+          </span>
+        ) : null}
       </div>
+
+      <LeagueMatchupCard />
 
       {league ? (
         <>
@@ -94,7 +123,9 @@ export function LeagueAnalysisApp() {
         </>
       ) : (
         <p className="page-sub">
-          No profile for this league and season yet. Save match results on prediction batches to build it.
+          No seed or live profile for this league and season. Top-5 leagues (PL, La Liga, Serie A,
+          Ligue 1) initialize from 2021–26 seeds after refresh; other leagues need saved match
+          results.
         </p>
       )}
     </div>

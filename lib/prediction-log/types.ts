@@ -580,6 +580,8 @@ export interface League {
   characterProfile: LeagueCharacterProfile;
   confidenceLevel: LeagueConfidenceLevel;
   lastUpdated: string;
+  /** seed = 2021–26 baselines; live = logged batches; blended = both */
+  dataSource?: "seed" | "live" | "blended";
 }
 
 export interface LeagueProfilesStore {

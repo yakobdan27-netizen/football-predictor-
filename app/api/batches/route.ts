@@ -5,7 +5,9 @@ import { maybeRetrainOnBatchResult } from "@/lib/prediction-log/retrain-ml";
 import { maybeBayesianCalibrateOnBatch } from "@/lib/prediction-log/bayesian-calibration";
 import { computeLeagueBaselines } from "@/lib/prediction-log/league-baselines";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
+import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
+
 export async function GET() {
   try {
     const batches = await loadAllBatches();
@@ -33,12 +35,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid batch" }, { status: 400 });
     }
     const allBatches = await loadAllBatches();
+    const isNewBatch = !allBatches.some((b) => b.id === batch.id);
+    if (isNewBatch) {
+      const duplicates = findCrossBatchDuplicates({
+        incomingBatch: batch,
+        allBatches,
+      });
+      if (duplicates.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Duplicate prediction detected: this match + market + prediction already exists in another batch on the same date.",
+            duplicates,
+          },
+          { status: 409 }
+        );
+      }
+    }
     const leagueBaselines = computeLeagueBaselines(allBatches);
     const teamsQuality = await loadTeamsQualityStore().catch(() => null);
     const synced = await syncBatchToClubHistories(batch, { leagueBaselines, teamsQuality });
     await saveBatch(synced);
     await maybeRetrainOnBatchResult(synced).catch(() => null);
-    await maybeBayesianCalibrateOnBatch(synced).catch(() => null);    return NextResponse.json({ ok: true, batch: synced });
+    await maybeBayesianCalibrateOnBatch(synced).catch(() => null);
+    return NextResponse.json({ ok: true, batch: synced });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to save batch";
     return NextResponse.json({ error: msg }, { status: 500 });
