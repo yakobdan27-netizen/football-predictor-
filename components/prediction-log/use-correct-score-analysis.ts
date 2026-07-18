@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { analyzeCorrectScore, type CorrectScoreAnalysis } from "@/lib/prediction-log/correct-score";
 import {
   CORRECT_SCORE_INSUFFICIENT_MESSAGE,
-  correctScoreHasEnoughData,
-  resolveMatchClubRecords,
   scoreGridForMatch,
 } from "@/lib/prediction-log/correct-score-freeze";
 import { loadClubRecordsForBatch } from "@/lib/prediction-log/club-record-insights";
@@ -57,15 +55,6 @@ export function useCorrectScoreAnalysis(
             matches: [match],
           };
           const clubRecords = await loadClubRecordsForBatch(stub, clubIndex, fetchClubRecord);
-          const { home, away } = resolveMatchClubRecords(match, league, clubRecords, clubIndex);
-          if (!correctScoreHasEnoughData(home, away)) {
-            if (!cancelled) {
-              setAnalysis(null);
-              setError(CORRECT_SCORE_INSUFFICIENT_MESSAGE);
-              setLoading(false);
-            }
-            return;
-          }
           const grid = scoreGridForMatch(match, league, clubRecords, clubIndex, batches);
           const result = grid ? analyzeCorrectScore(grid) : null;
           if (!cancelled) {

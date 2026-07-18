@@ -3,12 +3,15 @@ import {
   analysisToSnapshot,
   scorelineProbPct,
 } from "./correct-score";
-import { correctScoreHasEnoughData } from "./correct-score-data";
+import { clubSampleSize, correctScoreHasEnoughData } from "./correct-score-data";
+import { isFlatStatMetadata, seedCorrectScoreLambdas } from "./correct-score-seed";
 import { entryValueFromGrid } from "./combo-entry-probability";
 import { computeDixonColes } from "./statistics-engine";
 import { computeLeagueBaselines } from "./league-baselines";
 import { findClubInIndex } from "./club-index";
 import { matchLeague } from "./match-league";
+import { buildScoreMatrix } from "@/lib/predictor/score-matrix";
+import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import type { LogMatch, PredictionBatch } from "./types";
 
@@ -56,7 +59,22 @@ export function scoreGridForMatch(
     clubIndex
   );
 
-  if (!correctScoreHasEnoughData(homeRecord, awayRecord)) {
+  const enough = correctScoreHasEnoughData(homeRecord, awayRecord);
+  const homeFlat = isFlatStatMetadata(homeRecord?.statMetadata);
+  const awayFlat = isFlatStatMetadata(awayRecord?.statMetadata);
+  const useSeed = !enough || homeFlat || awayFlat;
+
+  if (useSeed) {
+    const seeded = seedCorrectScoreLambdas(match.homeTeam, match.awayTeam, league);
+    if (seeded) {
+      const grid = buildScoreMatrix(
+        seeded.lambdaHome,
+        seeded.lambdaAway,
+        STAT_ENGINE_CONFIG.DIXON_COLES_RHO,
+        STAT_ENGINE_CONFIG.SCORE_GRID_MAX
+      );
+      return grid;
+    }
     return null;
   }
 
