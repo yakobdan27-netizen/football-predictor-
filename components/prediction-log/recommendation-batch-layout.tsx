@@ -180,8 +180,12 @@ export function RecommendationBatchLayout({
                   const marketLabel = betterMarketCell(row, selectedLabel);
                   const conf = mapConfidenceBandToDisplay(
                     selected?.pick.confidenceBand,
-                    row.selectedPFinal
+                    selected?.pick.hybridConfidence ?? row.selectedPFinal
                   );
+                  const hybridLabel =
+                    selected?.pick.hybridConfidence != null
+                      ? `${selected.pick.hybridConfidence}% hybrid`
+                      : null;
                   const status = resolvePickStatus(
                     resultMatch,
                     selected?.marketKey,
@@ -225,8 +229,14 @@ export function RecommendationBatchLayout({
                         <span
                           className="badge reco-conf-badge"
                           style={confidenceBadgeStyle(conf)}
+                          title={
+                            selected?.pick.aiLearnerScore != null &&
+                            selected?.pick.systemCalculationScore != null
+                              ? `AI: ${Math.round(selected.pick.aiLearnerScore * 0.5 * 10) / 10}% | System: ${Math.round(selected.pick.systemCalculationScore * 0.5 * 10) / 10}%`
+                              : "Hybrid confidence = AI 50% + system 50%"
+                          }
                         >
-                          {displayConfidenceLabel(conf)}
+                          {hybridLabel ?? displayConfidenceLabel(conf)}
                         </span>
                       </td>
                       <td>{ft || "—"}</td>
@@ -258,8 +268,12 @@ export function RecommendationBatchLayout({
               const marketLabel = betterMarketCell(row, selectedLabel);
               const conf = mapConfidenceBandToDisplay(
                 selected?.pick.confidenceBand,
-                row.selectedPFinal
+                selected?.pick.hybridConfidence ?? row.selectedPFinal
               );
+              const hybridLabel =
+                selected?.pick.hybridConfidence != null
+                  ? `${selected.pick.hybridConfidence}% hybrid`
+                  : null;
               const status = resolvePickStatus(
                 resultMatch,
                 selected?.marketKey,
@@ -290,8 +304,14 @@ export function RecommendationBatchLayout({
                       <span
                         className="badge reco-conf-badge"
                         style={confidenceBadgeStyle(conf)}
+                        title={
+                          selected?.pick.aiLearnerScore != null &&
+                          selected?.pick.systemCalculationScore != null
+                            ? `AI: ${Math.round(selected.pick.aiLearnerScore * 0.5 * 10) / 10}% | System: ${Math.round(selected.pick.systemCalculationScore * 0.5 * 10) / 10}%`
+                            : "Hybrid confidence = AI 50% + system 50%"
+                        }
                       >
-                        {displayConfidenceLabel(conf)}
+                        {hybridLabel ?? displayConfidenceLabel(conf)}
                       </span>
                       <span className={`reco-status reco-status-${status.kind}`}>
                         {status.icon}

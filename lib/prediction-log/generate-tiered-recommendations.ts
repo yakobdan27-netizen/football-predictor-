@@ -12,6 +12,7 @@ import { computeBatchRisk, activeLegsFromRecommended } from "./dynamic-batch-ris
 import { compareWeakestByConcentration } from "./correct-score";
 import { attachCorrectScoreToBatch } from "./correct-score-freeze";
 import { FORMULA_CONFIG, confidenceBand } from "./master-probability-config";
+import { applyHybridToRecommendedPick } from "./hybrid-recommendation";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import type { ScoredMatchCandidate } from "./match-risk-score";
 import type { MatchSelectionResult } from "./select-recommended-matches";
@@ -241,7 +242,8 @@ function freezeRecommendedBatch(
   luckyNumbers: number[],
   metadata: TierFreezeMetadata,
   teamsQuality?: TeamsQualityStore | null,
-  leagueCharacterProfile?: LeagueCharacterProfile | null
+  leagueCharacterProfile?: LeagueCharacterProfile | null,
+  learnerStats?: LearnerStatsStore | null
 ): PredictionBatch {
   if (!batch.recommended) return batch;
 
@@ -257,19 +259,30 @@ function freezeRecommendedBatch(
       Object.entries(match.predictions).map(([key, pick]) => {
         if (!pick || pick.action === "remove") return [key, pick];
         const pFinal = risk.pFinalByMatch[match.id];
-        return [
-          key,
-          {
-            ...pick,
-            pFinal,
-            confidenceBand: pFinal != null ? confidenceBand(pFinal) : pick.confidenceBand,
-          },
-        ];
+        const withSystem = {
+          ...pick,
+          pFinal,
+          confidenceBand: pFinal != null ? confidenceBand(pFinal) : pick.confidenceBand,
+        };
+        // 50/50 hybrid: AI learner × 0.5 + system pFinal × 0.5
+        return [key, applyHybridToRecommendedPick(withSystem, learnerStats ?? null)];
       })
     ) as RecommendedMatch["predictions"];
 
     return { ...match, predictions };
   });
+
+  const hybridAvg = (() => {
+    const vals: number[] = [];
+    for (const m of matches) {
+      for (const pick of Object.values(m.predictions)) {
+        if (!pick || pick.action === "remove") continue;
+        if (pick.hybridConfidence != null) vals.push(pick.hybridConfidence);
+      }
+    }
+    if (!vals.length) return risk.batchConfidence;
+    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+  })();
 
   const mathSnapshot = buildExtendedMathSnapshot(
     batch,
@@ -292,7 +305,7 @@ function freezeRecommendedBatch(
       matches,
       summary: {
         ...batch.recommended.summary,
-        averagePFinal: risk.batchConfidence,
+        averagePFinal: hybridAvg,
       },
       mathSnapshot,
     },
@@ -310,7 +323,8 @@ function createBestBatch(
   luckyNumbers: number[],
   metadata: TierFreezeMetadata,
   teamsQuality?: TeamsQualityStore | null,
-  leagueCharacterProfile?: LeagueCharacterProfile | null
+  leagueCharacterProfile?: LeagueCharacterProfile | null,
+  learnerStats?: LearnerStatsStore | null
 ): PredictionBatch {
   const generatedAt = new Date().toISOString();
   const recommendationId = recommendationBaseId;
@@ -344,7 +358,8 @@ function createBestBatch(
       luckyNumbers,
       metadata,
       teamsQuality,
-      leagueCharacterProfile
+      leagueCharacterProfile,
+      learnerStats
     )
   );
 }
@@ -599,7 +614,8 @@ export function generateBestRecommendationBatch(
     luckyNumbers,
     freezeMetadata,
     teamsQuality,
-    leagueCharacterProfile
+    leagueCharacterProfile,
+    learnerStats
   );
 
   return { sourceBatch, best };

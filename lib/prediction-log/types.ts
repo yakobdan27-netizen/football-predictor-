@@ -370,12 +370,22 @@ export interface RecommendedPick extends MarketPrediction {
   pSignal?: number;
   /** Master probability after batch risk brakes (0–100). */
   pFinal?: number;
-  /** Confidence band derived from pFinal. */
+  /** Confidence band derived from hybrid (or pFinal when hybrid unset). */
   confidenceBand?: "strong" | "solid" | "coin_flip" | "avoid";
   /** Total data points backing this probability. */
   dataSampleSize?: number;
   /** Frozen signal math captured at generation time. */
   mathSnapshot?: RecommendedPickMathSnapshot;
+  /** AI learner component (0–100) for 50/50 hybrid. */
+  aiLearnerScore?: number;
+  /** System calculation component (0–100), typically pFinal. */
+  systemCalculationScore?: number;
+  /** (AI × 0.5) + (system × 0.5). */
+  hybridConfidence?: number;
+  /** STRONG ≥65, MODERATE ≥55, else WEAK. */
+  hybridRecommendation?: "STRONG" | "MODERATE" | "WEAK";
+  aiContributionWeight?: number;
+  systemContributionWeight?: number;
 }
 
 export interface RecommendedMatch {

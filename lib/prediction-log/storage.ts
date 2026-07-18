@@ -28,6 +28,7 @@ import { recomputeAnalysis } from "./analysis";
 import { generateRecommendedBatch } from "./generate-recommended-batch";
 import { generateBestRecommendationBatch } from "./generate-tiered-recommendations";
 import { generateLearnerRecommendedBatch } from "./learner-recommendations";
+import { applyHybridToRecommendedMatches } from "./hybrid-recommendation";
 import { attachCorrectScoreToBatch } from "./correct-score-freeze";
 import { loadClubRecordsForBatch } from "./club-record-insights";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
@@ -652,7 +653,14 @@ export function generateBatchRecommendation(
         getStatEngineExtras()
       );
 
-  return recommended ? attachCorrectScoreToBatch({ ...batch, recommended }) : batch;
+  if (!recommended) return batch;
+
+  // Apply 50/50 hybrid on entry-path recommendations (tiered path freezes separately)
+  const withHybrid = {
+    ...recommended,
+    matches: applyHybridToRecommendedMatches(recommended.matches, learnerStats),
+  };
+  return attachCorrectScoreToBatch({ ...batch, recommended: withHybrid });
 }
 
 export async function generateBatchRecommendationAsync(

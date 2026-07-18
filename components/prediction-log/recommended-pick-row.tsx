@@ -146,13 +146,60 @@ export function RecommendedPickRow({
               {LEARNER_LABEL_DISPLAY[pick.learnerLabel].text}
             </span>
           )}
-          {pick.learnerConfidence != null && (
+          {pick.hybridConfidence != null ? (
+            <span
+              style={{
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                color:
+                  pick.hybridRecommendation === "STRONG"
+                    ? "var(--accent)"
+                    : pick.hybridRecommendation === "MODERATE"
+                      ? "#c0a030"
+                      : "var(--warn)",
+              }}
+              title="Hybrid confidence = (AI learner × 50%) + (system × 50%)"
+            >
+              Hybrid: {pick.hybridConfidence}%
+              {pick.hybridRecommendation ? ` · ${pick.hybridRecommendation}` : ""}
+            </span>
+          ) : pick.learnerConfidence != null ? (
             <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--accent)" }}>
               Confidence: {pick.learnerConfidence}%
             </span>
-          )}
+          ) : null}
         </div>
       </div>
+
+      {pick.hybridConfidence != null &&
+      pick.aiLearnerScore != null &&
+      pick.systemCalculationScore != null ? (
+        <div
+          style={{
+            marginTop: "0.4rem",
+            fontSize: "0.75rem",
+            color: "var(--muted)",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+          }}
+          title="50/50 hybrid methodology"
+        >
+          <span>
+            AI: {Math.round(pick.aiLearnerScore * (pick.aiContributionWeight ?? 0.5) * 10) / 10}%
+          </span>
+          <span>|</span>
+          <span>
+            System:{" "}
+            {Math.round(pick.systemCalculationScore * (pick.systemContributionWeight ?? 0.5) * 10) /
+              10}
+            %
+          </span>
+          <span style={{ opacity: 0.8 }}>
+            (raw AI {pick.aiLearnerScore}% · system {pick.systemCalculationScore}%)
+          </span>
+        </div>
+      ) : null}
 
       {pick.original && changed && (
         <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.25rem" }}>
