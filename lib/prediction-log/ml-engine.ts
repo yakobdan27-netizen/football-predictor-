@@ -1,4 +1,4 @@
-import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
+import { STAT_ENGINE_CONFIG, ML_GRADIENT_BOOSTING_MIN_N } from "./stat-engine-config";
 import type { MlAlgorithm } from "./stat-engine-config";
 import {
   FEATURE_NAMES,
@@ -6,6 +6,7 @@ import {
   type TrainingFeatureRow,
 } from "./training-data";
 import type {
+  GradientBoostingModel,
   LogisticModel,
   MlClassifierModel,
   MlClassifierStore,
@@ -100,7 +101,92 @@ function trainRandomForest(rows: TrainingFeatureRow[]): RandomForestModel {
   return { type: "random_forest", trees };
 }
 
+/**
+ * Softmax gradient boosting with one-level trees (stumps).
+ * Same role as XGBoost/LightGBM multiclass in a pure-TS runtime (no native deps).
+ */
+function trainGradientBoosting(rows: TrainingFeatureRow[]): GradientBoostingModel {
+  const nFeatures = rows[0]?.features.length ?? FEATURE_NAMES.length;
+  const nRounds = 40;
+  const learningRate = 0.1;
+  const stages: GradientBoostingModel["stages"] = [[], [], []];
+
+  const F = rows.map(() => [0, 0, 0] as number[]);
+
+  for (let round = 0; round < nRounds; round++) {
+    const residuals = rows.map((row, i) => {
+      const probs = softmax(F[i]!);
+      const y = LABEL_IDX[row.label];
+      return probs.map((p, c) => (c === y ? 1 : 0) - p);
+    });
+
+    for (let c = 0; c < 3; c++) {
+      let best = {
+        featureIdx: 0,
+        threshold: 0,
+        leftValue: 0,
+        rightValue: 0,
+        score: Number.POSITIVE_INFINITY,
+      };
+
+      const tryCount = Math.min(24, nFeatures * 3);
+      for (let t = 0; t < tryCount; t++) {
+        const fIdx = Math.floor(Math.random() * nFeatures);
+        const sample = rows[Math.floor(Math.random() * rows.length)]!;
+        const threshold = sample.features[fIdx]!;
+
+        let leftSum = 0;
+        let leftN = 0;
+        let rightSum = 0;
+        let rightN = 0;
+        for (let i = 0; i < rows.length; i++) {
+          const r = residuals[i]![c]!;
+          if (rows[i]!.features[fIdx]! <= threshold) {
+            leftSum += r;
+            leftN += 1;
+          } else {
+            rightSum += r;
+            rightN += 1;
+          }
+        }
+        if (leftN === 0 || rightN === 0) continue;
+        const leftValue = leftSum / leftN;
+        const rightValue = rightSum / rightN;
+        let sse = 0;
+        for (let i = 0; i < rows.length; i++) {
+          const pred =
+            rows[i]!.features[fIdx]! <= threshold ? leftValue : rightValue;
+          const err = residuals[i]![c]! - pred;
+          sse += err * err;
+        }
+        if (sse < best.score) {
+          best = { featureIdx: fIdx, threshold, leftValue, rightValue, score: sse };
+        }
+      }
+
+      stages[c]!.push({
+        featureIdx: best.featureIdx,
+        threshold: best.threshold,
+        leftValue: best.leftValue,
+        rightValue: best.rightValue,
+      });
+
+      for (let i = 0; i < rows.length; i++) {
+        const stump = stages[c]![stages[c]!.length - 1]!;
+        const delta =
+          rows[i]!.features[stump.featureIdx]! <= stump.threshold
+            ? stump.leftValue
+            : stump.rightValue;
+        F[i]![c]! += learningRate * delta;
+      }
+    }
+  }
+
+  return { type: "gradient_boosting", stages, learningRate, featureCount: nFeatures };
+}
+
 export function selectAlgorithm(sampleCount: number): MlAlgorithm {
+  if (sampleCount >= ML_GRADIENT_BOOSTING_MIN_N) return "gradient_boosting";
   if (sampleCount >= STAT_ENGINE_CONFIG.ML_RANDOMFOREST_MIN_N) return "random_forest";
   if (sampleCount >= STAT_ENGINE_CONFIG.ML_MIN_SAMPLES_LOGISTIC) return "logistic";
   return "naive_bayes";
@@ -113,7 +199,8 @@ export function trainClassifier(rows: TrainingFeatureRow[]): MlClassifierStore {
 
   const algorithm = selectAlgorithm(rows.length);
   let model: MlClassifierModel;
-  if (algorithm === "random_forest") model = trainRandomForest(rows);
+  if (algorithm === "gradient_boosting") model = trainGradientBoosting(rows);
+  else if (algorithm === "random_forest") model = trainRandomForest(rows);
   else if (algorithm === "logistic") model = trainLogistic(rows);
   else model = trainNaiveBayes(rows);
 
@@ -135,14 +222,21 @@ function predictLogistic(model: LogisticModel, features: number[]): MlOutcomePro
 }
 
 function gaussianPdf(x: number, mean: number, variance: number): number {
-  return Math.exp(-0.5 * ((x - mean) ** 2) / variance) / Math.sqrt(2 * Math.PI * variance);
+  return (
+    Math.exp(-0.5 * ((x - mean) ** 2) / variance) / Math.sqrt(2 * Math.PI * variance)
+  );
 }
 
 function predictNaiveBayes(model: NaiveBayesModel, features: number[]): MlOutcomeProbs {
   const logProbs = model.classPriors.map((prior, c) => {
     let lp = Math.log(Math.max(prior, 1e-9));
     for (let i = 0; i < features.length; i++) {
-      lp += Math.log(Math.max(gaussianPdf(features[i]!, model.means[c]![i]!, model.variances[c]![i]!), 1e-9));
+      lp += Math.log(
+        Math.max(
+          gaussianPdf(features[i]!, model.means[c]![i]!, model.variances[c]![i]!),
+          1e-9
+        )
+      );
     }
     return lp;
   });
@@ -165,6 +259,24 @@ function predictRandomForest(model: RandomForestModel, features: number[]): MlOu
   };
 }
 
+function predictGradientBoosting(
+  model: GradientBoostingModel,
+  features: number[]
+): MlOutcomeProbs {
+  const logits = [0, 0, 0];
+  for (let c = 0; c < 3; c++) {
+    for (const stump of model.stages[c] ?? []) {
+      const delta =
+        features[stump.featureIdx]! <= stump.threshold
+          ? stump.leftValue
+          : stump.rightValue;
+      logits[c]! += model.learningRate * delta;
+    }
+  }
+  const [home, draw, away] = softmax(logits);
+  return { home, draw, away };
+}
+
 export function predictMlOutcome(
   store: MlClassifierStore | null,
   features: number[]
@@ -174,6 +286,9 @@ export function predictMlOutcome(
   }
   if (store.model.type === "logistic") return predictLogistic(store.model, features);
   if (store.model.type === "naive_bayes") return predictNaiveBayes(store.model, features);
+  if (store.model.type === "gradient_boosting") {
+    return predictGradientBoosting(store.model, features);
+  }
   return predictRandomForest(store.model, features);
 }
 

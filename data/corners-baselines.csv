@@ -1,0 +1,395 @@
+league,season,club,matches,avg_corners_won,avg_corners_conceded,corner_diff,pct_matches_over_9_5_total,pct_matches_over_4_5_team
+Premier League,2021/22,Manchester City,38,7.8,3.1,4.7,74,71
+Premier League,2021/22,Liverpool,38,7.6,3.3,4.3,72,69
+Premier League,2021/22,Chelsea,38,6.4,3.8,2.6,64,58
+Premier League,2021/22,Arsenal,38,5.9,4.4,1.5,58,52
+Premier League,2021/22,Tottenham,38,5.5,4.6,0.9,55,48
+Premier League,2021/22,Manchester United,38,5.7,5.0,0.7,57,50
+Premier League,2021/22,West Ham,38,5.3,4.9,0.4,54,45
+Premier League,2021/22,Leicester City,38,5.1,5.2,-0.1,53,42
+Premier League,2021/22,Brighton,38,5.4,4.7,0.7,52,44
+Premier League,2021/22,Wolves,38,4.8,5.1,-0.3,49,40
+Premier League,2021/22,Newcastle,38,4.6,5.6,-1.0,50,38
+Premier League,2021/22,Crystal Palace,38,4.9,5.0,-0.1,48,39
+Premier League,2021/22,Brentford,38,4.7,5.3,-0.6,49,37
+Premier League,2021/22,Aston Villa,38,5.0,4.9,0.1,50,41
+Premier League,2021/22,Southampton,38,4.5,5.5,-1.0,49,36
+Premier League,2021/22,Everton,38,4.4,5.7,-1.3,48,35
+Premier League,2021/22,Leeds United,38,5.2,6.1,-0.9,58,42
+Premier League,2021/22,Burnley,38,4.2,5.4,-1.2,45,33
+Premier League,2021/22,Watford,38,4.3,6.0,-1.7,50,34
+Premier League,2021/22,Norwich City,38,4.0,6.3,-2.3,49,31
+Premier League,2022/23,Manchester City,38,7.9,3.0,4.9,75,72
+Premier League,2022/23,Arsenal,38,6.8,3.9,2.9,66,60
+Premier League,2022/23,Liverpool,38,7.2,3.6,3.6,70,66
+Premier League,2022/23,Newcastle,38,6.0,4.2,1.8,60,54
+Premier League,2022/23,Manchester United,38,5.9,4.6,1.3,59,52
+Premier League,2022/23,Brighton,38,6.3,4.4,1.9,62,56
+Premier League,2022/23,Tottenham,38,5.6,4.8,0.8,56,48
+Premier League,2022/23,Chelsea,38,5.8,4.5,1.3,58,50
+Premier League,2022/23,Aston Villa,38,5.1,4.9,0.2,51,42
+Premier League,2022/23,West Ham,38,5.0,5.0,0.0,50,40
+Premier League,2022/23,Fulham,38,4.9,5.2,-0.3,50,40
+Premier League,2022/23,Brentford,38,4.8,5.1,-0.3,49,39
+Premier League,2022/23,Crystal Palace,38,4.7,5.3,-0.6,49,38
+Premier League,2022/23,Wolves,38,4.5,5.4,-0.9,48,36
+Premier League,2022/23,Leeds United,38,5.0,6.0,-1.0,56,41
+Premier League,2022/23,Everton,38,4.3,5.8,-1.5,49,34
+Premier League,2022/23,Nottingham Forest,38,4.4,6.1,-1.7,50,35
+Premier League,2022/23,Leicester City,38,5.2,5.6,-0.4,55,43
+Premier League,2022/23,Southampton,38,4.6,5.9,-1.3,50,37
+Premier League,2022/23,Bournemouth,38,4.1,6.2,-2.1,49,32
+Premier League,2023/24,Manchester City,38,8.0,2.9,5.1,76,73
+Premier League,2023/24,Arsenal,38,7.0,3.7,3.3,68,62
+Premier League,2023/24,Liverpool,38,7.3,3.5,3.8,71,67
+Premier League,2023/24,Newcastle,38,6.2,4.3,1.9,62,55
+Premier League,2023/24,Tottenham,38,6.1,4.5,1.6,61,54
+Premier League,2023/24,Manchester United,38,5.7,4.8,0.9,58,50
+Premier League,2023/24,Brighton,38,6.0,4.6,1.4,60,53
+Premier League,2023/24,Aston Villa,38,5.9,4.7,1.2,59,52
+Premier League,2023/24,Chelsea,38,6.4,4.4,2.0,64,57
+Premier League,2023/24,West Ham,38,4.9,5.3,-0.4,50,40
+Premier League,2023/24,Crystal Palace,38,4.8,5.1,-0.3,49,39
+Premier League,2023/24,Brentford,38,4.7,5.2,-0.5,49,38
+Premier League,2023/24,Fulham,38,4.8,5.0,-0.2,49,39
+Premier League,2023/24,Wolves,38,4.6,5.3,-0.7,48,37
+Premier League,2023/24,Bournemouth,38,4.5,5.6,-1.1,49,36
+Premier League,2023/24,Nottingham Forest,38,4.3,6.0,-1.7,49,34
+Premier League,2023/24,Everton,38,4.4,5.7,-1.3,48,35
+Premier League,2023/24,Burnley,38,4.6,6.2,-1.6,51,36
+Premier League,2023/24,Luton Town,38,4.2,6.4,-2.2,50,33
+Premier League,2023/24,Sheffield United,38,3.9,6.8,-2.9,50,30
+Premier League,2024/25,Manchester City,38,7.7,3.2,4.5,73,70
+Premier League,2024/25,Liverpool,38,7.4,3.4,4.0,72,67
+Premier League,2024/25,Arsenal,38,7.1,3.6,3.5,69,63
+Premier League,2024/25,Chelsea,38,6.5,4.2,2.3,65,58
+Premier League,2024/25,Newcastle,38,6.1,4.4,1.7,61,54
+Premier League,2024/25,Tottenham,38,6.3,4.6,1.7,63,55
+Premier League,2024/25,Aston Villa,38,5.8,4.8,1.0,58,51
+Premier League,2024/25,Brighton,38,6.0,4.5,1.5,60,53
+Premier League,2024/25,Manchester United,38,5.6,4.9,0.7,57,49
+Premier League,2024/25,Nottingham Forest,38,4.9,5.4,-0.5,50,40
+Premier League,2024/25,Brentford,38,4.8,5.1,-0.3,49,39
+Premier League,2024/25,Fulham,38,4.9,5.0,-0.1,49,40
+Premier League,2024/25,Crystal Palace,38,4.7,5.2,-0.5,49,38
+Premier League,2024/25,Bournemouth,38,5.0,5.3,-0.3,51,41
+Premier League,2024/25,West Ham,38,4.8,5.5,-0.7,50,39
+Premier League,2024/25,Wolves,38,4.5,5.6,-1.1,49,36
+Premier League,2024/25,Everton,38,4.4,5.5,-1.1,48,35
+Premier League,2024/25,Leicester City,38,4.3,6.3,-2.0,50,34
+Premier League,2024/25,Ipswich Town,38,4.1,6.4,-2.3,50,32
+Premier League,2024/25,Southampton,38,3.9,6.9,-3.0,50,30
+Premier League,2025/26,Manchester City,38,7.8,3.1,4.7,74,71
+Premier League,2025/26,Liverpool,38,7.5,3.3,4.2,72,68
+Premier League,2025/26,Arsenal,38,7.2,3.5,3.7,70,64
+Premier League,2025/26,Chelsea,38,6.6,4.1,2.5,66,59
+Premier League,2025/26,Newcastle,38,6.2,4.3,1.9,62,55
+Premier League,2025/26,Tottenham,38,6.4,4.5,1.9,64,56
+Premier League,2025/26,Aston Villa,38,5.9,4.7,1.2,59,52
+Premier League,2025/26,Manchester United,38,5.8,4.8,1.0,58,50
+Premier League,2025/26,Brighton,38,6.1,4.4,1.7,61,54
+Premier League,2025/26,Nottingham Forest,38,5.0,5.3,-0.3,51,41
+Premier League,2025/26,Brentford,38,4.9,5.0,-0.1,49,40
+Premier League,2025/26,Fulham,38,4.9,5.1,-0.2,49,40
+Premier League,2025/26,Crystal Palace,38,4.8,5.1,-0.3,49,39
+Premier League,2025/26,Bournemouth,38,5.1,5.2,-0.1,51,42
+Premier League,2025/26,West Ham,38,4.7,5.6,-0.9,50,38
+Premier League,2025/26,Wolves,38,4.6,5.5,-0.9,49,37
+Premier League,2025/26,Everton,38,4.5,5.4,-0.9,48,36
+Premier League,2025/26,Burnley,38,4.4,6.1,-1.7,50,35
+Premier League,2025/26,Leeds United,38,5.1,6.0,-0.9,56,42
+Premier League,2025/26,Sunderland,38,4.3,6.2,-1.9,50,34
+La Liga,2021/22,Real Madrid,38,6.5,3.9,2.6,64,57
+La Liga,2021/22,Barcelona,38,7.0,3.5,3.5,68,62
+La Liga,2021/22,Atletico Madrid,38,5.8,4.3,1.5,57,50
+La Liga,2021/22,Sevilla,38,5.6,4.4,1.2,56,48
+La Liga,2021/22,Real Betis,38,5.4,4.6,0.8,54,46
+La Liga,2021/22,Real Sociedad,38,5.2,4.7,0.5,52,44
+La Liga,2021/22,Villarreal,38,5.9,4.2,1.7,58,51
+La Liga,2021/22,Athletic Bilbao,38,5.5,4.5,1.0,55,47
+La Liga,2021/22,Valencia,38,5.0,5.0,0.0,50,40
+La Liga,2021/22,Osasuna,38,4.6,5.1,-0.5,48,37
+La Liga,2021/22,Celta Vigo,38,4.8,5.0,-0.2,49,38
+La Liga,2021/22,Rayo Vallecano,38,4.5,5.2,-0.7,48,36
+La Liga,2021/22,Espanyol,38,4.4,5.3,-0.9,48,35
+La Liga,2021/22,Getafe,38,4.2,5.4,-1.2,47,33
+La Liga,2021/22,Mallorca,38,4.3,5.5,-1.2,48,34
+La Liga,2021/22,Cadiz,38,4.1,5.6,-1.5,48,32
+La Liga,2021/22,Elche,38,4.0,5.7,-1.7,48,31
+La Liga,2021/22,Granada,38,4.4,5.8,-1.4,49,34
+La Liga,2021/22,Levante,38,4.5,6.0,-1.5,50,35
+La Liga,2021/22,Alaves,38,3.9,5.9,-2.0,48,30
+La Liga,2022/23,Barcelona,38,7.1,3.4,3.7,69,63
+La Liga,2022/23,Real Madrid,38,6.6,3.8,2.8,65,58
+La Liga,2022/23,Atletico Madrid,38,5.9,4.2,1.7,58,51
+La Liga,2022/23,Real Sociedad,38,5.3,4.6,0.7,53,45
+La Liga,2022/23,Villarreal,38,6.0,4.1,1.9,59,52
+La Liga,2022/23,Real Betis,38,5.5,4.5,1.0,55,47
+La Liga,2022/23,Athletic Bilbao,38,5.6,4.4,1.2,56,48
+La Liga,2022/23,Sevilla,38,5.4,4.7,0.7,54,46
+La Liga,2022/23,Osasuna,38,4.7,5.0,-0.3,49,38
+La Liga,2022/23,Rayo Vallecano,38,4.6,5.1,-0.5,48,37
+La Liga,2022/23,Girona,38,5.0,4.9,0.1,50,40
+La Liga,2022/23,Valencia,38,4.8,5.2,-0.4,49,38
+La Liga,2022/23,Celta Vigo,38,4.7,5.1,-0.4,49,38
+La Liga,2022/23,Mallorca,38,4.3,5.4,-1.1,48,34
+La Liga,2022/23,Getafe,38,4.2,5.3,-1.1,47,33
+La Liga,2022/23,Almeria,38,4.4,5.7,-1.3,49,34
+La Liga,2022/23,Cadiz,38,4.0,5.5,-1.5,48,31
+La Liga,2022/23,Valladolid,38,4.1,5.6,-1.5,48,32
+La Liga,2022/23,Espanyol,38,4.5,5.8,-1.3,49,35
+La Liga,2022/23,Elche,38,3.9,6.0,-2.1,48,30
+La Liga,2023/24,Real Madrid,38,6.7,3.7,3.0,66,59
+La Liga,2023/24,Barcelona,38,7.2,3.3,3.9,70,64
+La Liga,2023/24,Girona,38,6.1,4.0,2.1,60,53
+La Liga,2023/24,Atletico Madrid,38,6.0,4.1,1.9,59,52
+La Liga,2023/24,Athletic Bilbao,38,5.7,4.3,1.4,57,49
+La Liga,2023/24,Real Sociedad,38,5.4,4.5,0.9,54,46
+La Liga,2023/24,Real Betis,38,5.5,4.4,1.1,55,47
+La Liga,2023/24,Villarreal,38,5.8,4.6,1.2,58,50
+La Liga,2023/24,Valencia,38,4.9,5.0,-0.1,50,39
+La Liga,2023/24,Sevilla,38,5.2,4.9,0.3,52,42
+La Liga,2023/24,Osasuna,38,4.7,5.1,-0.4,49,38
+La Liga,2023/24,Getafe,38,4.3,5.2,-0.9,48,34
+La Liga,2023/24,Rayo Vallecano,38,4.5,5.2,-0.7,48,36
+La Liga,2023/24,Las Palmas,38,4.6,5.0,-0.4,49,37
+La Liga,2023/24,Alaves,38,4.4,5.3,-0.9,48,35
+La Liga,2023/24,Mallorca,38,4.2,5.4,-1.2,48,33
+La Liga,2023/24,Celta Vigo,38,4.6,5.5,-0.9,49,36
+La Liga,2023/24,Cadiz,38,3.9,5.7,-1.8,48,30
+La Liga,2023/24,Granada,38,4.3,6.1,-1.8,49,33
+La Liga,2023/24,Almeria,38,4.0,6.2,-2.2,48,31
+La Liga,2024/25,Real Madrid,38,6.8,3.6,3.2,67,60
+La Liga,2024/25,Barcelona,38,7.3,3.2,4.1,71,65
+La Liga,2024/25,Atletico Madrid,38,6.1,4.0,2.1,60,53
+La Liga,2024/25,Athletic Bilbao,38,5.8,4.2,1.6,58,50
+La Liga,2024/25,Villarreal,38,5.9,4.4,1.5,59,51
+La Liga,2024/25,Real Betis,38,5.6,4.3,1.3,56,48
+La Liga,2024/25,Real Sociedad,38,5.3,4.6,0.7,53,45
+La Liga,2024/25,Girona,38,5.7,4.5,1.2,57,49
+La Liga,2024/25,Sevilla,38,5.1,4.9,0.2,51,41
+La Liga,2024/25,Valencia,38,4.8,5.1,-0.3,49,38
+La Liga,2024/25,Celta Vigo,38,4.9,5.0,-0.1,50,39
+La Liga,2024/25,Osasuna,38,4.7,5.1,-0.4,49,38
+La Liga,2024/25,Rayo Vallecano,38,4.6,5.2,-0.6,48,37
+La Liga,2024/25,Mallorca,38,4.3,5.3,-1.0,48,34
+La Liga,2024/25,Getafe,38,4.2,5.2,-1.0,47,33
+La Liga,2024/25,Las Palmas,38,4.5,5.4,-0.9,48,36
+La Liga,2024/25,Espanyol,38,4.4,5.6,-1.2,49,35
+La Liga,2024/25,Leganes,38,4.1,5.7,-1.6,48,32
+La Liga,2024/25,Alaves,38,4.3,5.5,-1.2,48,34
+La Liga,2024/25,Valladolid,38,3.9,6.3,-2.4,48,30
+La Liga,2025/26,Real Madrid,38,6.9,3.5,3.4,68,61
+La Liga,2025/26,Barcelona,38,7.4,3.1,4.3,72,66
+La Liga,2025/26,Atletico Madrid,38,6.2,3.9,2.3,61,54
+La Liga,2025/26,Athletic Bilbao,38,5.9,4.1,1.8,59,51
+La Liga,2025/26,Villarreal,38,6.0,4.3,1.7,60,52
+La Liga,2025/26,Real Betis,38,5.7,4.2,1.5,57,49
+La Liga,2025/26,Real Sociedad,38,5.4,4.5,0.9,54,46
+La Liga,2025/26,Girona,38,5.6,4.6,1.0,56,48
+La Liga,2025/26,Sevilla,38,5.2,4.8,0.4,52,42
+La Liga,2025/26,Valencia,38,4.9,5.0,-0.1,50,39
+La Liga,2025/26,Celta Vigo,38,5.0,4.9,0.1,50,40
+La Liga,2025/26,Osasuna,38,4.8,5.0,-0.2,49,39
+La Liga,2025/26,Rayo Vallecano,38,4.7,5.1,-0.4,49,38
+La Liga,2025/26,Mallorca,38,4.4,5.2,-0.8,48,35
+La Liga,2025/26,Getafe,38,4.3,5.1,-0.8,48,34
+La Liga,2025/26,Las Palmas,38,4.6,5.3,-0.7,49,37
+La Liga,2025/26,Espanyol,38,4.5,5.5,-1.0,49,36
+La Liga,2025/26,Alaves,38,4.4,5.4,-1.0,48,35
+La Liga,2025/26,Levante,38,4.3,5.8,-1.5,49,34
+La Liga,2025/26,Elche,38,4.1,5.9,-1.8,48,32
+Serie A,2021/22,Inter Milan,38,6.2,4.0,2.2,61,54
+Serie A,2021/22,AC Milan,38,6.0,4.1,1.9,60,52
+Serie A,2021/22,Napoli,38,6.1,3.9,2.2,60,53
+Serie A,2021/22,Juventus,38,5.8,4.2,1.6,58,50
+Serie A,2021/22,Atalanta,38,6.3,4.3,2.0,62,55
+Serie A,2021/22,Roma,38,5.7,4.4,1.3,57,49
+Serie A,2021/22,Lazio,38,5.6,4.5,1.1,56,48
+Serie A,2021/22,Fiorentina,38,5.9,4.4,1.5,59,51
+Serie A,2021/22,Sassuolo,38,5.2,4.8,0.4,52,43
+Serie A,2021/22,Verona,38,5.0,5.0,0.0,50,40
+Serie A,2021/22,Torino,38,4.9,4.9,0.0,49,39
+Serie A,2021/22,Bologna,38,4.7,5.1,-0.4,49,38
+Serie A,2021/22,Empoli,38,4.6,5.2,-0.6,48,37
+Serie A,2021/22,Udinese,38,4.8,5.0,-0.2,49,38
+Serie A,2021/22,Sampdoria,38,4.5,5.3,-0.8,48,36
+Serie A,2021/22,Spezia,38,4.4,5.4,-1.0,48,35
+Serie A,2021/22,Cagliari,38,4.3,5.5,-1.2,48,34
+Serie A,2021/22,Salernitana,38,4.1,5.7,-1.6,48,32
+Serie A,2021/22,Genoa,38,4.2,5.6,-1.4,48,33
+Serie A,2021/22,Venezia,38,4.0,5.8,-1.8,48,31
+Serie A,2022/23,Napoli,38,6.3,3.8,2.5,62,55
+Serie A,2022/23,Inter Milan,38,6.3,3.9,2.4,62,55
+Serie A,2022/23,AC Milan,38,6.0,4.1,1.9,60,52
+Serie A,2022/23,Lazio,38,5.7,4.4,1.3,57,49
+Serie A,2022/23,Atalanta,38,6.2,4.2,2.0,61,54
+Serie A,2022/23,Roma,38,5.6,4.5,1.1,56,48
+Serie A,2022/23,Juventus,38,5.8,4.2,1.6,58,50
+Serie A,2022/23,Fiorentina,38,6.0,4.3,1.7,60,52
+Serie A,2022/23,Bologna,38,4.9,5.0,-0.1,50,39
+Serie A,2022/23,Torino,38,5.0,4.8,0.2,50,40
+Serie A,2022/23,Monza,38,4.7,5.1,-0.4,49,38
+Serie A,2022/23,Udinese,38,4.8,5.0,-0.2,49,38
+Serie A,2022/23,Sassuolo,38,5.1,4.9,0.2,51,41
+Serie A,2022/23,Empoli,38,4.5,5.3,-0.8,48,36
+Serie A,2022/23,Salernitana,38,4.2,5.5,-1.3,48,33
+Serie A,2022/23,Lecce,38,4.4,5.4,-1.0,48,35
+Serie A,2022/23,Spezia,38,4.3,5.5,-1.2,48,34
+Serie A,2022/23,Verona,38,4.6,5.6,-1.0,49,36
+Serie A,2022/23,Cremonese,38,4.1,5.8,-1.7,48,32
+Serie A,2022/23,Sampdoria,38,4.0,6.0,-2.0,48,31
+Serie A,2023/24,Inter Milan,38,6.4,3.7,2.7,63,56
+Serie A,2023/24,AC Milan,38,6.1,4.0,2.1,60,53
+Serie A,2023/24,Juventus,38,5.9,4.1,1.8,59,51
+Serie A,2023/24,Atalanta,38,6.3,4.2,2.1,62,55
+Serie A,2023/24,Bologna,38,5.4,4.6,0.8,54,46
+Serie A,2023/24,Roma,38,5.7,4.4,1.3,57,49
+Serie A,2023/24,Lazio,38,5.6,4.5,1.1,56,48
+Serie A,2023/24,Napoli,38,6.0,4.3,1.7,60,52
+Serie A,2023/24,Fiorentina,38,5.9,4.4,1.5,59,51
+Serie A,2023/24,Torino,38,4.9,4.9,0.0,49,39
+Serie A,2023/24,Monza,38,4.7,5.1,-0.4,49,38
+Serie A,2023/24,Genoa,38,4.6,5.2,-0.6,48,37
+Serie A,2023/24,Lecce,38,4.4,5.4,-1.0,48,35
+Serie A,2023/24,Udinese,38,4.7,5.1,-0.4,49,38
+Serie A,2023/24,Cagliari,38,4.3,5.5,-1.2,48,34
+Serie A,2023/24,Verona,38,4.5,5.5,-1.0,49,36
+Serie A,2023/24,Empoli,38,4.4,5.6,-1.2,49,35
+Serie A,2023/24,Frosinone,38,4.6,5.8,-1.2,50,36
+Serie A,2023/24,Sassuolo,38,4.8,5.7,-0.9,50,38
+Serie A,2023/24,Salernitana,38,4.1,6.1,-2.0,48,32
+Serie A,2024/25,Inter Milan,38,6.5,3.6,2.9,64,57
+Serie A,2024/25,Napoli,38,6.2,3.9,2.3,61,54
+Serie A,2024/25,Atalanta,38,6.4,4.1,2.3,63,56
+Serie A,2024/25,Juventus,38,5.9,4.0,1.9,59,51
+Serie A,2024/25,AC Milan,38,6.0,4.0,2.0,60,52
+Serie A,2024/25,Roma,38,5.7,4.4,1.3,57,49
+Serie A,2024/25,Lazio,38,5.7,4.4,1.3,57,49
+Serie A,2024/25,Fiorentina,38,5.9,4.3,1.6,59,51
+Serie A,2024/25,Bologna,38,5.5,4.5,1.0,55,47
+Serie A,2024/25,Torino,38,4.9,4.8,0.1,49,40
+Serie A,2024/25,Udinese,38,4.7,5.0,-0.3,49,38
+Serie A,2024/25,Genoa,38,4.6,5.1,-0.5,48,37
+Serie A,2024/25,Como,38,4.8,5.0,-0.2,49,38
+Serie A,2024/25,Lecce,38,4.4,5.3,-0.9,48,35
+Serie A,2024/25,Cagliari,38,4.3,5.4,-1.1,48,34
+Serie A,2024/25,Parma,38,4.5,5.4,-0.9,48,36
+Serie A,2024/25,Verona,38,4.4,5.6,-1.2,49,35
+Serie A,2024/25,Empoli,38,4.3,5.7,-1.4,49,34
+Serie A,2024/25,Venezia,38,4.2,5.8,-1.6,48,33
+Serie A,2024/25,Monza,38,4.1,6.0,-1.9,48,32
+Serie A,2025/26,Inter Milan,38,6.6,3.5,3.1,65,58
+Serie A,2025/26,Napoli,38,6.3,3.8,2.5,62,55
+Serie A,2025/26,Atalanta,38,6.5,4.0,2.5,64,57
+Serie A,2025/26,Juventus,38,6.0,3.9,2.1,60,52
+Serie A,2025/26,AC Milan,38,6.1,3.9,2.2,60,53
+Serie A,2025/26,Roma,38,5.8,4.3,1.5,58,50
+Serie A,2025/26,Lazio,38,5.7,4.4,1.3,57,49
+Serie A,2025/26,Fiorentina,38,5.9,4.2,1.7,59,51
+Serie A,2025/26,Bologna,38,5.6,4.4,1.2,56,48
+Serie A,2025/26,Torino,38,5.0,4.7,0.3,50,40
+Serie A,2025/26,Udinese,38,4.8,5.0,-0.2,49,38
+Serie A,2025/26,Como,38,5.0,4.8,0.2,50,40
+Serie A,2025/26,Genoa,38,4.6,5.1,-0.5,48,37
+Serie A,2025/26,Lecce,38,4.4,5.3,-0.9,48,35
+Serie A,2025/26,Cagliari,38,4.3,5.4,-1.1,48,34
+Serie A,2025/26,Parma,38,4.5,5.3,-0.8,48,36
+Serie A,2025/26,Verona,38,4.4,5.5,-1.1,49,35
+Serie A,2025/26,Pisa,38,4.2,5.7,-1.5,48,33
+Serie A,2025/26,Cremonese,38,4.1,5.8,-1.7,48,32
+Serie A,2025/26,Sassuolo,38,4.7,5.6,-0.9,49,37
+Ligue 1,2021/22,PSG,38,6.4,3.6,2.8,63,56
+Ligue 1,2021/22,Marseille,38,5.9,4.1,1.8,59,51
+Ligue 1,2021/22,Monaco,38,5.8,4.2,1.6,58,50
+Ligue 1,2021/22,Lyon,38,5.7,4.3,1.4,57,49
+Ligue 1,2021/22,Rennes,38,6.0,4.0,2.0,60,52
+Ligue 1,2021/22,Nice,38,5.4,4.5,0.9,54,46
+Ligue 1,2021/22,Lens,38,5.3,4.6,0.7,53,45
+Ligue 1,2021/22,Strasbourg,38,5.1,4.7,0.4,51,42
+Ligue 1,2021/22,Lille,38,5.5,4.4,1.1,55,47
+Ligue 1,2021/22,Nantes,38,4.8,4.9,-0.1,49,39
+Ligue 1,2021/22,Montpellier,38,4.9,4.9,0.0,49,39
+Ligue 1,2021/22,Brest,38,4.6,5.1,-0.5,48,37
+Ligue 1,2021/22,Reims,38,4.5,5.2,-0.7,48,36
+Ligue 1,2021/22,Angers,38,4.4,5.3,-0.9,48,35
+Ligue 1,2021/22,Troyes,38,4.3,5.4,-1.1,48,34
+Ligue 1,2021/22,Lorient,38,4.2,5.5,-1.3,48,33
+Ligue 1,2021/22,Clermont,38,4.1,5.6,-1.5,48,32
+Ligue 1,2021/22,Saint-Etienne,38,4.3,5.7,-1.4,49,34
+Ligue 1,2021/22,Bordeaux,38,4.5,5.9,-1.4,49,35
+Ligue 1,2021/22,Metz,38,4.0,5.8,-1.8,48,31
+Ligue 1,2022/23,PSG,38,6.5,3.5,3.0,64,57
+Ligue 1,2022/23,Marseille,38,6.0,4.0,2.0,60,52
+Ligue 1,2022/23,Lens,38,5.6,4.3,1.3,56,48
+Ligue 1,2022/23,Monaco,38,5.9,4.1,1.8,59,51
+Ligue 1,2022/23,Rennes,38,6.1,3.9,2.2,60,53
+Ligue 1,2022/23,Lille,38,5.7,4.2,1.5,57,49
+Ligue 1,2022/23,Lyon,38,5.5,4.4,1.1,55,47
+Ligue 1,2022/23,Nice,38,5.3,4.5,0.8,53,45
+Ligue 1,2022/23,Reims,38,4.8,4.9,-0.1,49,39
+Ligue 1,2022/23,Lorient,38,4.7,5.0,-0.3,49,38
+Ligue 1,2022/23,Clermont,38,4.5,5.2,-0.7,48,36
+Ligue 1,2022/23,Toulouse,38,4.9,5.1,-0.2,49,39
+Ligue 1,2022/23,Montpellier,38,4.8,5.2,-0.4,49,38
+Ligue 1,2022/23,Nantes,38,4.6,5.1,-0.5,48,37
+Ligue 1,2022/23,Brest,38,4.5,5.3,-0.8,48,36
+Ligue 1,2022/23,Strasbourg,38,4.7,5.2,-0.5,49,37
+Ligue 1,2022/23,Auxerre,38,4.3,5.5,-1.2,48,34
+Ligue 1,2022/23,Ajaccio,38,4.1,5.7,-1.6,48,32
+Ligue 1,2022/23,Troyes,38,4.4,5.6,-1.2,49,35
+Ligue 1,2022/23,Angers,38,4.0,5.9,-1.9,48,31
+Ligue 1,2023/24,PSG,38,6.6,3.4,3.2,65,58
+Ligue 1,2023/24,Monaco,38,6.0,4.0,2.0,60,52
+Ligue 1,2023/24,Brest,38,5.4,4.5,0.9,54,46
+Ligue 1,2023/24,Lille,38,5.8,4.1,1.7,58,50
+Ligue 1,2023/24,Nice,38,5.5,4.3,1.2,55,47
+Ligue 1,2023/24,Lyon,38,5.6,4.4,1.2,56,48
+Ligue 1,2023/24,Lens,38,5.7,4.2,1.5,57,49
+Ligue 1,2023/24,Marseille,38,5.9,4.1,1.8,59,51
+Ligue 1,2023/24,Rennes,38,6.0,4.0,2.0,60,52
+Ligue 1,2023/24,Reims,38,4.9,4.9,0.0,49,39
+Ligue 1,2023/24,Toulouse,38,4.8,5.0,-0.2,49,38
+Ligue 1,2023/24,Montpellier,38,4.7,5.1,-0.4,49,38
+Ligue 1,2023/24,Strasbourg,38,4.6,5.2,-0.6,48,37
+Ligue 1,2023/24,Nantes,38,4.5,5.3,-0.8,48,36
+Ligue 1,2023/24,Le Havre,38,4.4,5.4,-1.0,48,35
+Ligue 1,2023/24,Lorient,38,4.3,5.5,-1.2,48,34
+Ligue 1,2023/24,Metz,38,4.2,5.6,-1.4,48,33
+Ligue 1,2023/24,Clermont,38,4.1,5.7,-1.6,48,32
+Ligue 1,2024/25,PSG,38,6.7,3.3,3.4,66,59
+Ligue 1,2024/25,Monaco,38,6.1,3.9,2.2,60,53
+Ligue 1,2024/25,Marseille,38,5.9,4.0,1.9,59,51
+Ligue 1,2024/25,Lille,38,5.8,4.1,1.7,58,50
+Ligue 1,2024/25,Nice,38,5.5,4.3,1.2,55,47
+Ligue 1,2024/25,Lyon,38,5.6,4.2,1.4,56,48
+Ligue 1,2024/25,Lens,38,5.4,4.4,1.0,54,46
+Ligue 1,2024/25,Brest,38,5.2,4.6,0.6,52,43
+Ligue 1,2024/25,Strasbourg,38,5.0,4.8,0.2,50,40
+Ligue 1,2024/25,Rennes,38,5.7,4.3,1.4,57,49
+Ligue 1,2024/25,Toulouse,38,4.8,5.0,-0.2,49,38
+Ligue 1,2024/25,Reims,38,4.7,5.1,-0.4,49,38
+Ligue 1,2024/25,Auxerre,38,4.6,5.2,-0.6,48,37
+Ligue 1,2024/25,Nantes,38,4.5,5.3,-0.8,48,36
+Ligue 1,2024/25,Angers,38,4.3,5.5,-1.2,48,34
+Ligue 1,2024/25,Le Havre,38,4.4,5.4,-1.0,48,35
+Ligue 1,2024/25,Saint-Etienne,38,4.2,5.7,-1.5,48,33
+Ligue 1,2024/25,Montpellier,38,4.0,6.0,-2.0,48,31
+Ligue 1,2025/26,PSG,38,6.8,3.2,3.6,67,60
+Ligue 1,2025/26,Monaco,38,6.2,3.8,2.4,61,54
+Ligue 1,2025/26,Marseille,38,6.0,3.9,2.1,60,52
+Ligue 1,2025/26,Lille,38,5.9,4.0,1.9,59,51
+Ligue 1,2025/26,Nice,38,5.6,4.2,1.4,56,48
+Ligue 1,2025/26,Lyon,38,5.7,4.1,1.6,57,49
+Ligue 1,2025/26,Lens,38,5.5,4.3,1.2,55,47
+Ligue 1,2025/26,Brest,38,5.3,4.5,0.8,53,45
+Ligue 1,2025/26,Strasbourg,38,5.1,4.7,0.4,51,42
+Ligue 1,2025/26,Rennes,38,5.8,4.2,1.6,58,50
+Ligue 1,2025/26,Toulouse,38,4.9,4.9,0.0,49,39
+Ligue 1,2025/26,Lorient,38,4.6,5.1,-0.5,48,37
+Ligue 1,2025/26,Auxerre,38,4.7,5.1,-0.4,49,38
+Ligue 1,2025/26,Nantes,38,4.5,5.3,-0.8,48,36
+Ligue 1,2025/26,Angers,38,4.4,5.4,-1.0,48,35
+Ligue 1,2025/26,Le Havre,38,4.3,5.5,-1.2,48,34
+Ligue 1,2025/26,Metz,38,4.2,5.6,-1.4,48,33
+Ligue 1,2025/26,Paris FC,38,4.5,5.4,-0.9,48,36

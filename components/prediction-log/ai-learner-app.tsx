@@ -120,6 +120,15 @@ export function AiLearnerApp() {
             {clubIndex.clubs.length} clubs)
           </p>
         )}
+        <p style={{ margin: "0.5rem 0 0" }}>
+          Core 1X2 model uses gradient boosting (XGBoost/LightGBM-style) once enough samples exist,
+          with logistic / forest / naive Bayes fallbacks. Retrains after new results. Never blocks
+          bets — see{" "}
+          <a href="/risk" style={{ color: "var(--accent)" }}>
+            Risk & Eval
+          </a>{" "}
+          for CLV trend, calibration, and bankroll simulation.
+        </p>
       </div>
 
       <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Support for your next prediction</h3>

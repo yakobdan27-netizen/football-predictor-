@@ -19,6 +19,7 @@ import type { ResultGridField } from "@/lib/prediction-log/result-grid-fields";
 import { withClosingOdds } from "@/lib/prediction-log/evaluation-metrics";
 import type { LogMatch, ScoreResult, TeamSideStats } from "@/lib/prediction-log/types";
 import type { ReactNode } from "react";
+import { leagueShortLabel } from "@/lib/prediction-log/match-league";
 import { BatchResultAdvanced } from "./batch-result-advanced";
 
 function primaryLegResult(match: LogMatch): ScoreResult {
@@ -228,7 +229,7 @@ export function BatchResultRow({
     return i >= 0 ? cellRefs[i] : undefined;
   };
 
-  const colSpan = showFullStats ? 34 : 11;
+  const colSpan = showFullStats ? 34 : 9;
 
   return (
     <>
@@ -256,7 +257,7 @@ export function BatchResultRow({
           {index + 1}
         </td>
         <td className="batch-col-frozen batch-col-league" title={league}>
-          <span className="batch-ellipsis">{league || "—"}</span>
+          <span className="batch-ellipsis">{leagueShortLabel(league) || league || "—"}</span>
         </td>
         <td className="batch-col-frozen batch-col-team batch-col-home" title={match.homeTeam}>
           <span className="batch-ellipsis">{match.homeTeam || "—"}</span>
@@ -269,23 +270,6 @@ export function BatchResultRow({
         </td>
         <td className="batch-col-pick batch-col-pick-secondary" title={pickDisplay(match)}>
           <span className="batch-ellipsis">{pickDisplay(match)}</span>
-        </td>
-        <td className="batch-col-stake" title={match.suggestedStake != null ? `Suggested ${match.suggestedStake}` : undefined}>
-          {match.stake != null ? match.stake : "—"}
-        </td>
-        <td className="batch-col-close">
-          <input
-            className="input"
-            type="number"
-            min={1.01}
-            step={0.01}
-            placeholder="Close"
-            title="Closing odds for CLV (optional)"
-            aria-label="Closing odds"
-            value={match.closingOdds ?? ""}
-            onChange={(e) => onChange(withClosingOdds(match, e.target.value))}
-            style={{ width: "4.25rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
-          />
         </td>
         <td className="batch-col-score-pair">
           <div className="batch-score-pair">
@@ -337,6 +321,27 @@ export function BatchResultRow({
 
         {showFullStats ? (
           <>
+            <td
+              className="batch-col-stake"
+              title={match.suggestedStake != null ? `Suggested ${match.suggestedStake}` : undefined}
+            >
+              {match.stake != null ? match.stake : "—"}
+            </td>
+            <td className="batch-col-close">
+              <input
+                className="input"
+                type="number"
+                min={1.01}
+                step={0.01}
+                placeholder="Close"
+                title="Closing odds for CLV (optional)"
+                aria-label="Closing odds"
+                tabIndex={-1}
+                value={match.closingOdds ?? ""}
+                onChange={(e) => onChange(withClosingOdds(match, e.target.value))}
+                style={{ width: "4.25rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
+              />
+            </td>
             <NumCell
               field="htH"
               placeholder="H"

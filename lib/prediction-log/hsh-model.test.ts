@@ -1,17 +1,22 @@
+/**
+ * Run: npx tsx lib/prediction-log/hsh-model.test.ts
+ */
 import assert from "node:assert/strict";
 import {
+  computeAttackDefenceStageA,
   computeLeagueHalfShare,
-  computeStageA,
   computeStageB,
   computeTeamHalfShare,
-  confidenceBand,
+  confidenceBandFromMargin,
   estimateRestDays,
+  pickBatchBestHsh,
   predictHighestScoringHalf,
   recommendedHalf,
+  skellamHeadline,
   topProbability,
-  type HshLeagueHalfShare,
-  type HshTeamHalfShare,
+  type HshPrediction,
 } from "./hsh-model";
+import type { ClubHalfAttackDefence } from "./hsh-half-rates";
 import type { PredictionBatch } from "./types";
 
 function makeMatch(
@@ -48,56 +53,78 @@ function makeBatch(date: string, league: string, matches: ReturnType<typeof make
   };
 }
 
-// --- Section 7 worked example -------------------------------------------
-// xg_home=1.8, xg_away=1.0; home 1H share .42/.58; away .40/.60;
-// league .45/.55; w_team=.65 -> lambda_1h ~= 1.19, lambda_2h ~= 1.61,
-// and P(2H more) should be the largest probability.
+function ratesFromCoeffs(
+  clubName: string,
+  league: string,
+  att1: number,
+  att2: number,
+  def1: number,
+  def2: number,
+  lgAf1: number,
+  lgAf2: number,
+  opts?: Partial<ClubHalfAttackDefence>
+): ClubHalfAttackDefence {
+  return {
+    clubName,
+    league,
+    af1: att1 * lgAf1,
+    af2: att2 * lgAf2,
+    da1: def1 * lgAf1,
+    da2: def2 * lgAf2,
+    nMatches: 40,
+    seasonCount: 5,
+    seedOnly: false,
+    sourceNote: "test",
+    ...opts,
+  };
+}
+
+// --- §8 City vs Everton worked example ------------------------------------
 {
-  const homeHalfShare: HshTeamHalfShare = {
-    sample: 15,
-    gf1h: 0.42,
-    gf2h: 0.58,
-    ga1h: 0,
-    ga2h: 0,
-    share1h: 0.42,
-    share2h: 0.58,
-    p1hMore: 0,
-    p2hMore: 0,
-    pTie: 0,
-  };
-  const awayHalfShare: HshTeamHalfShare = {
-    ...homeHalfShare,
-    share1h: 0.4,
-    share2h: 0.6,
-  };
-  const leagueHalfShare: HshLeagueHalfShare = {
-    sample: 200,
-    league1hShare: 0.45,
-    league2hShare: 0.55,
-    leagueAvgGoals: 2.7,
-  };
+  const lgAf1 = 0.62;
+  const lgAf2 = 0.78;
+  const city = ratesFromCoeffs("Manchester City", "Premier League", 1.35, 1.55, 0.7, 0.65, lgAf1, lgAf2);
+  const everton = ratesFromCoeffs("Everton", "Premier League", 0.85, 0.95, 1.2, 1.3, lgAf1, lgAf2);
 
-  const stageA = computeStageA({
-    xgHome: 1.8,
-    xgAway: 1.0,
-    homeHalfShare,
-    awayHalfShare,
-    leagueHalfShare,
-    wTeam: 0.65,
-  });
+  const stageA = computeAttackDefenceStageA({ home: city, away: everton, lgAf1, lgAf2 });
 
-  assert.ok(Math.abs(stageA.lambda1h - 1.19) < 0.02, `lambda1h ~1.19, got ${stageA.lambda1h}`);
-  assert.ok(Math.abs(stageA.lambda2h - 1.61) < 0.02, `lambda2h ~1.61, got ${stageA.lambda2h}`);
+  assert.ok(Math.abs(stageA.lambdaA1 - 1.104) < 0.02, `λ_City1 ~1.104, got ${stageA.lambdaA1}`);
+  assert.ok(Math.abs(stageA.lambdaB1 - 0.351) < 0.02, `λ_Evr1 ~0.351, got ${stageA.lambdaB1}`);
+  assert.ok(Math.abs(stageA.lambda1h - 1.455) < 0.05, `Λ1 ~1.455, got ${stageA.lambda1h}`);
+  // Uncoupled Λ2 ≈ 2.187; coupling nudges slightly (still within ±0.05)
+  assert.ok(Math.abs(stageA.lambda2h - 2.187) < 0.05, `Λ2 ~2.187, got ${stageA.lambda2h}`);
+
+  const { expectedDiff } = skellamHeadline(stageA.lambda1h, stageA.lambda2h);
+  assert.ok(expectedDiff < 0, "E[D] negative → lean 2H");
 
   const stageB = computeStageB(stageA.lambda1h, stageA.lambda2h);
-  assert.ok(
-    stageB.p2h > stageB.p1h && stageB.p2h > stageB.pTie,
-    "2H should be the most likely outcome in the worked example"
-  );
   assert.equal(recommendedHalf(stageB), "2H");
+  assert.ok(Math.abs(stageB.p2h - 0.55) < 0.08, `p2h ~0.55, got ${stageB.p2h}`);
+  assert.ok(Math.abs(stageB.p1h - 0.29) < 0.08, `p1h ~0.29, got ${stageB.p1h}`);
+  assert.ok(Math.abs(stageB.pTie - 0.16) < 0.08, `pTie ~0.16, got ${stageB.pTie}`);
+  assert.ok(Math.abs(stageB.p1h + stageB.p2h + stageB.pTie - 1) < 1e-9);
 
-  const sumProbs = stageB.p1h + stageB.p2h + stageB.pTie;
-  assert.ok(Math.abs(sumProbs - 1) < 1e-9, "probabilities must sum to 1");
+  const pred = predictHighestScoringHalf({
+    matchId: "city-evr",
+    homeTeam: "Manchester City",
+    awayTeam: "Everton",
+    league: "Premier League",
+    homeRates: city,
+    awayRates: everton,
+    lgAf1,
+    lgAf2,
+  });
+  assert.equal(pred.recommended, "2H");
+  assert.ok(pred.expectedDiff < 0);
+  assert.ok(pred.margin > 0);
+}
+
+// --- Stage B: τ increases tie vs untuned ----------------------------------
+{
+  const withTau = computeStageB(1.2, 1.2, 8, { applyTau: true });
+  const noTau = computeStageB(1.2, 1.2, 8, { applyTau: false });
+  assert.ok(withTau.pTie > noTau.pTie, "τ should raise P(Tie)");
+  assert.ok(Math.abs(withTau.p1h + withTau.p2h + withTau.pTie - 1) < 1e-9);
 }
 
 // --- Stage B sanity: symmetric lambdas favour a tie more than skewed ones
@@ -107,14 +134,15 @@ function makeBatch(date: string, league: string, matches: ReturnType<typeof make
   assert.ok(symmetric.pTie > skewed.pTie, "closer lambdas should yield a higher tie probability");
 }
 
-// --- Confidence banding ---------------------------------------------------
-assert.equal(confidenceBand(0.55, 15, 14), "high");
-assert.equal(confidenceBand(0.55, 15, 4), "low", "either team below 6 samples forces low");
-assert.equal(confidenceBand(0.45, 20, 20), "medium", "prob in medium band even with big samples");
-assert.equal(confidenceBand(0.6, 8, 9), "medium", "sample count 6-11 caps confidence at medium");
-assert.equal(confidenceBand(0.35, 30, 30), "low", "low top probability is always low confidence");
+// --- Confidence banding (margin rules) ------------------------------------
+assert.equal(confidenceBandFromMargin(0.16, 3, 3, false, false), "high");
+assert.equal(confidenceBandFromMargin(0.16, 2, 3, false, false), "medium", "seasons <3 blocks high");
+assert.equal(confidenceBandFromMargin(0.1, 5, 5, false, false), "medium");
+assert.equal(confidenceBandFromMargin(0.05, 5, 5, false, false), "low");
+assert.equal(confidenceBandFromMargin(0.2, 5, 5, true, false), "low", "seed-only forces low");
+assert.equal(confidenceBandFromMargin(0.2, 5, 5, false, true), "low");
 
-// --- Team half share from synthetic batches -------------------------------
+// --- Team half share from synthetic batches (helpers still used by cache) --
 {
   const batches: PredictionBatch[] = [
     makeBatch("2025-08-01", "Premier League", [makeMatch("Arsenal", "Chelsea", 1, 2, 0, 1)]),
@@ -143,27 +171,31 @@ assert.equal(confidenceBand(0.35, 30, 30), "low", "low top probability is always
 
 // --- Full orchestration + manual override ---------------------------------
 {
-  const leagueHalfShare: HshLeagueHalfShare = {
-    sample: 50,
-    league1hShare: 0.45,
-    league2hShare: 0.55,
-    leagueAvgGoals: 2.6,
+  const thin: ClubHalfAttackDefence = {
+    clubName: "Nobody FC",
+    league: "Premier League",
+    af1: 0.55,
+    af2: 0.75,
+    da1: 0.55,
+    da2: 0.75,
+    nMatches: 0,
+    seasonCount: 0,
+    seedOnly: true,
+    sourceNote: "seed-only",
   };
-  const thinShare = computeTeamHalfShare([], "Nobody FC", "home");
 
   const prediction = predictHighestScoringHalf({
     matchId: "m1",
     homeTeam: "Team A",
     awayTeam: "Team B",
     league: "Premier League",
-    xgHome: 1.5,
-    xgAway: 1.2,
-    homeHalfShare: thinShare,
-    awayHalfShare: thinShare,
-    leagueHalfShare,
+    homeRates: thin,
+    awayRates: thin,
+    lgAf1: 0.62,
+    lgAf2: 0.78,
   });
 
-  assert.equal(prediction.confidence, "low", "no historical half data means low confidence");
+  assert.equal(prediction.confidence, "low", "seed-only means low confidence");
   assert.equal(prediction.usedManualOverride, false);
   assert.ok(Math.abs(prediction.p1h + prediction.p2h + prediction.pTie - 1) < 1e-9);
 
@@ -172,11 +204,10 @@ assert.equal(confidenceBand(0.35, 30, 30), "low", "low top probability is always
     homeTeam: "Team A",
     awayTeam: "Team B",
     league: "Premier League",
-    xgHome: 1.5,
-    xgAway: 1.2,
-    homeHalfShare: thinShare,
-    awayHalfShare: thinShare,
-    leagueHalfShare,
+    homeRates: thin,
+    awayRates: thin,
+    lgAf1: 0.62,
+    lgAf2: 0.78,
     manualLambda1h: 0.4,
     manualLambda2h: 2.0,
   });
@@ -184,6 +215,51 @@ assert.equal(confidenceBand(0.35, 30, 30), "low", "low top probability is always
   assert.equal(overridden.lambda1h, 0.4);
   assert.equal(overridden.lambda2h, 2.0);
   assert.equal(overridden.recommended, "2H");
+}
+
+// --- Batch-best picks highest margin × conf weight ------------------------
+{
+  const base = {
+    homeTeam: "A",
+    awayTeam: "B",
+    league: "PL",
+    lambda1h: 1,
+    lambda2h: 1.5,
+    p1h: 0.3,
+    p2h: 0.5,
+    pTie: 0.2,
+    recommended: "2H" as const,
+    topProbability: 0.5,
+    expectedDiff: -0.5,
+    seDiff: 1,
+    sampleSizeHome: 10,
+    sampleSizeAway: 10,
+    usedManualOverride: false,
+    detail: {
+      lambdaA1: 0.5,
+      lambdaB1: 0.5,
+      lambdaA2: 0.7,
+      lambdaB2: 0.8,
+      att1Home: 1,
+      att2Home: 1,
+      def1Home: 1,
+      def2Home: 1,
+      att1Away: 1,
+      att2Away: 1,
+      def1Away: 1,
+      def2Away: 1,
+      lgAf1: 0.62,
+      lgAf2: 0.78,
+      couplingApplied: true,
+    },
+  };
+  const preds: HshPrediction[] = [
+    { ...base, matchId: "low", confidence: "low", margin: 0.2 },
+    { ...base, matchId: "high", confidence: "high", margin: 0.12 },
+    { ...base, matchId: "med", confidence: "medium", margin: 0.15 },
+  ];
+  // high: 0.12*1=0.12; med: 0.15*0.7=0.105; low: 0.2*0.4=0.08
+  assert.equal(pickBatchBestHsh(preds)?.matchId, "high");
 }
 
 assert.equal(topProbability({ p1h: 0.2, p2h: 0.5, pTie: 0.3 }), 0.5);

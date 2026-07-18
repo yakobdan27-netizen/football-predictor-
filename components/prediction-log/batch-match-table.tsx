@@ -38,8 +38,8 @@ interface BatchMatchTableProps {
   createEmptyMatch?: () => LogMatch;
 }
 
-/** Focusable entry cells: Home, Away, Market, Odds, Stake. */
-const ENTRY_COLS = 5;
+/** Focusable entry cells: Home → Away → Market → Odds (League has its own select). */
+const ENTRY_COLS = 4;
 
 type FocusableRef = React.RefObject<
   HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null
@@ -252,10 +252,9 @@ export function BatchMatchTable({
               <th className="batch-col-frozen batch-col-team batch-col-away">Away</th>
               <th>Market</th>
               <th>Odds</th>
-              <th>Stake</th>
               <th className="batch-col-pick-secondary">System Pick</th>
               <th style={{ textAlign: "right" }}>Prob %</th>
-              <th />
+              <th aria-label="Remove" />
             </tr>
           ) : (
             <>
@@ -265,14 +264,14 @@ export function BatchMatchTable({
                   <th colSpan={2} className="batch-group-label">
                     Pick
                   </th>
-                  <th className="batch-group-label">Stake</th>
-                  <th className="batch-group-label" title="Closing odds">
-                    Close
-                  </th>
                   <th className="batch-group-label batch-group-ft" colSpan={1}>
                     Score
                   </th>
                   <th colSpan={2} />
+                  <th className="batch-group-label">Stake</th>
+                  <th className="batch-group-label" title="Closing odds">
+                    Close
+                  </th>
                   <th colSpan={2} className="batch-group-label batch-group-ht">
                     HT
                   </th>
@@ -315,13 +314,13 @@ export function BatchMatchTable({
                 <th className="batch-col-frozen batch-col-team batch-col-away">Away</th>
                 <th>Market</th>
                 <th className="batch-col-pick-secondary">Pick</th>
-                <th>Stake</th>
-                <th title="Closing odds (optional, for CLV)">Close</th>
                 <th>Score (H–A)</th>
                 <th>Outcome</th>
-                <th />
+                <th aria-label="Result mark" />
                 {showFullStats ? (
                   <>
+                    <th>Stake</th>
+                    <th title="Closing odds (optional, for CLV)">Close</th>
                     <th>H</th>
                     <th>A</th>
                     <th>Y/N</th>
@@ -368,7 +367,6 @@ export function BatchMatchTable({
                 awayRef={cellRefs[i]![1] as React.RefObject<HTMLInputElement | null>}
                 marketRef={cellRefs[i]![2] as React.RefObject<HTMLSelectElement | null>}
                 oddsRef={cellRefs[i]![3] as React.RefObject<HTMLInputElement | null>}
-                stakeRef={cellRefs[i]![4] as React.RefObject<HTMLInputElement | null>}
                 onChange={(m) => updateMatch(i, m)}
                 onDelete={() => deleteMatch(i)}
                 onCellKeyDown={(e, col) => handleEntryKeyDown(e, i, col)}

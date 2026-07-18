@@ -13,6 +13,14 @@
  */
 import { poissonPmf } from "@/lib/predictor/poisson";
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  HALF_BASELINE_SAMPLE_THRESHOLD,
+  builtInLeagueHalfFallbacks,
+  formatBaselineSource,
+  lookupClubHalfBaseline,
+  lookupLeagueHalfBaseline,
+  seasonFromDate,
+} from "./half-goals-baselines";
 import { matchLeague } from "./match-league";
 import type { LogMatch, PredictionBatch } from "./types";
 
@@ -28,6 +36,10 @@ export interface HcTeamHalfAverages {
   avg2hConceded: number;
   std1hScored: number;
   std2hScored: number;
+  /** Set when cold-start club baseline filled thin HT history. */
+  baselineSource?: string | null;
+  /** True when scored/conceded avgs came from the static baseline (usable even if sample is 0). */
+  hasBaselineAvgs?: boolean;
 }
 
 export interface HcLeagueHalfAverages {
@@ -36,6 +48,7 @@ export interface HcLeagueHalfAverages {
   avg2h: number;
   ratio: number;
   source: "computed" | "fallback";
+  baselineSource?: string | null;
 }
 
 export interface HcTempoProfile {
@@ -95,6 +108,9 @@ export interface HcPrediction {
     tempoBoost1h: boolean;
     lateSurgeBoost2h: boolean;
     fatigueBoost2h: boolean;
+    baselineHome?: string | null;
+    baselineAway?: string | null;
+    baselineLeague?: string | null;
   };
 }
 
@@ -109,13 +125,10 @@ const FATIGUE_BOOST = 1.05;
 const POISSON_GRID_MAX_GOALS = 5;
 const VALUE_ALERT_1H_THRESHOLD = 0.3;
 
-/** Brief defaults when league history has no HT samples. */
+/** League defaults when HT samples are thin. PL/LL/SA/L1 from static baselines; Bundesliga kept hard-coded. */
 export const LEAGUE_HALF_FALLBACKS: Record<string, { avg1h: number; avg2h: number }> = {
-  "Premier League": { avg1h: 1.15, avg2h: 1.55 },
-  "La Liga": { avg1h: 1.08, avg2h: 1.42 },
-  "Ligue 1": { avg1h: 1.12, avg2h: 1.48 },
+  ...builtInLeagueHalfFallbacks(),
   Bundesliga: { avg1h: 1.22, avg2h: 1.62 },
-  "Serie A": { avg1h: 1.05, avg2h: 1.38 },
 };
 
 const DEFAULT_LEAGUE_FALLBACK = { avg1h: 1.12, avg2h: 1.5 };
@@ -211,12 +224,51 @@ export function computeTeamHalfAverages(
   batches: PredictionBatch[],
   team: string,
   venue: HcVenue,
-  opts?: { limit?: number; beforeDate?: string }
+  opts?: { limit?: number; beforeDate?: string; league?: string; season?: string | null }
 ): HcTeamHalfAverages {
   const limit = opts?.limit ?? DEFAULT_HALF_SAMPLE_LIMIT;
   const samples = collectHalfPairSamples(batches, team, venue, opts).slice(0, limit);
+  const liveSample = samples.length;
+  const season = opts?.season ?? seasonFromDate(opts?.beforeDate);
+  const league = opts?.league ?? "";
 
-  if (samples.length === 0) {
+  if (liveSample >= HALF_BASELINE_SAMPLE_THRESHOLD) {
+    const n = liveSample;
+    const avg = (pick: (s: HalfPairSample) => number) =>
+      samples.reduce((acc, s) => acc + pick(s), 0) / n;
+
+    return {
+      sample: n,
+      avg1hScored: avg((s) => s.gf1h),
+      avg2hScored: avg((s) => s.gf2h),
+      avg1hConceded: avg((s) => s.ga1h),
+      avg2hConceded: avg((s) => s.ga2h),
+      std1hScored: sampleStd(samples.map((s) => s.gf1h)),
+      std2hScored: sampleStd(samples.map((s) => s.gf2h)),
+      baselineSource: null,
+      hasBaselineAvgs: false,
+    };
+  }
+
+  const row = league ? lookupClubHalfBaseline(team, league, season) : null;
+  if (row) {
+    const leagueHalf = lookupLeagueHalfBaseline(row.league, row.season);
+    const concede1h = leagueHalf ? leagueHalf.avg1h / 2 : row.avg1h;
+    const concede2h = leagueHalf ? leagueHalf.avg2h / 2 : row.avg2h;
+    return {
+      sample: liveSample,
+      avg1hScored: row.avg1h,
+      avg2hScored: row.avg2h,
+      avg1hConceded: concede1h,
+      avg2hConceded: concede2h,
+      std1hScored: 0,
+      std2hScored: 0,
+      baselineSource: formatBaselineSource(row),
+      hasBaselineAvgs: true,
+    };
+  }
+
+  if (liveSample === 0) {
     return {
       sample: 0,
       avg1hScored: 0,
@@ -225,10 +277,12 @@ export function computeTeamHalfAverages(
       avg2hConceded: 0,
       std1hScored: 0,
       std2hScored: 0,
+      baselineSource: null,
+      hasBaselineAvgs: false,
     };
   }
 
-  const n = samples.length;
+  const n = liveSample;
   const avg = (pick: (s: HalfPairSample) => number) =>
     samples.reduce((acc, s) => acc + pick(s), 0) / n;
 
@@ -240,13 +294,15 @@ export function computeTeamHalfAverages(
     avg2hConceded: avg((s) => s.ga2h),
     std1hScored: sampleStd(samples.map((s) => s.gf1h)),
     std2hScored: sampleStd(samples.map((s) => s.gf2h)),
+    baselineSource: null,
+    hasBaselineAvgs: false,
   };
 }
 
 export function computeLeagueHalfAverages(
   batches: PredictionBatch[],
   league: string,
-  opts?: { beforeDate?: string }
+  opts?: { beforeDate?: string; season?: string | null }
 ): HcLeagueHalfAverages {
   let g1Total = 0;
   let g2Total = 0;
@@ -266,7 +322,9 @@ export function computeLeagueHalfAverages(
     }
   }
 
-  if (sample >= 6) {
+  const season = opts?.season ?? seasonFromDate(opts?.beforeDate);
+
+  if (sample >= HALF_BASELINE_SAMPLE_THRESHOLD) {
     const avg1h = g1Total / sample;
     const avg2h = g2Total / sample;
     return {
@@ -275,6 +333,19 @@ export function computeLeagueHalfAverages(
       avg2h,
       ratio: avg2h > 0 ? avg1h / avg2h : 0.75,
       source: "computed",
+      baselineSource: null,
+    };
+  }
+
+  const baseline = lookupLeagueHalfBaseline(league, season);
+  if (baseline) {
+    return {
+      sample,
+      avg1h: baseline.avg1h,
+      avg2h: baseline.avg2h,
+      ratio: baseline.avg2h > 0 ? baseline.avg1h / baseline.avg2h : 0.75,
+      source: "fallback",
+      baselineSource: baseline.sourceLabel,
     };
   }
 
@@ -285,6 +356,7 @@ export function computeLeagueHalfAverages(
     avg2h: fb.avg2h,
     ratio: fb.avg2h > 0 ? fb.avg1h / fb.avg2h : 0.75,
     source: "fallback",
+    baselineSource: null,
   };
 }
 
@@ -369,15 +441,17 @@ export function computeStageA(params: {
 }): HcStageAResult {
   const { homeAvg, awayAvg, leagueAvg, homeTempo, awayTempo } = params;
 
-  // When a side has no samples, fall back to league half avgs for that side's contribution.
-  const h1s = homeAvg.sample > 0 ? homeAvg.avg1hScored : leagueAvg.avg1h / 2;
-  const h2s = homeAvg.sample > 0 ? homeAvg.avg2hScored : leagueAvg.avg2h / 2;
-  const h1c = homeAvg.sample > 0 ? homeAvg.avg1hConceded : leagueAvg.avg1h / 2;
-  const h2c = homeAvg.sample > 0 ? homeAvg.avg2hConceded : leagueAvg.avg2h / 2;
-  const a1s = awayAvg.sample > 0 ? awayAvg.avg1hScored : leagueAvg.avg1h / 2;
-  const a2s = awayAvg.sample > 0 ? awayAvg.avg2hScored : leagueAvg.avg2h / 2;
-  const a1c = awayAvg.sample > 0 ? awayAvg.avg1hConceded : leagueAvg.avg1h / 2;
-  const a2c = awayAvg.sample > 0 ? awayAvg.avg2hConceded : leagueAvg.avg2h / 2;
+  // Prefer team avgs when live samples exist or cold-start baseline filled them.
+  const useHome = homeAvg.sample > 0 || !!homeAvg.hasBaselineAvgs;
+  const useAway = awayAvg.sample > 0 || !!awayAvg.hasBaselineAvgs;
+  const h1s = useHome ? homeAvg.avg1hScored : leagueAvg.avg1h / 2;
+  const h2s = useHome ? homeAvg.avg2hScored : leagueAvg.avg2h / 2;
+  const h1c = useHome ? homeAvg.avg1hConceded : leagueAvg.avg1h / 2;
+  const h2c = useHome ? homeAvg.avg2hConceded : leagueAvg.avg2h / 2;
+  const a1s = useAway ? awayAvg.avg1hScored : leagueAvg.avg1h / 2;
+  const a2s = useAway ? awayAvg.avg2hScored : leagueAvg.avg2h / 2;
+  const a1c = useAway ? awayAvg.avg1hConceded : leagueAvg.avg1h / 2;
+  const a2c = useAway ? awayAvg.avg2hConceded : leagueAvg.avg2h / 2;
 
   const expH1hRaw = h1s * TEAM_BLEND + a1c * (1 - TEAM_BLEND);
   const expH2hRaw = h2s * TEAM_BLEND + a2c * (1 - TEAM_BLEND);
@@ -528,12 +602,27 @@ export function buildHalfComparisonFeatures(ctx: {
   awayTempo: HcTempoProfile;
   restDaysHome: number | null;
   restDaysAway: number | null;
+  /** Optional clean-sheet rates (0–1); 0 when sample thin / unknown. */
+  homeCs1hRate?: number;
+  homeCs2hRate?: number;
+  awayCs1hRate?: number;
+  awayCs2hRate?: number;
 }): Record<string, number> {
+  const thin = (sample: number, rate: number | undefined) =>
+    sample > 0 && rate != null ? rate : 0;
   return {
     home_1h_avg: ctx.homeAvg.avg1hScored,
     home_2h_avg: ctx.homeAvg.avg2hScored,
     away_1h_avg: ctx.awayAvg.avg1hScored,
     away_2h_avg: ctx.awayAvg.avg2hScored,
+    home_avg_1h_conceded: ctx.homeAvg.avg1hConceded,
+    home_avg_2h_conceded: ctx.homeAvg.avg2hConceded,
+    away_avg_1h_conceded: ctx.awayAvg.avg1hConceded,
+    away_avg_2h_conceded: ctx.awayAvg.avg2hConceded,
+    home_cs_1h_rate: thin(ctx.homeAvg.sample, ctx.homeCs1hRate),
+    home_cs_2h_rate: thin(ctx.homeAvg.sample, ctx.homeCs2hRate),
+    away_cs_1h_rate: thin(ctx.awayAvg.sample, ctx.awayCs1hRate),
+    away_cs_2h_rate: thin(ctx.awayAvg.sample, ctx.awayCs2hRate),
     home_pace_index: ctx.homeTempo.paceProxy ?? 30,
     away_pace_index: ctx.awayTempo.paceProxy ?? 30,
     league_1h_2h_ratio: ctx.leagueAvg.ratio,
@@ -608,6 +697,9 @@ export function predictHalfComparison(ctx: HcMatchContext): HcPrediction {
       tempoBoost1h: stageA.tempoBoost1h,
       lateSurgeBoost2h: stageA.lateSurgeBoost2h,
       fatigueBoost2h: stageA.fatigueBoost2h,
+      baselineHome: ctx.homeAvg.baselineSource ?? null,
+      baselineAway: ctx.awayAvg.baselineSource ?? null,
+      baselineLeague: ctx.leagueAvg.baselineSource ?? null,
     },
   };
 }

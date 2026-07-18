@@ -72,6 +72,21 @@ export default function DashboardPage() {
             <Link href="/recommendation" className="btn btn-secondary btn-full">
               Recommendation
             </Link>
+            <Link href="/highest-scoring-half" className="btn btn-secondary btn-full">
+              Highest Scoring Half
+            </Link>
+            <Link href="/half-comparison-analysis" className="btn btn-secondary btn-full">
+              Half Comparison
+            </Link>
+            <Link href="/conceded-half-analysis" className="btn btn-secondary btn-full">
+              Conceded Half
+            </Link>
+            <Link href="/corners-analysis" className="btn btn-secondary btn-full">
+              Corners Analysis
+            </Link>
+            <Link href="/combined-odds" className="btn btn-secondary btn-full">
+              Combined Odds
+            </Link>
             <Link href="/analysis" className="btn btn-secondary btn-full">
               Analysis
             </Link>
@@ -89,6 +104,8 @@ export default function DashboardPage() {
         <h2 style={{ fontWeight: 700, marginBottom: "0.5rem", fontSize: "1rem" }}>Models</h2>
         <ul style={{ color: "var(--muted)", fontSize: "0.875rem", lineHeight: 1.7, paddingLeft: "1.1rem" }}>
           <li>Goals W/D/L & O/U — Dixon-Coles</li>
+          <li>Highest scoring half / half comparison — strength-adjusted Poisson</li>
+          <li>1X2 ML — gradient boosting (XGBoost-style) + calibration</li>
           <li>Shots, SOT, Offsides — Poisson strength</li>
           <li>Time decay — recent matches weighted more</li>
         </ul>

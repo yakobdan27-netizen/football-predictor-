@@ -766,6 +766,7 @@ table.data-table td {
   min-width: var(--batch-league-w);
   max-width: var(--batch-league-w);
   color: var(--muted);
+  font-size: 0.6875rem;
 }
 
 .batch-table .batch-league-select {
@@ -774,9 +775,9 @@ table.data-table td {
   padding: 0.15rem 0.1rem;
   font-size: 0.68rem;
   line-height: 1.2;
-  border: 1px solid var(--border);
+  border: none;
   border-radius: 4px;
-  background: var(--surface2);
+  background: transparent;
   color: inherit;
 }
 
@@ -1223,4 +1224,272 @@ table.data-table td {
   width: 3ch;
   max-width: 4ch;
 }
+
+/* —— Recommendation page layout (layout-only; scoped .reco-*) —— */
+.reco-batch {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.reco-batch-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border-color: #5aa0ff;
+}
+
+.reco-batch-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #5aa0ff;
+  margin-bottom: 0.25rem;
+}
+
+.reco-batch-title {
+  font-size: 1.125rem;
+  margin: 0;
+}
+
+.reco-batch-meta {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.reco-batch-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.reco-advisory {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.reco-conf-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+}
+
+.reco-table-wrap {
+  overflow-x: visible;
+  -webkit-overflow-scrolling: auto;
+}
+
+.reco-table {
+  width: 100%;
+}
+
+.reco-table tbody tr {
+  cursor: pointer;
+}
+
+.reco-table tbody tr:hover {
+  background: rgba(90, 160, 255, 0.04);
+}
+
+.reco-match-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  align-items: flex-start;
+}
+
+.reco-league-tag {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface2);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+
+.reco-market-cell {
+  max-width: 16rem;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.reco-status {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.reco-status-hit {
+  color: #15803d;
+}
+
+.reco-status-miss {
+  color: #b91c1c;
+}
+
+.reco-status-push {
+  color: var(--muted);
+}
+
+.reco-status-pending {
+  color: var(--muted);
+}
+
+.reco-row-expand {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  font-size: 0.8125rem;
+}
+
+.reco-reasoning {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reco-mobile-cards {
+  display: none;
+}
+
+.reco-match-card {
+  display: grid;
+  gap: 0.5rem;
+  text-align: left;
+  width: 100%;
+  min-height: 44px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  padding: 0.75rem;
+}
+
+.reco-match-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-height: 44px;
+}
+
+.reco-match-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.reco-match-card-lines {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reco-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  min-height: 28px;
+  align-items: center;
+}
+
+.reco-kv > span:first-child {
+  color: var(--muted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.reco-kv > span:last-child {
+  text-align: right;
+  font-weight: 600;
+}
+
+.reco-best-pick {
+  border-color: #5aa0ff;
+  background: rgba(90, 160, 255, 0.06);
+}
+
+.reco-best-pick-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #5aa0ff;
+  margin-bottom: 0.5rem;
+}
+
+.reco-best-pick-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.reco-best-pick-legs {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+}
+
+.reco-best-pick-legs li {
+  margin-bottom: 0.2rem;
+}
+
+.reco-best-pick-meta {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.reco-best-pick-meta strong {
+  color: var(--text);
+}
+
+.reco-best-pick-pro {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.reco-analysis-link {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--accent);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 639px) {
+  .reco-table-wrap {
+    display: none;
+  }
+
+  .reco-mobile-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .reco-batch-header {
+    top: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .reco-mobile-cards {
+    display: none !important;
+  }
+
+  .reco-row-expand-desktop {
+    display: block;
+  }
+}
+
 

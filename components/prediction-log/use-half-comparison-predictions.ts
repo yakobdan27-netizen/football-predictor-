@@ -22,9 +22,11 @@ export function useHalfComparisonPredictions(
       const league = matchLeague(match, batch.league);
       const homeAvg = computeTeamHalfAverages(allBatches, match.homeTeam, "home", {
         beforeDate: batch.date,
+        league,
       });
       const awayAvg = computeTeamHalfAverages(allBatches, match.awayTeam, "away", {
         beforeDate: batch.date,
+        league,
       });
       const leagueAvg = computeLeagueHalfAverages(allBatches, league, {
         beforeDate: batch.date,

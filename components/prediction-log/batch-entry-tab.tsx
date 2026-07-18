@@ -197,7 +197,7 @@ export function BatchEntryTab({
     for (let i = 0; i < matches.length; i++) {
       const m = matches[i]!;
       const rowLeague = matchLeague(m, defaultLeague);
-      if (!isValidFixture(m.homeTeam, m.awayTeam, rowLeague)) {
+      if (!isValidFixture(m.homeTeam, m.awayTeam, rowLeague, teamsQuality)) {
         setError(`Match ${i + 1}: select home and away from the ${rowLeague} list (must differ).`);
         return;
       }
@@ -234,9 +234,12 @@ export function BatchEntryTab({
         riskBits.push(
           "Stop-loss / drawdown rules suggest pausing new bets until bankroll recovers."
         );
+        riskBits.push(
+          "No chasing losses: after a drawdown, only continue if you explicitly confirm."
+        );
       }
       const ok = window.confirm(
-        `Strategy alerts (save still allowed):\n\n• ${alerts.messages.join("\n• ")}${
+        `Strategy alerts (advisory — save still allowed, nothing is blocked):\n\n• ${alerts.messages.join("\n• ")}${
           riskBits.length ? `\n\nRisk-of-ruin:\n• ${riskBits.join("\n• ")}` : ""
         }\n\nSave batch anyway?`
       );
@@ -327,16 +330,17 @@ export function BatchEntryTab({
             />
           </div>
           <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
-            Set the league on each match row below. A single batch can mix leagues (e.g. Premier League + La
-            Liga).
+            Use the League column on each match row to mix competitions (e.g. Premier League + La Liga). The
+            dropdown above only sets the default for new rows and Livescore import.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
             <select
               className="select"
               value={fixtureLeague}
               onChange={(e) => {
-                setFixtureLeague(e.target.value);
-                setDefaultLeague(e.target.value);
+                const next = e.target.value;
+                setFixtureLeague(next);
+                setDefaultLeague(next);
               }}
               style={{ maxWidth: "220px" }}
               aria-label="League for fixture import"

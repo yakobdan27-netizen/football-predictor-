@@ -13,7 +13,6 @@ import {
 import { resolveMarketMode } from "@/lib/prediction-log/match-entry-helpers";
 import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
 import { leagueShortLabel, matchLeague } from "@/lib/prediction-log/match-league";
-import { teamsForLeague } from "@/lib/prediction-log/teams";
 import { defaultBankrollStrategySettings } from "@/lib/prediction-log/recommendation-config";
 import {
   matchLoggedOdds,
@@ -47,7 +46,6 @@ interface BatchEntryRowProps {
   awayRef?: React.RefObject<HTMLInputElement | null>;
   marketRef?: React.RefObject<HTMLSelectElement | null>;
   oddsRef?: React.RefObject<HTMLInputElement | null>;
-  stakeRef?: React.RefObject<HTMLInputElement | null>;
   onChange: (match: LogMatch) => void;
   onDelete: () => void;
   onCellKeyDown?: (e: React.KeyboardEvent, col: number) => void;
@@ -66,13 +64,22 @@ export function BatchEntryRow({
   awayRef,
   marketRef,
   oddsRef,
-  stakeRef,
   onChange,
   onDelete,
   onCellKeyDown,
 }: BatchEntryRowProps) {
   const bs = bankrollStrategy ?? defaultBankrollStrategySettings();
   const league = matchLeague(match, defaultLeague);
+
+  function handleLeagueChange(nextLeague: string) {
+    if (nextLeague === league) return;
+    onChange({
+      ...match,
+      league: nextLeague,
+      homeTeam: "",
+      awayTeam: "",
+    });
+  }
   const options = useMemo(
     () =>
       buildMarketOptions(
@@ -162,21 +169,12 @@ export function BatchEntryRow({
   return (
     <tr>
       <td className="batch-col-frozen batch-col-num">{index + 1}</td>
-      <td className="batch-col-frozen batch-col-league" tabIndex={-1}>
+      <td className="batch-col-frozen batch-col-league" title={league}>
         <select
           className="batch-league-select"
           value={league}
-          title={league}
-          onChange={(e) => {
-            const newLeague = e.target.value;
-            const teams = new Set(teamsForLeague(newLeague, teamsQuality));
-            onChange({
-              ...match,
-              league: newLeague,
-              homeTeam: teams.has(match.homeTeam) ? match.homeTeam : "",
-              awayTeam: teams.has(match.awayTeam) ? match.awayTeam : "",
-            });
-          }}
+          onChange={(e) => handleLeagueChange(e.target.value)}
+          aria-label={`League for match ${index + 1}`}
         >
           {LEAGUE_OPTIONS.map((l) => (
             <option key={l} value={l}>
@@ -236,28 +234,6 @@ export function BatchEntryRow({
           value={oddsValue}
           onChange={(e) => updateOdds(e.target.value)}
           onKeyDown={(e) => onCellKeyDown?.(e, 3)}
-        />
-      </td>
-      <td
-        className="batch-col-stake"
-        title={suggestion.reason || undefined}
-      >
-        <input
-          ref={stakeRef}
-          type="number"
-          min={0}
-          step={0.01}
-          placeholder={suggestion.suggested != null ? String(suggestion.suggested) : "Stake"}
-          value={match.stake != null ? String(match.stake) : ""}
-          onChange={(e) => {
-            const n = parseFloat(e.target.value);
-            onChange({
-              ...match,
-              stake: Number.isFinite(n) && n >= 0 ? n : undefined,
-              suggestedStake: suggestion.suggested ?? match.suggestedStake,
-            });
-          }}
-          onKeyDown={(e) => onCellKeyDown?.(e, 4)}
         />
       </td>
       <td className="batch-col-pick batch-col-pick-secondary" title={systemPick.label}>

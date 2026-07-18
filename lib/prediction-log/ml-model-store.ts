@@ -27,7 +27,22 @@ export interface RandomForestModel {
   trees: Array<{ featureIdx: number; threshold: number; leftClass: number; rightClass: number }>;
 }
 
-export type MlClassifierModel = LogisticModel | NaiveBayesModel | RandomForestModel;
+/** Multiclass gradient boosting with decision stumps (XGBoost/LightGBM-style core). */
+export interface GradientBoostingModel {
+  type: "gradient_boosting";
+  /** Per class: list of stump contributions. */
+  stages: Array<
+    Array<{ featureIdx: number; threshold: number; leftValue: number; rightValue: number }>
+  >;
+  learningRate: number;
+  featureCount: number;
+}
+
+export type MlClassifierModel =
+  | LogisticModel
+  | NaiveBayesModel
+  | RandomForestModel
+  | GradientBoostingModel;
 
 export interface MlClassifierStore {
   model: MlClassifierModel | null;

@@ -19,4 +19,7 @@ export const STAT_ENGINE_CONFIG = {
 
 export type MlStrategy = "direct" | "goal_based";
 
-export type MlAlgorithm = "logistic" | "random_forest" | "naive_bayes";
+export type MlAlgorithm = "logistic" | "random_forest" | "naive_bayes" | "gradient_boosting";
+
+/** Prefer gradient boosting (XGBoost/LightGBM-style) once enough samples exist. */
+export const ML_GRADIENT_BOOSTING_MIN_N = 80;

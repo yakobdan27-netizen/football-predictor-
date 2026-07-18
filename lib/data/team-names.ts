@@ -39,6 +39,33 @@ export const TEAM_ALIASES: Record<string, string> = {
   "Real Betis": "Betis",
   "Real Sociedad": "Sociedad",
   "Real Valladolid": "Valladolid",
+  // Half-goals baseline brief names / unaccented variants
+  Cadiz: "Cádiz",
+  Cádiz: "Cádiz",
+  Almeria: "Almería",
+  Almería: "Almería",
+  Leganes: "Leganés",
+  Leganés: "Leganés",
+  "Saint-Etienne": "Saint-Étienne",
+  "Saint-Étienne": "Saint-Étienne",
+  "St Etienne": "Saint-Étienne",
+  "Ipswich": "Ipswich Town",
+  "Luton": "Luton Town",
+  "Sheffield Utd": "Sheffield United",
+  "Norwich City": "Norwich",
+  "Hellas Verona": "Verona",
+  "Olympique Marseille": "Marseille",
+  "Olympique Lyonnais": "Lyon",
+  "Stade Rennais": "Rennes",
+  "Stade Brestois": "Brest",
+  "Stade de Reims": "Reims",
+  // Conceded-half seed names
+  Alaves: "Alaves",
+  "Paris FC": "Paris FC",
+  "Montpellier B": "Montpellier B",
+  Oviedo: "Oviedo",
+  Pisa: "Pisa",
+  Sunderland: "Sunderland",
 };
 
 export function standardizeTeamName(name: string): string {

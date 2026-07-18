@@ -213,6 +213,11 @@ function DetailPanel({ prediction: p }: { prediction: HcPrediction }) {
         {d.lateSurgeBoost2h ? " · late surge +2H" : ""}
         {d.fatigueBoost2h ? " · fatigue +2H" : ""}
       </div>
+      {(d.baselineHome || d.baselineAway || d.baselineLeague) && (
+        <div style={{ color: "var(--muted)" }}>
+          Cold-start: {[d.baselineHome, d.baselineAway, d.baselineLeague].filter(Boolean).join(" · ")}
+        </div>
+      )}
       <div style={{ marginTop: "0.25rem" }}>
         Probabilities: P(1H&gt;2H) {pct(p.p1hGreater)} · P(=) {pct(p.pEqual)} · P(2H&gt;1H){" "}
         {pct(p.p2hGreater)}
@@ -221,6 +226,12 @@ function DetailPanel({ prediction: p }: { prediction: HcPrediction }) {
         Recommendation: {recommendationLabel(p.recommendation)} ({p.confidence.replace("_", " ")})
       </div>
       <p style={{ margin: "0.25rem 0 0", color: "var(--muted)" }}>{p.tacticalNote}</p>
+      {(p.confidence === "low") && (
+        <p style={{ margin: "0.25rem 0 0", color: "var(--warn)" }}>
+          Low confidence warning — confirm if you still want this market. Match stays in the batch;
+          nothing is blocked.
+        </p>
+      )}
       {p.valueAlert && (
         <p style={{ margin: 0, color: "var(--warning, #b45309)" }}>
           Value alert: First-half dominance probability ({pct(p.p1hGreater)}) is above 30% —

@@ -192,3 +192,44 @@ export function getSelectedPickForMatch(rm: RecommendedMatch): {
   if (!entry) return null;
   return { marketKey: entry[0], pick: entry[1] };
 }
+
+/** Display-only High / Medium / Low for Recommendation page badges. */
+export type RecoDisplayConfidence = "high" | "medium" | "low";
+
+export function mapPFinalToDisplayConfidence(
+  pFinal: number | null | undefined
+): RecoDisplayConfidence {
+  if (pFinal == null || !Number.isFinite(pFinal)) return "low";
+  if (pFinal >= 60) return "high";
+  if (pFinal >= 45) return "medium";
+  return "low";
+}
+
+export function mapConfidenceBandToDisplay(
+  band: "strong" | "solid" | "coin_flip" | "avoid" | undefined,
+  pFinal?: number | null
+): RecoDisplayConfidence {
+  if (band === "strong") return "high";
+  if (band === "solid") return "medium";
+  if (band === "coin_flip" || band === "avoid") return "low";
+  return mapPFinalToDisplayConfidence(pFinal);
+}
+
+export function mapBatchRiskToDisplayConfidence(
+  band: "safe" | "caution" | "high" | undefined,
+  averagePFinal?: number | null
+): RecoDisplayConfidence {
+  if (averagePFinal != null && Number.isFinite(averagePFinal)) {
+    return mapPFinalToDisplayConfidence(averagePFinal);
+  }
+  if (band === "safe") return "high";
+  if (band === "caution") return "medium";
+  if (band === "high") return "low";
+  return "low";
+}
+
+export function displayConfidenceLabel(c: RecoDisplayConfidence): string {
+  if (c === "high") return "High";
+  if (c === "medium") return "Medium";
+  return "Low";
+}
