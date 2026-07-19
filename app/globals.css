@@ -231,6 +231,29 @@ a {
   -webkit-overflow-scrolling: touch;
 }
 
+/* Batch Decision Maker */
+.dm-desktop-row {
+  display: table-row;
+}
+.dm-mobile-row {
+  display: none;
+}
+@media (max-width: 767px) {
+  .dm-desktop-row {
+    display: none;
+  }
+  .dm-mobile-row {
+    display: table-row;
+  }
+  .dm-table thead {
+    display: none;
+  }
+  .dm-table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+}
+
 .desktop-table {
   display: none;
 }

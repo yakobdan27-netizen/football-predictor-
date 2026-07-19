@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { evaluateBatchCombos } from "@/lib/prediction-log/combo-selection";
+import { ensureComboRecommendedShell } from "@/lib/prediction-log/prepare-batch-combos";
 import { upsertBatch } from "@/lib/prediction-log/storage";
 import type { PredictionBatch, RecommendationTier } from "@/lib/prediction-log/types";
 import { CombinedOddsBatchCard } from "./combined-odds-batch-card";
 import { CombinedOddsSettingsPanel } from "./combined-odds-settings-panel";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { usePreparedComboBatches } from "./use-prepared-combo-batches";
 
 const TIER_OPTIONS: Array<{ value: RecommendationTier; label: string }> = [
   { value: "safe", label: "Extreme Safe" },
@@ -30,22 +32,23 @@ export function CombinedOddsApp() {
 
   const [tier, setTier] = useState<RecommendationTier>("balanced");
   const [savingOdds, setSavingOdds] = useState(false);
-
-  const recommendedBatches = useMemo(
-    () =>
-      batches
-        .filter((b) => b.batchKind === "recommended" && b.recommended)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [batches]
-  );
+  const { preparedBatches, preparing } = usePreparedComboBatches(batches);
 
   const evaluated = useMemo(
     () =>
-      recommendedBatches.map((batch) => ({
+      preparedBatches.map((batch) => ({
         batch,
-        ...evaluateBatchCombos(batch, comboSettings, analysis, batches, teamsQuality, learnerStats, tier),
+        ...evaluateBatchCombos(
+          batch,
+          comboSettings,
+          analysis,
+          batches,
+          teamsQuality,
+          learnerStats,
+          tier
+        ),
       })),
-    [recommendedBatches, comboSettings, analysis, batches, teamsQuality, learnerStats, tier]
+    [preparedBatches, comboSettings, analysis, batches, teamsQuality, learnerStats, tier]
   );
 
   if (!ready) {
@@ -53,16 +56,19 @@ export function CombinedOddsApp() {
   }
 
   async function handleComboOddsChange(batch: PredictionBatch, matchId: string, odds: number | "") {
-    if (!batch.recommended) return;
-    const comboOddsByMatch = { ...batch.recommended.comboOddsByMatch };
+    // Persist shell only when the batch has no recommended payload yet (manual batches).
+    // Recommended batches keep their match list; we only patch comboOddsByMatch.
+    const base = batch.recommended ? batch : ensureComboRecommendedShell(batch);
+    if (!base.recommended) return;
+    const comboOddsByMatch = { ...base.recommended.comboOddsByMatch };
     if (odds === "" || !Number.isFinite(odds)) {
       delete comboOddsByMatch[matchId];
     } else {
       comboOddsByMatch[matchId] = odds;
     }
     const updated: PredictionBatch = {
-      ...batch,
-      recommended: { ...batch.recommended, comboOddsByMatch },
+      ...base,
+      recommended: { ...base.recommended, comboOddsByMatch },
     };
     setSavingOdds(true);
     try {
@@ -84,8 +90,8 @@ export function CombinedOddsApp() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Combined Odds</h1>
         <p className="page-sub">
-          Best intra-match combo per game and batch combo accumulator — built on frozen recommendation
-          score grids.{" "}
+          Combo picks for every match in every saved batch — score grids from recommendations or seed
+          priors.{" "}
           <Link href="/recommendation" style={{ color: "var(--accent)" }}>
             Single-market picks →
           </Link>{" "}
@@ -114,19 +120,19 @@ export function CombinedOddsApp() {
         This choice is local to this page.
       </p>
 
-      {savingOdds && (
+      {(savingOdds || preparing) && (
         <p className="page-sub" style={{ marginBottom: "0.5rem" }}>
-          Saving odds…
+          {savingOdds ? "Saving odds…" : "Preparing combo grids for all batch matches…"}
         </p>
       )}
 
       {evaluated.length === 0 ? (
         <p className="page-sub">
-          No recommended batches yet. Generate one from the{" "}
-          <Link href="/recommendation" style={{ color: "var(--accent)" }}>
-            Recommendation
+          No batches with matches yet. Save a batch from the{" "}
+          <Link href="/prediction-log" style={{ color: "var(--accent)" }}>
+            Prediction Log
           </Link>{" "}
-          page first.
+          first.
         </p>
       ) : (
         evaluated.map(({ batch, matches, accumulator }) => (

@@ -10,6 +10,7 @@ const links = [
   { href: "/leagues", label: "League", icon: "🌍", desktopLabel: "Leagues" },
   { href: "/ai-learner", label: "AI", icon: "🧠", desktopLabel: "AI Learner" },
   { href: "/recommendation", label: "Reco", icon: "🎯", desktopLabel: "Recommendation" },
+  { href: "/decision-maker", label: "Decide", icon: "✅", desktopLabel: "Decision Maker" },
   { href: "/combined-odds", label: "Combo", icon: "🎲", desktopLabel: "Combined Odds" },
   { href: "/combined-odds-extended", label: "Combo+", icon: "➕", desktopLabel: "Extended Combos" },
   { href: "/highest-scoring-half", label: "HSH", icon: "⏱️", desktopLabel: "Highest Scoring Half" },

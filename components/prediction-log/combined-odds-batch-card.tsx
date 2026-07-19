@@ -28,11 +28,16 @@ export function CombinedOddsBatchCard({
   onComboOddsChange,
 }: CombinedOddsBatchCardProps) {
   const recommended = batch.recommended;
-  if (!recommended) return null;
+  if (!recommended || matches.length === 0) return null;
 
   const accentColor = getTierAccentColor(tier);
   const batchId = getBatchDisplayId(batch);
   const extended = hasExtendedSnapshot(batch);
+  const gridsReady = matches.some((m) => m.hasGrid);
+  const title =
+    recommended.displayName ||
+    batch.batchName ||
+    (batch.batchKind === "recommended" ? "Recommended" : "Batch combos");
 
   const statusLabel =
     accumulator.status === "safe"
@@ -46,9 +51,13 @@ export function CombinedOddsBatchCard({
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: "0.75rem", fontWeight: 700, color: accentColor, marginBottom: "0.25rem" }}>
-            {recommended.displayName}
+            {title}
           </div>
           <h3 style={{ fontSize: "1.125rem", margin: 0 }}>{batchId}</h3>
+          <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+            {matches.length} match{matches.length === 1 ? "" : "es"}
+            {batch.batchKind ? ` · ${batch.batchKind}` : ""}
+          </p>
         </div>
         <Link
           href={`/analysis?batch=${encodeURIComponent(batch.id)}`}
@@ -58,9 +67,10 @@ export function CombinedOddsBatchCard({
         </Link>
       </div>
 
-      {!extended && (
+      {!extended && !gridsReady && (
         <p style={{ margin: "0.75rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-          Regenerate this batch to populate score grids for combo evaluation.
+          Score grids are still preparing (or unavailable for some fixtures). Combos use seed priors when
+          club history is thin.
         </p>
       )}
 

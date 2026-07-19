@@ -1,6 +1,7 @@
 import { enabledComboMarkets, DEFAULT_COMBO_MARKETS } from "./combo-markets-config";
 import { comboValue, computeComboPFinal } from "./combo-probability";
 import { computeBatchRisk, type ActiveLeg } from "./dynamic-batch-risk";
+import { ensureComboRecommendedShell } from "./prepare-batch-combos";
 import { getMarketComparisonForMatch, getSelectedPickForMatch } from "./snapshot-readers";
 import type { TeamsQualityStore } from "./teams-quality-types";
 import type {
@@ -309,8 +310,9 @@ export function evaluateBatchCombos(
   tier: RecommendationTier = "balanced",
   comboFilter?: (combo: ComboMarketDef) => boolean
 ): { matches: MatchComboResult[]; accumulator: ComboAccumulatorResult } {
-  const recommended = batch.recommended;
-  if (!recommended) {
+  const prepared = ensureComboRecommendedShell(batch);
+  const recommended = prepared.recommended;
+  if (!recommended?.matches.length) {
     return {
       matches: [],
       accumulator: {
@@ -328,7 +330,7 @@ export function evaluateBatchCombos(
   }
 
   const matches = recommended.matches.map((rm) =>
-    evaluateMatchCombos(batch, rm, settings, tier, teamsQuality, learnerStats, comboFilter)
+    evaluateMatchCombos(prepared, rm, settings, tier, teamsQuality, learnerStats, comboFilter)
   );
   const accumulator = buildComboAccumulator(
     matches,

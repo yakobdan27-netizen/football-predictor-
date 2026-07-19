@@ -72,6 +72,9 @@ export default function DashboardPage() {
             <Link href="/recommendation" className="btn btn-secondary btn-full">
               Recommendation
             </Link>
+            <Link href="/decision-maker" className="btn btn-secondary btn-full">
+              Decision Maker
+            </Link>
             <Link href="/highest-scoring-half" className="btn btn-secondary btn-full">
               Highest Scoring Half
             </Link>
