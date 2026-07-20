@@ -107,36 +107,18 @@ export function pickProbFromMatrix(
   }
   if (marketKey === "handicap" || marketKey === "ht_handicap") {
     const side = p === "away" ? "away" : "home";
-    if (line == null) {
-      // #region agent log
-      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'D',location:'statistics-engine.ts:pickProbFromMatrix',message:'handicap missing line → 0.5',data:{marketKey,prediction:p,hasCtx:!!ctx},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return 0.5;
-    }
+    if (line == null) return 0.5;
     const grid =
       marketKey === "ht_handicap" && ctx?.lambdaHome != null && ctx?.lambdaAway != null
         ? halfTimeScoreGrid(ctx.lambdaHome, ctx.lambdaAway)
         : ctx?.scoreGrid;
-    if (!grid) {
-      // #region agent log
-      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'D',location:'statistics-engine.ts:pickProbFromMatrix',message:'handicap missing scoreGrid → 0.5',data:{marketKey,prediction:p,line,hasCtx:!!ctx,hasScoreGrid:!!ctx?.scoreGrid},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return 0.5;
-    }
+    if (!grid) return 0.5;
     return asianHandicapProb(grid, line, side);
   }
   if (marketKey === "three_way_handicap") {
-    if (line == null) {
-      // #region agent log
-      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'F',location:'statistics-engine.ts:pickProbFromMatrix',message:'three_way missing line → 0.33',data:{prediction:p,hasCtx:!!ctx},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return 0.33;
-    }
+    if (line == null) return 0.33;
     const grid = ctx?.scoreGrid;
     if (!grid) {
-      // #region agent log
-      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'E',location:'statistics-engine.ts:pickProbFromMatrix',message:'three_way missing scoreGrid → raw 1x2',data:{prediction:p,line,rawHome:probs.home,rawDraw:probs.draw,rawAway:probs.away},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (p === "home") return probs.home;
       if (p === "away") return probs.away;
       return probs.draw;

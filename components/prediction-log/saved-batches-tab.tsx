@@ -49,11 +49,16 @@ export function SavedBatchesTab({
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [autoFillUnavailable, setAutoFillUnavailable] = useState(false);
   const [bulkSyncing, setBulkSyncing] = useState(false);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
   const [autoFilling, setAutoFilling] = useState(false);
   const [autoFillMsg, setAutoFillMsg] = useState<string | null>(null);
   const [autoFillAttempted, setAutoFillAttempted] = useState<Record<string, boolean>>({});
+  const [livescoreFilling, setLivescoreFilling] = useState(false);
+  const [conflicts, setConflicts] = useState<
+    { matchId: string; field: string; label: string; current: number | string; apiValue: number | string }[]
+  >([]);
   const [kindFilter, setKindFilter] = useState<"all" | "manual" | "recommended">("all");
   const [tierFilter, setTierFilter] = useState<"all" | "safe" | "balanced" | "aggressive">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "PENDING" | "SETTLED">("all");
@@ -65,16 +70,120 @@ export function SavedBatchesTab({
       setExpandedId(batch.id);
       setDraft(JSON.parse(JSON.stringify(batch)) as PredictionBatch);
       onHighlightConsumed?.();
-      void autoFillFromLivescore(batch.id);
+      void autoFillFromApi(batch.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per highlight
   }, [highlightBatchId, batches, onHighlightConsumed]);
 
-  async function autoFillFromLivescore(batchId: string) {
-    if (autoFillAttempted[batchId]) return;
-    setAutoFillAttempted((prev) => ({ ...prev, [batchId]: true }));
+  async function refreshDraftFromServer(batchId: string) {
+    await reloadBatchesFromServer();
+    const all = loadBatches();
+    saveAnalysis(recomputeAnalysis(all));
+    updateClubProfiles();
+    updateLearnerStats();
+    updateTeamCharacteristics();
+    updateLeagueProfiles();
+    const refreshed = all.find((b) => b.id === batchId);
+    if (refreshed) {
+      setDraft(JSON.parse(JSON.stringify(refreshed)) as PredictionBatch);
+    }
+    onUpdate();
+  }
+
+  /** Primary Auto-Fill: API-Football (server-only key). Never blocks manual entry.
+   *  Pass batchId for one batch, or omit to fill every pending predicted batch. */
+  async function autoFillFromApi(batchId?: string | null, opts?: { force?: boolean }) {
+    const scopeKey = batchId ?? "__all__";
+    if (!opts?.force && autoFillAttempted[scopeKey]) return;
+    setAutoFillAttempted((prev) => ({ ...prev, [scopeKey]: true }));
     setAutoFilling(true);
-    setAutoFillMsg("Auto-filling from Livescore…");
+    setSyncing(true);
+    setAutoFillUnavailable(false);
+    setAutoFillMsg(
+      batchId
+        ? "Auto-filling results from API-Football…"
+        : "Auto-filling results for every pending batch…"
+    );
+    setSyncMsg(null);
+
+    try {
+      const res = await fetch("/api/sync-results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batchId ? { batchId } : {}),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        unavailable?: boolean;
+        banner?: string;
+        matchesSynced?: number;
+        matchesNotFound?: number;
+        updatedBatches?: number;
+        errors?: string[];
+        conflicts?: {
+          matchId: string;
+          field: string;
+          label: string;
+          current: number | string;
+          apiValue: number | string;
+        }[];
+      };
+
+      if (!res.ok || data.unavailable) {
+        setAutoFillUnavailable(true);
+        setAutoFillMsg(
+          data.banner ??
+            "Auto-fill unavailable right now — enter results manually."
+        );
+        setSyncMsg(data.error ?? data.banner ?? "Auto-fill unavailable");
+        return;
+      }
+
+      if (batchId) {
+        await refreshDraftFromServer(batchId);
+      } else {
+        await reloadBatchesFromServer();
+        const all = loadBatches();
+        saveAnalysis(recomputeAnalysis(all));
+        updateClubProfiles();
+        updateLearnerStats();
+        updateTeamCharacteristics();
+        updateLeagueProfiles();
+        if (expandedId) {
+          const refreshed = all.find((b) => b.id === expandedId);
+          if (refreshed) setDraft(JSON.parse(JSON.stringify(refreshed)) as PredictionBatch);
+        }
+        onUpdate();
+      }
+      setConflicts(data.conflicts ?? []);
+
+      const parts = [
+        `${data.updatedBatches ?? 0} batch(es) updated`,
+        `${data.matchesSynced ?? 0} match(es) filled`,
+        `${data.matchesNotFound ?? 0} not found on API`,
+      ];
+      if (data.conflicts?.length) {
+        parts.push(`${data.conflicts.length} field(s) kept manual (use Replace to overwrite)`);
+      }
+      if (data.errors?.length) parts.push(data.errors.slice(0, 2).join("; "));
+      setAutoFillMsg(parts.join(". "));
+      setSyncMsg(parts.join(". "));
+    } catch {
+      setAutoFillUnavailable(true);
+      setAutoFillMsg("Auto-fill unavailable right now — enter results manually.");
+      setSyncMsg("Auto-fill unavailable right now — enter results manually.");
+    } finally {
+      setAutoFilling(false);
+      setSyncing(false);
+      setTimeout(() => setAutoFillMsg(null), 10000);
+    }
+  }
+
+  /** Optional secondary fill via Livescore scrape. */
+  async function fillFromLivescore(batchId: string) {
+    setLivescoreFilling(true);
+    setAutoFillMsg("Filling from Livescore…");
 
     let remaining: string[] = [];
     let filledTotal = 0;
@@ -103,7 +212,7 @@ export function SavedBatchesTab({
         };
 
         if (!res.ok) {
-          throw new Error(data.error ?? "Livescore auto-fill failed");
+          throw new Error(data.error ?? "Livescore fill failed");
         }
 
         filledTotal += data.filled ?? 0;
@@ -111,17 +220,13 @@ export function SavedBatchesTab({
         if (data.errors?.length) errorParts.push(...data.errors);
         remaining = data.remaining ?? [];
 
-        await reloadBatchesFromServer();
-        const all = loadBatches();
-        const refreshed = all.find((b) => b.id === batchId);
-        if (refreshed) {
-          setDraft(JSON.parse(JSON.stringify(refreshed)) as PredictionBatch);
-        }
-        onUpdate();
+        await refreshDraftFromServer(batchId);
       } while (remaining.length > 0 && rounds < 15);
 
       const parts = [
-        filledTotal > 0 ? `Auto-filled ${filledTotal} match(es) from Livescore` : "No matches needed Livescore fill",
+        filledTotal > 0
+          ? `Filled ${filledTotal} match(es) from Livescore`
+          : "No matches needed Livescore fill",
       ];
       if (failedTotal > 0) parts.push(`${failedTotal} failed — enter manually`);
       if (remaining.length > 0) parts.push(`${remaining.length} still pending`);
@@ -131,22 +236,46 @@ export function SavedBatchesTab({
       setAutoFillMsg(
         e instanceof Error
           ? `${e.message} — enter results manually.`
-          : "Livescore auto-fill failed — enter results manually."
+          : "Livescore fill failed — enter results manually."
       );
     } finally {
-      setAutoFilling(false);
+      setLivescoreFilling(false);
       setTimeout(() => setAutoFillMsg(null), 8000);
+    }
+  }
+
+  async function replaceConflictsWithApi() {
+    if (!expandedId || !conflicts.length) return;
+    const matchIds = [...new Set(conflicts.map((c) => c.matchId))];
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/sync-results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchId: expandedId, replaceMatchIds: matchIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Replace failed");
+      await refreshDraftFromServer(expandedId);
+      setConflicts([]);
+      setSyncMsg(`Replaced API values on ${data.matchesSynced ?? matchIds.length} match(es).`);
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : "Replace failed");
+    } finally {
+      setSyncing(false);
     }
   }
 
   function openBatch(batch: PredictionBatch) {
     setExpandedId(batch.id);
+    setConflicts([]);
+    setAutoFillUnavailable(false);
     const normalized: PredictionBatch = {
       ...batch,
       matches: normalizeMatchLeagues(batch.matches, batch.league),
     };
     setDraft(JSON.parse(JSON.stringify(normalized)) as PredictionBatch);
-    void autoFillFromLivescore(batch.id);
+    void autoFillFromApi(batch.id);
   }
 
   function summarizeRecommendedSettlement(batch: PredictionBatch, all: PredictionBatch[]): string {
@@ -287,42 +416,22 @@ export function SavedBatchesTab({
   }
 
   async function syncFromApi() {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const res = await fetch("/api/sync-results", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(expandedId ? { batchId: expandedId } : {}),
+    // Open batch → fill that batch; otherwise fill every pending predicted batch
+    if (expandedId) {
+      setAutoFillAttempted((prev) => {
+        const next = { ...prev };
+        delete next[expandedId];
+        return next;
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sync failed");
-
-      await reloadBatchesFromServer();
-      const all = loadBatches();
-      saveAnalysis(recomputeAnalysis(all));
-      updateClubProfiles();
-      updateLearnerStats();
-      updateTeamCharacteristics();
-      updateLeagueProfiles();
-
-      if (expandedId && draft) {
-        const refreshed = all.find((b) => b.id === expandedId);
-        if (refreshed) setDraft(JSON.parse(JSON.stringify(refreshed)) as PredictionBatch);
-      }
-
-      const parts = [
-        `${data.matchesSynced ?? 0} match(es) updated`,
-        `${data.matchesNotFound ?? 0} not found on API`,
-      ];
-      if (data.errors?.length) parts.push(data.errors.join("; "));
-      setSyncMsg(parts.join(". "));
-      onUpdate();
-    } catch (e) {
-      setSyncMsg(e instanceof Error ? e.message : "Sync failed");
-    } finally {
-      setSyncing(false);
+      await autoFillFromApi(expandedId, { force: true });
+      return;
     }
+    setAutoFillAttempted((prev) => {
+      const next = { ...prev };
+      delete next["__all__"];
+      return next;
+    });
+    await autoFillFromApi(null, { force: true });
   }
 
   async function syncLast5FromLivescore() {
@@ -450,28 +559,89 @@ export function SavedBatchesTab({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={syncing || bulkSyncing}
+            disabled={syncing || bulkSyncing || livescoreFilling}
             onClick={() => void syncFromApi()}
+            style={{ minHeight: 44, minWidth: 160, fontWeight: 700 }}
           >
-            {syncing ? "Syncing…" : "Sync results from API"}
+            {syncing || autoFilling
+              ? "Auto-filling…"
+              : expandedId
+                ? "Auto-Fill Results"
+                : "Auto-Fill All Batches"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={livescoreFilling || syncing || !expandedId}
+            onClick={() => expandedId && void fillFromLivescore(expandedId)}
+            style={{ minHeight: 44 }}
+          >
+            {livescoreFilling ? "Livescore…" : "Fill from Livescore"}
           </button>
           <button
             type="button"
             className="btn btn-secondary"
             disabled={bulkSyncing || syncing}
             onClick={() => void syncLast5FromLivescore()}
+            style={{ minHeight: 44 }}
           >
-            {bulkSyncing ? "Bulk syncing…" : "Sync last 5 results (Livescore)"}
+            {bulkSyncing ? "Bulk syncing…" : "Sync last 5 (Livescore)"}
           </button>
-          <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-            Livescore Puppeteer scrape is the primary auto-fill for HT/FT and match stats (cached;
-            errors fall back to manual entry only). Opening a batch auto-fills finished matches.
-            Sync results from API can also fill empty actuals from api-sports.io by batch date and
-            team names. Bulk sync pulls the last 5 finished 2025/26 results per league into club
-            history.
-            {expandedId ? " API sync targets the open batch only." : ""}
+          <span style={{ fontSize: "0.75rem", color: "var(--muted)", maxWidth: 420 }}>
+            Auto-Fill uses API-Football for FT, HT, and corners on finished matches (every
+            pending predicted batch, or the open batch). Empty cells only — manual values are
+            kept. Livescore is optional fallback.
+            {expandedId ? " Targeting the open batch." : " No batch open → fills all pending."}
           </span>
         </div>
+        {autoFillUnavailable && (
+          <div
+            role="status"
+            style={{
+              marginTop: "0.75rem",
+              padding: "0.75rem 1rem",
+              borderRadius: 10,
+              background: "rgba(249, 115, 22, 0.15)",
+              color: "#c2410c",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+            }}
+          >
+            Auto-fill unavailable right now — enter results manually.
+          </div>
+        )}
+        {conflicts.length > 0 && (
+          <div
+            style={{
+              marginTop: "0.75rem",
+              padding: "0.75rem 1rem",
+              borderRadius: 10,
+              background: "rgba(234, 179, 8, 0.15)",
+              fontSize: "0.8125rem",
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>
+              ⚠ {conflicts.length} field(s) already had manual values (kept).
+            </div>
+            <ul style={{ margin: "0 0 0.5rem", paddingLeft: "1.1rem", color: "var(--muted)" }}>
+              {conflicts.slice(0, 6).map((c) => (
+                <li key={`${c.matchId}-${c.field}`}>
+                  {c.label}: manual {String(c.current)} vs API {String(c.apiValue)}
+                </li>
+              ))}
+              {conflicts.length > 6 && <li>…and {conflicts.length - 6} more</li>}
+            </ul>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={syncing}
+              onClick={() => void replaceConflictsWithApi()}
+              style={{ minHeight: 40 }}
+            >
+              Replace with API values
+            </button>
+          </div>
+        )}
         {syncMsg && (
           <p style={{ fontSize: "0.8125rem", color: "var(--accent)", marginTop: "0.5rem" }}>
             {syncMsg}
@@ -535,7 +705,7 @@ export function SavedBatchesTab({
                 )}
 
                 <h3 style={{ fontSize: "1rem", margin: "0 0 0.75rem" }}>Enter results</h3>
-                {(autoFilling || autoFillMsg) && draft.id === batch.id && (
+                {(autoFilling || livescoreFilling || autoFillMsg) && draft.id === batch.id && (
                   <p
                     style={{
                       fontSize: "0.8125rem",
@@ -543,7 +713,11 @@ export function SavedBatchesTab({
                       margin: "0 0 0.75rem",
                     }}
                   >
-                    {autoFilling ? "Auto-filling from Livescore…" : autoFillMsg}
+                    {autoFilling
+                      ? "Auto-filling results from API-Football…"
+                      : livescoreFilling
+                        ? "Filling from Livescore…"
+                        : autoFillMsg}
                   </p>
                 )}
                 <BatchMatchTable

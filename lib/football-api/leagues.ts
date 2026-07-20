@@ -15,14 +15,26 @@ export function apiLeagueId(league: string): number | null {
   return LEAGUE_API_IDS[league as LeagueOption] ?? null;
 }
 
-/** European season year the API expects (season ends in this calendar year). */
+/**
+ * API-Football season parameter = starting year of the European season.
+ * 2025/26 → 2025. Aug–Dec uses calendar year; Jan–Jul uses calendar year − 1.
+ */
 export function apiSeasonFromDate(isoDate: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate.trim());
+  if (m) {
+    const year = parseInt(m[1]!, 10);
+    const month = parseInt(m[2]!, 10); // 1–12
+    if (Number.isFinite(year) && Number.isFinite(month)) {
+      return month >= 8 ? year : year - 1;
+    }
+  }
   const d = new Date(isoDate);
   if (Number.isNaN(d.getTime())) {
     const year = parseInt(isoDate.slice(0, 4), 10);
     return Number.isFinite(year) ? year : new Date().getFullYear();
   }
-  return d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear();
+  // getMonth(): 0=Jan … 7=Aug
+  return d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1;
 }
 
 export function apiDateOnly(isoDate: string): string {
@@ -30,4 +42,10 @@ export function apiDateOnly(isoDate: string): string {
   const d = new Date(isoDate);
   if (Number.isNaN(d.getTime())) return isoDate.slice(0, 10);
   return d.toISOString().slice(0, 10);
+}
+
+/** Cache key segment for fixtures: league id or "all". */
+export function fixturesCacheKey(leagueId: number | null, season: number, date: string): string {
+  const leaguePart = leagueId != null ? String(leagueId) : "all";
+  return `${leaguePart}:${season}:${date}`;
 }

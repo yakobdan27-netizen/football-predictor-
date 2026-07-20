@@ -633,6 +633,13 @@ export interface PredictionBatch {
   recommended?: RecommendedBatch;
   /** Present on Livescore bulk last-5 history batches. */
   bulkScrapeMeta?: BulkScrapeMeta;
+  /**
+   * Owner of this batch. Null/undefined = admin/web legacy (visible in web app).
+   * Telegram external users only see batches where this equals their user id.
+   */
+  ownerUserId?: string | null;
+  /** Channel that created the batch. */
+  source?: "web" | "telegram";
 }
 
 export type OddsBandId = "1.00-1.50" | "1.51-2.00" | "2.01-2.50" | "2.51-3.00";

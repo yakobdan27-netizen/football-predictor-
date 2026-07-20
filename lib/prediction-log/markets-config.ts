@@ -152,15 +152,13 @@ export function defaultPrediction(key: LogMarketKey): MarketPrediction {
   switch (key) {
     case "1x2":
     case "ht_1x2":
-    case "three_way_handicap": {
-      const pred = { prediction: "home", confidence: 50 } as MarketPrediction;
-      // #region agent log
-      if (key === "three_way_handicap") {
-        fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a98852'},body:JSON.stringify({sessionId:'a98852',runId:'pre-fix',hypothesisId:'F',location:'markets-config.ts:defaultPrediction',message:'three_way_handicap default omits line',data:{key,line:pred.line,defaultLine:def.defaultLine},timestamp:Date.now()})}).catch(()=>{});
-      }
-      // #endregion
-      return pred;
-    }
+      return { prediction: "home", confidence: 50 };
+    case "three_way_handicap":
+      return {
+        prediction: "home",
+        line: def.defaultLine ?? -1,
+        confidence: 50,
+      };
     case "handicap":
     case "ht_handicap":
       return { prediction: "home", line: def.defaultLine ?? -0.5, confidence: 50 };

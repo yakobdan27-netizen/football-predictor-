@@ -1,6 +1,8 @@
 # Football Predictor
 
-This application is **fully manual**. No football APIs or external data sources are used.
+This application is primarily **manual**. Predictions and odds are entered by you.
+
+Optional **API-Football** (api-sports.io, direct — not RapidAPI) auto-fills finished FT/HT scores and corners on the Prediction Log Result Filling tab. The key stays server-side only.
 
 All intelligence comes from your own data:
 
@@ -18,7 +20,7 @@ All intelligence comes from your own data:
 
 Predictions are entered manually. Prediction Log batches and club histories are stored in **Vercel KV** (Upstash Redis) when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are set; locally, an in-memory fallback is used. UI preferences (recommendation settings, lucky numbers) remain in the browser. Backtest needs the database with uploaded or seeded match data.
 
-**Optional results sync:** set `API_FOOTBALL_KEY` (api-sports.io) to fetch finished match results into saved Prediction Log batches via **Sync results from API** on the Saved Batches tab. Predictions and odds remain manual; only actual results are filled from the API.
+**Optional results Auto-Fill:** set `API_FOOTBALL_KEY` (api-sports.io direct key) and optionally `API_FOOTBALL_BASE_URL` (default `https://v3.football.api-sports.io`). On Prediction Log → Saved Batches, **Auto-Fill Results** fetches finished fixtures (FT/HT/corners) via the server. Verify with `npx tsx scripts/verify-api-football.ts` or `GET /api/football-status`. Predictions and odds remain manual; only empty result cells are filled (manual values are kept unless you tap Replace).
 
 ## Deploy on Vercel (frontend + API + Neon Postgres)
 
@@ -51,14 +53,30 @@ Tables are created automatically on first API request (`ensureSchema` in `lib/db
 | `DATABASE_URL` | Yes | Neon pooled connection string (auto-set by Vercel Neon integration) |
 | `KV_REST_API_URL` | For production KV | Auto-set by Vercel KV / Upstash Redis integration |
 | `KV_REST_API_TOKEN` | For production KV | Auto-set by Vercel KV / Upstash Redis integration |
-| `API_FOOTBALL_KEY` | Optional | api-sports.io key for Prediction Log results sync (server-only) |
+| `API_FOOTBALL_KEY` | Optional | api-sports.io direct key for Result Filling Auto-Fill (server-only; header `x-apisports-key`) |
+| `API_FOOTBALL_BASE_URL` | Optional | Default `https://v3.football.api-sports.io` |
+| `TELEGRAM_BOT_TOKEN` | Optional | BotFather token for external Telegram access |
+| `TELEGRAM_WEBHOOK_SECRET` | Optional | Secret token verified on `POST /api/telegram/webhook` |
+| `INTERNAL_API_KEY` | Optional | Shared secret for `/api/internal/*` (header `x-internal-api-key`) |
+
+### Telegram bot (external users)
+
+External users access **Create Batch** and **Get Decision** only via Telegram — never analysis/admin pages.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and set `TELEGRAM_BOT_TOKEN` in `.env.local` + Vercel.
+2. Set a random `TELEGRAM_WEBHOOK_SECRET` and `INTERNAL_API_KEY`.
+3. Deploy, then register the webhook: `npx tsx scripts/set-telegram-webhook.ts`
+4. Open the bot → `/start` → Create Batch → Get Decision (3 markets per match, advisory only).
+
+Webhook: `POST /api/telegram/webhook`  
+Internal APIs (bot/services): `/api/internal/users/register`, `/api/internal/batches`, `/api/internal/batches/:id/decision` (ownership enforced).
 
 ## Data entry
 
 | Feature | How data enters the system |
 |---------|---------------------------|
 | Training matches | Upload football-data.co.uk CSV or load demo seed on Dashboard |
-| Prediction Log | Manual batch entry; optional API results sync; saves sync to KV club histories and update AI Learner / Analysis |
+| Prediction Log | Manual batch entry; Auto-Fill Results from API-Football (empty cells); optional Livescore fallback; saves sync to KV club histories and update AI Learner / Analysis |
 | Lucky numbers | Optional on Recommendation page (stored locally) |
 
 See [docs/OPERATING.md](docs/OPERATING.md) for the full workflow.

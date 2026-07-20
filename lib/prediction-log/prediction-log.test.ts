@@ -460,7 +460,7 @@ const fineRows: ScoredRow[] = Array.from({ length: 6 }, (_, i) => ({
   confidence: 60,
   odds: 1.75,
   actual: i < 1 ? "yes" : "no",
-  result: (i < 1 ? "correct" : "wrong") as const,
+  result: (i < 1 ? "correct" : "wrong") as "correct" | "wrong",
 }));
 const fineBuckets = computeFineOddsBuckets(fineRows);
 const worst = detectWorstOddsBuckets(fineBuckets, 3);
@@ -936,8 +936,8 @@ function makeScoredHistoryBatch(
       homeTeam: "Arsenal",
       awayTeam: "Chelsea",
       predictions: { btts: { prediction: "yes", confidence: 70, odds } },
-      actualResults: { btts: allWon ? "yes" : "no" },
-      scored: { btts: allWon ? "correct" : "wrong" },
+      actualResults: { btts: { actual: allWon ? "yes" : "no" } },
+      scored: { btts: (allWon ? "correct" : "wrong") as "correct" | "wrong" },
     })),
   };
 }
@@ -1015,8 +1015,8 @@ function makeLargeLostBatch(id: string): PredictionBatch {
       homeTeam: "Arsenal",
       awayTeam: "Chelsea",
       predictions: { btts: { prediction: "yes", confidence: 70, odds: 1.55 } },
-      actualResults: { btts: "no" },
-      scored: { btts: "wrong" },
+      actualResults: { btts: { actual: "no" } },
+      scored: { btts: "wrong" as const },
     })),
   };
 }

@@ -50,6 +50,8 @@ const recommended: RecommendedBatch = {
           prediction: "home",
           confidence: 67,
           action: "keep",
+          judgment: "keep",
+          accepted: true,
           pFinal: 67,
         },
       },

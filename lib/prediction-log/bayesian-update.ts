@@ -73,7 +73,10 @@ export function initBayesianMarkets(tier: QualityTier | null = null): ClubBayesi
   return { markets, version: 1 };
 }
 
-export function decayGamma(state: GammaPosterior, gamma = BAYESIAN_CONFIG.FORM_DECAY_GAMMA): GammaPosterior {
+export function decayGamma(
+  state: GammaPosterior,
+  gamma: number = BAYESIAN_CONFIG.FORM_DECAY_GAMMA
+): GammaPosterior {
   const { prior, posterior } = state;
   return {
     ...state,
@@ -85,7 +88,10 @@ export function decayGamma(state: GammaPosterior, gamma = BAYESIAN_CONFIG.FORM_D
   };
 }
 
-export function decayBeta(state: BetaPosterior, gamma = BAYESIAN_CONFIG.FORM_DECAY_GAMMA): BetaPosterior {
+export function decayBeta(
+  state: BetaPosterior,
+  gamma: number = BAYESIAN_CONFIG.FORM_DECAY_GAMMA
+): BetaPosterior {
   const { prior, posterior } = state;
   return {
     ...state,
