@@ -2,6 +2,7 @@ import { defaultCombinedOddsSettings } from "@/lib/prediction-log/combo-settings
 import { processBatchDecisions } from "@/lib/prediction-log/decision-maker";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
+import { loadLearnerStatsStore } from "@/lib/prediction-log/learner-stats-store";
 import { recomputeAnalysis } from "@/lib/prediction-log/analysis";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { getOwnedBatch } from "./ownership";
@@ -15,6 +16,13 @@ export interface BotDecisionMarket {
   warn: boolean;
 }
 
+export interface BotCombinedOdd {
+  label: string;
+  odds: number | null;
+  pFinal: number;
+  value: number | null;
+}
+
 export interface BotMatchDecision {
   matchId: string;
   homeTeam: string;
@@ -22,6 +30,8 @@ export interface BotMatchDecision {
   league: string;
   date: string;
   markets: BotDecisionMarket[];
+  /** Display-only; not part of the top-3 engine. */
+  bestCombined: BotCombinedOdd | null;
   incomplete: boolean;
 }
 
@@ -54,6 +64,7 @@ export async function runDecisionForOwnedBatch(
   }
 
   const teamsQuality = await loadTeamsQualityStore().catch(() => null);
+  const learnerStats = await loadLearnerStatsStore().catch(() => null);
 
   const rows = processBatchDecisions({
     batch,
@@ -61,7 +72,7 @@ export async function runDecisionForOwnedBatch(
     comboSettings,
     analysis,
     teamsQuality,
-    learnerStats: null,
+    learnerStats,
   });
 
   return {
@@ -82,6 +93,14 @@ export async function runDecisionForOwnedBatch(
         category: m.category,
         warn: confidenceWarn(m.confidence),
       })),
+      bestCombined: row.bestCombined
+        ? {
+            label: row.bestCombined.label,
+            odds: row.bestCombined.odds,
+            pFinal: row.bestCombined.pFinal,
+            value: row.bestCombined.value,
+          }
+        : null,
     })),
   };
 }
@@ -99,6 +118,15 @@ export function formatDecisionMessages(result: BotDecisionResponse): string[] {
         m.confidence >= 80 ? "High" : m.confidence >= 60 ? "Medium" : "Low";
       const warn = m.warn ? " ⚠️" : "";
       block += `${m.rank}) ${m.label}: ${m.prediction} — Confidence: ${band} (${m.confidence}%)${warn}\n`;
+    }
+    if (d.bestCombined) {
+      const odds =
+        d.bestCombined.odds != null && d.bestCombined.odds > 1
+          ? d.bestCombined.odds.toFixed(2)
+          : "—";
+      block += `4) Combined Odd: ${d.bestCombined.label} @ ${odds} (${Math.round(d.bestCombined.pFinal)}%) — display only\n`;
+    } else {
+      block += `4) Combined Odd: none qualifying\n`;
     }
     if (d.incomplete) {
       block += `(Limited sources — advisory only)\n`;
@@ -138,7 +166,7 @@ function formatShortDate(iso: string): string {
   return `${parseInt(m[3]!, 10)} ${month}`;
 }
 
-/** Create a telegram-sourced PredictionBatch shell (fixtures only). */
+/** Create a telegram-sourced PredictionBatch with optional user market + odds. */
 export function buildTelegramBatch(params: {
   ownerUserId: string;
   batchName: string;
@@ -149,6 +177,11 @@ export function buildTelegramBatch(params: {
     awayTeam: string;
     league: string;
     date: string;
+    marketKey?: import("@/lib/prediction-log/types").LogMarketKey;
+    prediction?: string;
+    line?: number;
+    odds?: number;
+    confidence?: number;
   }[];
 }): PredictionBatch {
   const id = `TG-${Date.now().toString(36).toUpperCase()}-${Math.random()
@@ -164,15 +197,28 @@ export function buildTelegramBatch(params: {
     batchKind: "manual",
     ownerUserId: params.ownerUserId,
     source: "telegram",
-    matches: params.matches.map((m, i) => ({
-      id: `${id}-m${i + 1}`,
-      homeTeam: m.homeTeam,
-      awayTeam: m.awayTeam,
-      league: m.league,
-      matchDate: m.date,
-      predictions: {},
-      actualResults: {},
-      scored: {},
-    })),
+    matches: params.matches.map((m, i) => {
+      const predictions =
+        m.marketKey && m.prediction
+          ? {
+              [m.marketKey]: {
+                prediction: m.prediction,
+                line: m.line,
+                confidence: m.confidence ?? 50,
+                odds: m.odds,
+              },
+            }
+          : {};
+      return {
+        id: `${id}-m${i + 1}`,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        league: m.league,
+        matchDate: m.date,
+        predictions,
+        actualResults: {},
+        scored: {},
+      };
+    }),
   };
 }

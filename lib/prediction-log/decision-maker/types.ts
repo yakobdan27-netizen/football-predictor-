@@ -8,7 +8,6 @@ import type {
 import type { TeamsQualityStore } from "../teams-quality-types";
 import type { MatchComboResult } from "../combo-selection";
 import type { HshPrediction } from "../hsh-model";
-import type { HcPrediction } from "../half-comparison-model";
 import type { CornersMatchPrediction } from "../corners-model";
 import type { ConcededHalfPrediction } from "../conceded-half-model";
 
@@ -47,7 +46,6 @@ export interface DecisionFetchContext {
 /** Per-batch precomputes so adapters stay O(1) per match. */
 export interface DecisionBatchCaches {
   hshByMatchId: Map<string, HshPrediction>;
-  halfComparisonByMatchId: Map<string, HcPrediction>;
   cornersByMatchId: Map<string, CornersMatchPrediction>;
   concededByMatchId: Map<string, ConcededHalfPrediction>;
   comboByMatchId: Map<string, MatchComboResult>;
@@ -83,7 +81,13 @@ export interface MatchDecisionRow {
   batchId: string;
   batchDisplayId: string;
   league: string;
+  /** Exactly three markets from the Decision Maker engine. */
   markets: ScoredDecisionMarket[];
+  /**
+   * Display-only best Combined Odds pick for this match.
+   * Not scored into the top-3 engine — shown as a fourth option in the UI.
+   */
+  bestCombined: MatchComboResult["selected"];
   sourceCount: number;
   missingSources: string[];
   incomplete: boolean;

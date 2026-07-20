@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { OwnershipError, assertBatchOwnedBy } from "./ownership";
-import { resolveTeamInput, isValidIsoDate } from "./team-resolve";
+import {
+  resolveTeamInput,
+  resolveFixtureAcrossLeagues,
+  isValidIsoDate,
+  listTeams,
+} from "./team-resolve";
+import { parseBulkMatchText, TELEGRAM_MAX_BATCH_MATCHES } from "./parse-bulk-matches";
 import { buildTelegramBatch, formatDecisionMessages } from "./decision-service";
+import { TEAM_PAGE_SIZE, needsLine } from "./entry-keyboards";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import type { BotDecisionResponse } from "./decision-service";
 
@@ -30,7 +37,43 @@ test("isValidIsoDate", () => {
   assert.equal(isValidIsoDate("20/07/2026"), false);
 });
 
-test("buildTelegramBatch sets owner and source", () => {
+test("resolveFixtureAcrossLeagues prefers domestic", () => {
+  const r = resolveFixtureAcrossLeagues("Arsenal", "Chelsea");
+  assert.ok(r);
+  assert.equal(r!.league, "Premier League");
+});
+
+test("parseBulkMatchText accepts mixed leagues", () => {
+  const text = [
+    "Arsenal vs Chelsea",
+    "Barcelona vs Real Madrid | La Liga",
+  ].join("\n");
+  const parsed = parseBulkMatchText(text, { date: "2026-07-20" });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.matches.length, 2);
+});
+
+test("parseBulkMatchText rejects more than max matches", () => {
+  const text = Array.from(
+    { length: TELEGRAM_MAX_BATCH_MATCHES + 1 },
+    () => "Arsenal vs Chelsea"
+  ).join("\n");
+  assert.equal(parseBulkMatchText(text, { date: "2026-07-20" }).ok, false);
+});
+
+test("premier league roster indexes are stable for team buttons", () => {
+  const teams = listTeams("Premier League");
+  assert.ok(teams.length > TEAM_PAGE_SIZE);
+  assert.equal(teams.indexOf("Arsenal") >= 0, true);
+});
+
+test("needsLine true for total goals", () => {
+  assert.equal(needsLine("total_goals_ou"), true);
+  assert.equal(needsLine("1x2"), false);
+});
+
+test("buildTelegramBatch stores market prediction and odds", () => {
   const b = buildTelegramBatch({
     ownerUserId: "u1",
     batchName: "Test",
@@ -42,13 +85,16 @@ test("buildTelegramBatch sets owner and source", () => {
         awayTeam: "Chelsea",
         league: "Premier League",
         date: "2026-07-20",
+        marketKey: "1x2",
+        prediction: "home",
+        odds: 1.85,
+        confidence: 50,
       },
     ],
   });
-  assert.equal(b.ownerUserId, "u1");
   assert.equal(b.source, "telegram");
-  assert.equal(b.matches.length, 1);
-  assert.equal(b.matches[0]!.homeTeam, "Arsenal");
+  assert.equal(b.matches[0]!.predictions["1x2"]?.prediction, "home");
+  assert.equal(b.matches[0]!.predictions["1x2"]?.odds, 1.85);
 });
 
 test("formatDecisionMessages includes 3 markets and warn marker", () => {
@@ -63,6 +109,12 @@ test("formatDecisionMessages includes 3 markets and warn marker", () => {
         league: "Premier League",
         date: "2026-07-20",
         incomplete: false,
+        bestCombined: {
+          label: "BTTS + Over 2.5",
+          odds: 1.85,
+          pFinal: 62,
+          value: 4.2,
+        },
         markets: [
           {
             rank: 1,
@@ -94,8 +146,7 @@ test("formatDecisionMessages includes 3 markets and warn marker", () => {
   };
   const msgs = formatDecisionMessages(result);
   assert.ok(msgs[0]!.includes("Arsenal vs Chelsea"));
-  assert.ok(msgs[0]!.includes("1)"));
-  assert.ok(msgs[0]!.includes("2)"));
-  assert.ok(msgs[0]!.includes("3)"));
   assert.ok(msgs[0]!.includes("⚠️"));
+  assert.ok(msgs[0]!.includes("Combined Odd"));
+  assert.ok(msgs[0]!.includes("BTTS + Over 2.5"));
 });

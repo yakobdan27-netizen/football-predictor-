@@ -76,10 +76,7 @@ export default function DashboardPage() {
               Decision Maker
             </Link>
             <Link href="/highest-scoring-half" className="btn btn-secondary btn-full">
-              Highest Scoring Half
-            </Link>
-            <Link href="/half-comparison-analysis" className="btn btn-secondary btn-full">
-              Half Comparison
+              Half Goals (1H vs 2H)
             </Link>
             <Link href="/conceded-half-analysis" className="btn btn-secondary btn-full">
               Conceded Half
@@ -107,7 +104,7 @@ export default function DashboardPage() {
         <h2 style={{ fontWeight: 700, marginBottom: "0.5rem", fontSize: "1rem" }}>Models</h2>
         <ul style={{ color: "var(--muted)", fontSize: "0.875rem", lineHeight: 1.7, paddingLeft: "1.1rem" }}>
           <li>Goals W/D/L & O/U — Dixon-Coles</li>
-          <li>Highest scoring half / half comparison — strength-adjusted Poisson</li>
+          <li>Half goals (1H vs 2H) — attack×defence λs with tempo nudges</li>
           <li>1X2 ML — gradient boosting (XGBoost-style) + calibration</li>
           <li>Shots, SOT, Offsides — Poisson strength</li>
           <li>Time decay — recent matches weighted more</li>

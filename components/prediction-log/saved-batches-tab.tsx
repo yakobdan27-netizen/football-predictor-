@@ -5,7 +5,7 @@ import Link from "next/link";
 import { BatchMatchTable } from "./batch-match-table";
 import { BatchSummaryStrip } from "./batch-summary-strip";
 import { applyCorrectScoreCalibrationToMatch } from "@/lib/prediction-log/correct-score-learning";
-import { batchScoredPct, marketsEnteredCount, scoreBatch } from "@/lib/prediction-log/scoring";
+import { batchScoredPct, marketsEnteredCount, scoreBatch, batchNeedsResults } from "@/lib/prediction-log/scoring";
 import { analyzeAllBatches } from "@/lib/prediction-log/batch-analysis";
 import { scoreRecommendedBatchCombos } from "@/lib/prediction-log/combo-scoring";
 import { loadCombinedOddsSettings } from "@/lib/prediction-log/combo-settings";
@@ -60,6 +60,7 @@ export function SavedBatchesTab({
     { matchId: string; field: string; label: string; current: number | string; apiValue: number | string }[]
   >([]);
   const [kindFilter, setKindFilter] = useState<"all" | "manual" | "recommended">("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | "telegram" | "web">("all");
   const [tierFilter, setTierFilter] = useState<"all" | "safe" | "balanced" | "aggressive">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "PENDING" | "SETTLED">("all");
   const [search, setSearch] = useState("");
@@ -502,6 +503,8 @@ export function SavedBatchesTab({
 
   const visibleBatches = batches.filter((batch) => {
     if (kindFilter !== "all" && (batch.batchKind ?? "manual") !== kindFilter) return false;
+    if (sourceFilter === "telegram" && batch.source !== "telegram") return false;
+    if (sourceFilter === "web" && batch.source === "telegram") return false;
     if (tierFilter !== "all" && batch.recommendationTier !== tierFilter) return false;
     if (statusFilter !== "all" && batch.recommendationStatus !== statusFilter) return false;
     if (!search.trim()) return true;
@@ -510,12 +513,18 @@ export function SavedBatchesTab({
       batch.id,
       batch.recommendationId,
       batch.sourceBatchId,
+      batch.ownerUserId,
+      batch.source,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
     return haystack.includes(search.trim().toLowerCase());
   });
+
+  const pendingTelegramResults = batches.filter(
+    (b) => b.source === "telegram" && batchNeedsResults(b)
+  ).length;
 
   if (batches.length === 0) {
     return <p className="page-sub">No saved batches yet. Create one in New Batch.</p>;
@@ -531,6 +540,18 @@ export function SavedBatchesTab({
               <option value="all">All</option>
               <option value="manual">Manual</option>
               <option value="recommended">Recommended</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Source</label>
+            <select
+              className="select"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as typeof sourceFilter)}
+            >
+              <option value="all">All</option>
+              <option value="telegram">Telegram</option>
+              <option value="web">Web</option>
             </select>
           </div>
           <div>
@@ -555,6 +576,12 @@ export function SavedBatchesTab({
             <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="REC-... or source batch" />
           </div>
         </div>
+        {pendingTelegramResults > 0 && (
+          <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.75rem 0 0" }}>
+            {pendingTelegramResults} Telegram batch{pendingTelegramResults === 1 ? "" : "es"} pending
+            results — Auto-Fill All includes them (feeds the global AI Learner).
+          </p>
+        )}
         <div style={{ marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
           <button
             type="button"
@@ -589,8 +616,9 @@ export function SavedBatchesTab({
           </button>
           <span style={{ fontSize: "0.75rem", color: "var(--muted)", maxWidth: 420 }}>
             Auto-Fill uses API-Football for FT, HT, and corners on finished matches (every
-            pending predicted batch, or the open batch). Empty cells only — manual values are
-            kept. Livescore is optional fallback.
+            pending predicted batch including Telegram, or the open batch). Empty cells only —
+            manual values are kept. After fill, scored outcomes update the global AI Learner for
+            Recommendation and Telegram Get Decision. Livescore is optional fallback.
             {expandedId ? " Targeting the open batch." : " No batch open → fills all pending."}
           </span>
         </div>
@@ -681,6 +709,13 @@ export function SavedBatchesTab({
               <strong>{batch.batchName}</strong>
               <div style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.25rem" }}>
                 {batchLeagueDisplay(batch)} · {batch.date} · {batch.matches.length} matches · {scoredLabel}
+                {" · "}
+                <span style={{ color: batch.source === "telegram" ? "var(--accent)" : "inherit" }}>
+                  {batch.source === "telegram" ? "Telegram" : "Web"}
+                </span>
+                {batch.source === "telegram" && batch.ownerUserId
+                  ? ` · owner ${batch.ownerUserId.slice(0, 8)}…`
+                  : ""}
               </div>
               {batch.batchKind === "recommended" && (
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.35rem" }}>

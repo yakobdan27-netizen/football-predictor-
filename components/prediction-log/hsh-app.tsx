@@ -6,6 +6,7 @@ import {
   type HshConfidence,
   type HshPrediction,
 } from "@/lib/prediction-log/hsh-model";
+import { tempoProfileLabel } from "@/lib/prediction-log/half-tempo";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHshPredictions } from "./use-hsh-predictions";
 
@@ -70,9 +71,10 @@ export function HshApp() {
       )}
 
       <div style={{ marginBottom: "1.25rem" }}>
-        <h1 className="page-title">Highest Scoring Half</h1>
+        <h1 className="page-title">Half Goals (1H vs 2H)</h1>
         <p className="page-sub">
-          Attack × defence per half (1H / 2H / Tie) — advisory only, never blocks a pick.
+          Attack × defence λs with tempo nudges, then Dixon-Coles Stage B — advisory only, never
+          blocks a pick.
         </p>
       </div>
 
@@ -131,7 +133,7 @@ export function HshApp() {
       )}
 
       {!batch ? (
-        <p className="page-sub">Select a saved batch to run highest-scoring-half predictions.</p>
+        <p className="page-sub">Select a saved batch to run half-goals predictions.</p>
       ) : predictions.length === 0 ? (
         <p className="page-sub">This batch has no matches.</p>
       ) : (
@@ -220,6 +222,8 @@ function DetailPanel({ prediction: p }: { prediction: HshPrediction }) {
   const lowSeedHint =
     (d.seedHome != null && !d.seedHome.includes("live")) ||
     (d.seedAway != null && !d.seedAway.includes("live"));
+  const homeTempo = d.homeTempo;
+  const awayTempo = d.awayTempo;
 
   return (
     <div style={{ display: "grid", gap: "0.5rem", fontSize: "0.8125rem" }}>
@@ -233,6 +237,9 @@ function DetailPanel({ prediction: p }: { prediction: HshPrediction }) {
       <div>
         Match totals: Λ1 {p.lambda1h.toFixed(2)} · Λ2 {p.lambda2h.toFixed(2)}
         {d.couplingApplied ? " · 2H coupling on" : ""}
+        {d.tempoBoost1h ? " · tempo +1H" : ""}
+        {d.lateSurgeBoost2h ? " · late surge +2H" : ""}
+        {d.fatigueBoost2h ? " · fatigue +2H" : ""}
       </div>
       <div>
         Skellam: E[D] {p.expectedDiff.toFixed(2)} · SE {p.seDiff.toFixed(2)} · margin{" "}
@@ -244,6 +251,26 @@ function DetailPanel({ prediction: p }: { prediction: HshPrediction }) {
         {d.def1Away.toFixed(2)} → {d.att2Away.toFixed(2)}/{d.def2Away.toFixed(2)} · Lg AF{" "}
         {d.lgAf1.toFixed(2)}/{d.lgAf2.toFixed(2)}
       </div>
+      {homeTempo && (
+        <div>
+          Home tempo:{" "}
+          {tempoProfileLabel(
+            homeTempo.isFastStarter,
+            homeTempo.isLateSurger,
+            homeTempo.paceProxy
+          )}
+        </div>
+      )}
+      {awayTempo && (
+        <div>
+          Away tempo:{" "}
+          {tempoProfileLabel(
+            awayTempo.isFastStarter,
+            awayTempo.isLateSurger,
+            awayTempo.paceProxy
+          )}
+        </div>
+      )}
       <div>
         Samples: home {p.sampleSizeHome} · away {p.sampleSizeAway}
       </div>
@@ -259,10 +286,17 @@ function DetailPanel({ prediction: p }: { prediction: HshPrediction }) {
         Recommendation: <strong>{p.recommended}</strong> ({p.confidence}) —{" "}
         {confidenceNote(p.confidence, p.margin, lowSeedHint && p.confidence === "low")}
       </div>
+      <p style={{ margin: "0.25rem 0 0", color: "var(--muted)" }}>{p.tacticalNote}</p>
       {p.confidence === "low" && (
         <p style={{ margin: "0.25rem 0 0", color: "var(--warn)" }}>
           Low confidence warning — confirm if you still want this market. Match stays in the batch;
           nothing is blocked.
+        </p>
+      )}
+      {p.valueAlert && (
+        <p style={{ margin: 0, color: "var(--warning, #b45309)" }}>
+          Value alert: First-half dominance probability ({pct(p.p1h)}) is above 30% — advisory
+          only; no market odds comparison in v1.
         </p>
       )}
     </div>

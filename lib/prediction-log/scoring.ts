@@ -124,3 +124,15 @@ export function marketsEnteredCount(batch: PredictionBatch): {
   }
   return { scored, total };
 }
+
+/** True when a batch has at least one scored pick. */
+export function batchHasScoredResults(batch: PredictionBatch): boolean {
+  return marketsEnteredCount(batch).scored > 0;
+}
+
+/** True when results are incomplete (nothing scored, or scored < entered). */
+export function batchNeedsResults(batch: PredictionBatch): boolean {
+  const { scored, total } = marketsEnteredCount(batch);
+  if (total === 0) return true;
+  return scored < total;
+}

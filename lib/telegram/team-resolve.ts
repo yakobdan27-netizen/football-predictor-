@@ -56,6 +56,39 @@ export function resolveTeamInput(
   return { match: null, suggestions: (scored.length ? scored : teams).slice(0, 12) };
 }
 
+const UEFA_PREFIX = "UEFA ";
+
+/**
+ * Resolve home/away across all leagues when the user did not specify one.
+ * Prefers a shared domestic league over UEFA competitions when both apply.
+ */
+export function resolveFixtureAcrossLeagues(
+  homeInput: string,
+  awayInput: string
+): {
+  homeTeam: string;
+  awayTeam: string;
+  league: string;
+  ambiguous: boolean;
+} | null {
+  const hits: { homeTeam: string; awayTeam: string; league: string }[] = [];
+  for (const league of listLeagues()) {
+    const home = resolveTeamInput(league, homeInput).match;
+    const away = resolveTeamInput(league, awayInput).match;
+    if (!home || !away || home === away) continue;
+    hits.push({ homeTeam: home, awayTeam: away, league });
+  }
+  if (!hits.length) return null;
+
+  const domestic = hits.filter((h) => !h.league.startsWith(UEFA_PREFIX));
+  const preferred = domestic.length ? domestic : hits;
+  const first = preferred[0]!;
+  return {
+    ...first,
+    ambiguous: hits.length > 1,
+  };
+}
+
 export function isValidIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s.trim());
 }

@@ -201,7 +201,8 @@ export function ConcededHalfApp() {
           Match advisory (0.5 scored + 0.5 conceded)
         </h2>
         <p className="page-sub" style={{ marginTop: "0.25rem" }}>
-          Module-local Poisson blend for the selected batch. Does not change Half Comparison Stage
+          Module-local Poisson blend for the selected batch. Does not change Half Goals Stage
+          A on the merged half page.
           A.
         </p>
       </div>

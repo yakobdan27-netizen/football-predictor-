@@ -3,7 +3,7 @@ import { getJson, setJson, setJsonEx } from "@/lib/prediction-log/kv";
 import { KV_KEYS } from "@/lib/prediction-log/kv-keys";
 import type { TelegramSession, TelegramUser } from "./types";
 
-const SESSION_TTL_SECONDS = 60 * 60; // 1 hour
+const SESSION_TTL_SECONDS = 60 * 60 * 6; // 6 hours — create flow is button-heavy
 
 export async function getTelegramUserByTelegramId(
   telegramId: string
@@ -29,14 +29,23 @@ export async function registerTelegramUser(params: {
   const telegramId = String(params.telegramId);
   const existing = await getTelegramUserByTelegramId(telegramId);
   if (existing) {
+    const displayName =
+      params.displayName?.trim() ||
+      existing.displayName ||
+      params.username ||
+      `User ${telegramId}`;
+    const username = params.username ?? existing.username;
+    // Avoid a KV write on every button tap when nothing changed.
+    if (
+      username === existing.username &&
+      displayName === existing.displayName
+    ) {
+      return { user: existing, created: false };
+    }
     const next: TelegramUser = {
       ...existing,
-      username: params.username ?? existing.username,
-      displayName:
-        params.displayName?.trim() ||
-        existing.displayName ||
-        params.username ||
-        `User ${telegramId}`,
+      username,
+      displayName,
     };
     await saveTelegramUser(next);
     return { user: next, created: false };
@@ -104,11 +113,23 @@ export async function emptySession(): Promise<TelegramSession> {
 /** Returns true if under daily limit; increments counter. */
 export async function checkAndBumpRateLimit(
   telegramId: string,
-  maxPerDay = 60
+  maxPerDay = 400
 ): Promise<{ allowed: boolean; count: number }> {
   const day = new Date().toISOString().slice(0, 10);
   const key = KV_KEYS.telegramRateLimit(String(telegramId), day);
   const count = ((await getJson<number>(key)) ?? 0) + 1;
   await setJsonEx(key, count, 60 * 60 * 26);
   return { allowed: count <= maxPerDay, count };
+}
+
+/**
+ * Deduplicate Telegram webhook retries (same update_id).
+ * Returns true if this update should be processed.
+ */
+export async function claimTelegramUpdate(updateId: number): Promise<boolean> {
+  const key = KV_KEYS.telegramUpdateClaim(updateId);
+  const existing = await getJson<number>(key);
+  if (existing != null) return false;
+  await setJsonEx(key, updateId, 60 * 5);
+  return true;
 }

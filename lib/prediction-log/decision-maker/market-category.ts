@@ -30,7 +30,6 @@ const SPECIALIZED_KEYS = new Set<string>([
   "throw_ins_ou",
   "offsides_ou",
   "hsh",
-  "half_comparison",
   "conceded_half",
 ]);
 

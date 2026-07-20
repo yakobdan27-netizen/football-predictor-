@@ -58,15 +58,18 @@ Tables are created automatically on first API request (`ensureSchema` in `lib/db
 | `TELEGRAM_BOT_TOKEN` | Optional | BotFather token for external Telegram access |
 | `TELEGRAM_WEBHOOK_SECRET` | Optional | Secret token verified on `POST /api/telegram/webhook` |
 | `INTERNAL_API_KEY` | Optional | Shared secret for `/api/internal/*` (header `x-internal-api-key`) |
+| `CRON_SECRET` | Optional | Bearer token for Vercel cron routes (`/api/cron/*`, bulk history) |
 
 ### Telegram bot (external users)
 
 External users access **Create Batch** and **Get Decision** only via Telegram — never analysis/admin pages.
 
+Telegram batches save to the same KV as web batches (`source: "telegram"`). They are **system training data**: an admin fills results on Prediction Log → Saved Batches (Auto-Fill All includes Telegram, or enter manually). After scoring, the **global AI Learner** (KV `learnerStats`) updates and feeds both **Recommendation** and Telegram **Get Decision**. Optional catch-up cron: `GET/POST /api/cron/fill-telegram-results` (daily 08:00 UTC; protect with `CRON_SECRET`).
+
 1. Create a bot with [@BotFather](https://t.me/BotFather) and set `TELEGRAM_BOT_TOKEN` in `.env.local` + Vercel.
 2. Set a random `TELEGRAM_WEBHOOK_SECRET` and `INTERNAL_API_KEY`.
 3. Deploy, then register the webhook: `npx tsx scripts/set-telegram-webhook.ts`
-4. Open the bot → `/start` → Create Batch → Get Decision (3 markets per match, advisory only).
+4. Open [t.me/BettingVarBot](https://t.me/BettingVarBot) → `/start` → Create Batch (name → date → tap league → HOME → AWAY → market → pick → odds, up to 20 matches) → Get Decision (3 markets per match, advisory only).
 
 Webhook: `POST /api/telegram/webhook`  
 Internal APIs (bot/services): `/api/internal/users/register`, `/api/internal/batches`, `/api/internal/batches/:id/decision` (ownership enforced).
@@ -76,7 +79,7 @@ Internal APIs (bot/services): `/api/internal/users/register`, `/api/internal/bat
 | Feature | How data enters the system |
 |---------|---------------------------|
 | Training matches | Upload football-data.co.uk CSV or load demo seed on Dashboard |
-| Prediction Log | Manual batch entry; Auto-Fill Results from API-Football (empty cells); optional Livescore fallback; saves sync to KV club histories and update AI Learner / Analysis |
+| Prediction Log | Manual batch entry; Auto-Fill Results from API-Football (empty cells); optional Livescore fallback; saves sync to KV club histories and update AI Learner / Analysis (includes Telegram batches after admin fill) |
 | Lucky numbers | Optional on Recommendation page (stored locally) |
 
 See [docs/OPERATING.md](docs/OPERATING.md) for the full workflow.

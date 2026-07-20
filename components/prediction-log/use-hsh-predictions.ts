@@ -7,6 +7,7 @@ import {
   loadClubHalfAttackDefence,
   loadLeagueAfBaselines,
 } from "@/lib/prediction-log/hsh-half-rates";
+import { estimateTempoProfile } from "@/lib/prediction-log/half-tempo";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
 export interface HshOverride {
@@ -31,6 +32,12 @@ export function useHshPredictions(
         beforeDate: batch.date,
       });
       const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
+      const homeTempo = estimateTempoProfile(allBatches, match.homeTeam, {
+        beforeDate: batch.date,
+      });
+      const awayTempo = estimateTempoProfile(allBatches, match.awayTeam, {
+        beforeDate: batch.date,
+      });
       const override = overrides[match.id];
 
       return predictHighestScoringHalf({
@@ -42,6 +49,8 @@ export function useHshPredictions(
         awayRates,
         lgAf1,
         lgAf2,
+        homeTempo,
+        awayTempo,
         manualLambda1h: override?.lambda1h,
         manualLambda2h: override?.lambda2h,
       });

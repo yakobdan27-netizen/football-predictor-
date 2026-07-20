@@ -17,12 +17,12 @@ import {
   saveLearnerEnabled,
   saveRecommendationSettings,
   saveCombinedOddsSettings,
-  updateLearnerStats,
   updateLeagueProfiles,
   fetchTeamsQuality,
   fetchMlClassifier,
   getTeamsQualityCache,
   getStatEngineExtras,
+  hydrateLearnerStatsFromServer,
 } from "@/lib/prediction-log/storage";
 import type {
   AnalysisHistory,
@@ -68,7 +68,7 @@ export function usePredictionLogData() {
       const idx = await refreshClubIndex();
       setBatches(b);
       setAnalysis(a);
-      setLearnerStats(updateLearnerStats());
+      setLearnerStats(await hydrateLearnerStatsFromServer());
       setTeamCharacteristics(loadTeamCharacteristics());
       setLeagueProfiles(updateLeagueProfiles());
       setClubProfiles(loadClubProfiles());

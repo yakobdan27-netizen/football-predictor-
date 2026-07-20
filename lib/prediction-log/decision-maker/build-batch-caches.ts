@@ -5,12 +5,7 @@ import {
   predictConcededHalfMatch,
 } from "../conceded-half-model";
 import { predictCornersMatch } from "../corners-model";
-import {
-  computeLeagueHalfAverages,
-  computeTeamHalfAverages,
-  estimateTempoProfile,
-  predictHalfComparison,
-} from "../half-comparison-model";
+import { estimateTempoProfile } from "../half-tempo";
 import {
   loadClubHalfAttackDefence,
   loadLeagueAfBaselines,
@@ -52,7 +47,6 @@ export function buildDecisionBatchCaches(params: {
 
   const caches: DecisionBatchCaches = {
     hshByMatchId: new Map(),
-    halfComparisonByMatchId: new Map(),
     cornersByMatchId: new Map(),
     concededByMatchId: new Map(),
     comboByMatchId: new Map(),
@@ -69,6 +63,12 @@ export function buildDecisionBatchCaches(params: {
         beforeDate: batch.date,
       });
       const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
+      const homeTempo = estimateTempoProfile(allBatches, match.homeTeam, {
+        beforeDate: batch.date,
+      });
+      const awayTempo = estimateTempoProfile(allBatches, match.awayTeam, {
+        beforeDate: batch.date,
+      });
       caches.hshByMatchId.set(
         match.id,
         predictHighestScoringHalf({
@@ -80,48 +80,13 @@ export function buildDecisionBatchCaches(params: {
           awayRates,
           lgAf1,
           lgAf2,
+          homeTempo,
+          awayTempo,
         })
       );
     }
   } catch {
     /* keep empty — other sources continue */
-  }
-
-  try {
-    for (const match of batch.matches) {
-      const league = matchLeague(match, batch.league);
-      const homeAvg = computeTeamHalfAverages(allBatches, match.homeTeam, "home", {
-        beforeDate: batch.date,
-        league,
-      });
-      const awayAvg = computeTeamHalfAverages(allBatches, match.awayTeam, "away", {
-        beforeDate: batch.date,
-        league,
-      });
-      const leagueAvg = computeLeagueHalfAverages(allBatches, league, {
-        beforeDate: batch.date,
-      });
-      caches.halfComparisonByMatchId.set(
-        match.id,
-        predictHalfComparison({
-          matchId: match.id,
-          homeTeam: match.homeTeam,
-          awayTeam: match.awayTeam,
-          league,
-          homeAvg,
-          awayAvg,
-          leagueAvg,
-          homeTempo: estimateTempoProfile(allBatches, match.homeTeam, {
-            beforeDate: batch.date,
-          }),
-          awayTempo: estimateTempoProfile(allBatches, match.awayTeam, {
-            beforeDate: batch.date,
-          }),
-        })
-      );
-    }
-  } catch {
-    /* keep empty */
   }
 
   try {

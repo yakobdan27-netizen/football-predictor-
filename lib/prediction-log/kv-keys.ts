@@ -34,4 +34,8 @@ export const KV_KEYS = {
   /** Daily rate-limit counter. */
   telegramRateLimit: (telegramId: string, day: string) =>
     `telegram:rl:v1:${telegramId}:${day}`,
+  /** Dedup Telegram webhook retries by update_id. */
+  telegramUpdateClaim: (updateId: number) => `telegram:upd:v1:${updateId}`,
+  /** Global AI Learner stats (web + telegram scored batches). */
+  learnerStats: "learnerStats:v1",
 } as const;

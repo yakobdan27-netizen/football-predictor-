@@ -3,7 +3,6 @@
  * Add new analysis pages here — the engine discovers them automatically.
  */
 import { leanLabel } from "../corners-model";
-import { recommendationLabel as hcLabel } from "../half-comparison-model";
 import { recommendationLabel as concededLabel } from "../conceded-half-model";
 import { getLeagueMatchupAnalysis } from "../league-matchup-analysis";
 import { LOG_MARKET_MAP, pickOptionsForMarket } from "../markets-config";
@@ -11,10 +10,7 @@ import { matchLeague } from "../match-league";
 import { getSelectedPickForMatch } from "../snapshot-readers";
 import type { LogMarketKey } from "../types";
 import { bandToConfidence, clampConfidence } from "./confidence";
-import {
-  categoryForLogMarket,
-  categoryForMarketKey,
-} from "./market-category";
+import { categoryForLogMarket } from "./market-category";
 import type {
   DecisionFetchContext,
   DecisionMarketCandidate,
@@ -62,54 +58,6 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
   ];
 }
 
-function fromCombinedOdds(
-  ctx: DecisionFetchContext,
-  pageId: "combined-odds" | "combined-odds-extended",
-  pageLabel: string,
-  map: DecisionFetchContext["caches"]["comboByMatchId"]
-): DecisionMarketCandidate[] {
-  const row = map.get(ctx.match.id);
-  if (!row) return [];
-  const out: DecisionMarketCandidate[] = [];
-  const push = (c: NonNullable<typeof row.selected>) => {
-    out.push({
-      marketKey: c.comboId,
-      label: c.label,
-      prediction: c.label,
-      confidence: clampConfidence(c.pFinal),
-      category: categoryForMarketKey(c.comboId, "specialized"),
-      pageId,
-      pageLabel,
-    });
-  };
-  if (row.selected) push(row.selected);
-  else if (row.fallbackSingle) {
-    const fb = row.fallbackSingle;
-    out.push({
-      marketKey: fb.marketKey,
-      label: fb.marketLabel,
-      prediction: fb.predictionLabel,
-      confidence: clampConfidence(fb.pFinal),
-      category: categoryForLogMarket(fb.marketKey as LogMarketKey),
-      pageId,
-      pageLabel,
-      line: fb.line,
-    });
-  }
-  if (row.alternative && row.selected) {
-    out.push({
-      marketKey: row.alternative.comboId,
-      label: row.alternative.label,
-      prediction: row.alternative.label,
-      confidence: clampConfidence(row.alternative.pFinal),
-      category: categoryForMarketKey(row.alternative.comboId, "specialized"),
-      pageId,
-      pageLabel,
-    });
-  }
-  return out;
-}
-
 function fromCorners(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   const p = ctx.caches.cornersByMatchId.get(ctx.match.id);
   if (!p || p.lean === "lean_none") return [];
@@ -133,28 +81,12 @@ function fromHsh(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   return [
     {
       marketKey: "hsh",
-      label: "Highest scoring half",
+      label: "Half goals (1H vs 2H)",
       prediction: p.recommended === "Tie" ? "Tie" : `${p.recommended} more goals`,
       confidence: bandToConfidence(p.confidence, p.topProbability),
       category: "specialized",
       pageId: "highest-scoring-half",
-      pageLabel: "Highest Scoring Half",
-    },
-  ];
-}
-
-function fromHalfComparison(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
-  const p = ctx.caches.halfComparisonByMatchId.get(ctx.match.id);
-  if (!p) return [];
-  return [
-    {
-      marketKey: "half_comparison",
-      label: "Half comparison",
-      prediction: hcLabel(p.recommendation),
-      confidence: bandToConfidence(p.confidence, p.topProbability),
-      category: "specialized",
-      pageId: "half-comparison",
-      pageLabel: "Half Comparison",
+      pageLabel: "Half Goals",
     },
   ];
 }
@@ -255,32 +187,6 @@ export const RESULT_PAGE_REGISTRY: ResultPageDefinition[] = [
     fetchResults: fromRecommendation,
   },
   {
-    pageId: "combined-odds",
-    pageLabel: "Combined Odds",
-    href: "/combined-odds",
-    baseWeight: 0.3,
-    fetchResults: (ctx) =>
-      fromCombinedOdds(
-        ctx,
-        "combined-odds",
-        "Combined Odds",
-        ctx.caches.comboByMatchId
-      ),
-  },
-  {
-    pageId: "combined-odds-extended",
-    pageLabel: "Extended Combos",
-    href: "/combined-odds-extended",
-    baseWeight: 0.1,
-    fetchResults: (ctx) =>
-      fromCombinedOdds(
-        ctx,
-        "combined-odds-extended",
-        "Extended Combos",
-        ctx.caches.comboExtendedByMatchId
-      ),
-  },
-  {
     pageId: "corners-analysis",
     pageLabel: "Corners Analysis",
     href: "/corners-analysis",
@@ -289,17 +195,10 @@ export const RESULT_PAGE_REGISTRY: ResultPageDefinition[] = [
   },
   {
     pageId: "highest-scoring-half",
-    pageLabel: "Highest Scoring Half",
+    pageLabel: "Half Goals",
     href: "/highest-scoring-half",
-    baseWeight: 0.1,
+    baseWeight: 0.15,
     fetchResults: fromHsh,
-  },
-  {
-    pageId: "half-comparison",
-    pageLabel: "Half Comparison",
-    href: "/half-comparison-analysis",
-    baseWeight: 0.05,
-    fetchResults: fromHalfComparison,
   },
   {
     pageId: "conceded-half",

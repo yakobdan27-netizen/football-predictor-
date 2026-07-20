@@ -1,15 +1,6 @@
 /**
- * Half Comparison Analysis — isolated two-stage model.
- *
- * Predicts the numerical relationship between half totals:
- *   1H > 2H | 1H = 2H | 2H > 1H
- *
- * Stage A: per-team avg 1H/2H scored & conceded (70/30 blend), league-anchored
- * (75/25), then tempo / fatigue nudges when goalTiming proxies exist.
- * Stage B: independent Poisson grid over half goal counts.
- *
- * Separate from Highest Scoring Half (share-blend + Dixon-Coles λ).
- * Advisory only — never blocks a bet.
+ * Half Comparison helpers retained for averages / legacy tests.
+ * Live Half Goals predictions use the merged HSH + tempo engine in hsh-model.ts.
  */
 import { poissonPmf } from "@/lib/predictor/poisson";
 import { standardizeTeamName } from "@/lib/data/team-names";
@@ -21,8 +12,20 @@ import {
   lookupLeagueHalfBaseline,
   seasonFromDate,
 } from "./half-goals-baselines";
+import {
+  applyHalfTempoNudges,
+  buildHalfGoalsTacticalNote,
+  emptyHalfTempoProfile,
+  estimateTempoProfile,
+  HALF_VALUE_ALERT_1H_THRESHOLD,
+  type HalfTempoProfile,
+} from "./half-tempo";
 import { matchLeague } from "./match-league";
 import type { LogMatch, PredictionBatch } from "./types";
+
+/** @deprecated alias — use HalfTempoProfile from half-tempo */
+export type HcTempoProfile = HalfTempoProfile;
+export { estimateTempoProfile, emptyHalfTempoProfile as emptyTempoProfile };
 
 export type HcOutcome = "1h_greater" | "equal" | "2h_greater";
 export type HcConfidence = "very_high" | "high" | "moderate" | "low";
@@ -49,16 +52,6 @@ export interface HcLeagueHalfAverages {
   ratio: number;
   source: "computed" | "fallback";
   baselineSource?: string | null;
-}
-
-export interface HcTempoProfile {
-  sampleWithTiming: number;
-  fastStartRate: number | null;
-  lateSurgeRate: number | null;
-  /** Approximate minutes of first goal; null when unknown. */
-  paceProxy: number | null;
-  isFastStarter: boolean;
-  isLateSurger: boolean;
 }
 
 export interface HcStageAResult {
@@ -117,13 +110,7 @@ export interface HcPrediction {
 const DEFAULT_HALF_SAMPLE_LIMIT = 15;
 const TEAM_BLEND = 0.7;
 const LEAGUE_ANCHOR_TEAM = 0.75;
-const FAST_START_PACE_THRESHOLD = 25;
-const FAST_START_BOOST = 1.08;
-const LATE_SURGE_RATE_THRESHOLD = 0.25;
-const LATE_SURGE_BOOST = 1.1;
-const FATIGUE_BOOST = 1.05;
 const POISSON_GRID_MAX_GOALS = 5;
-const VALUE_ALERT_1H_THRESHOLD = 0.3;
 
 /** League defaults when HT samples are thin. PL/LL/SA/L1 from static baselines; Bundesliga kept hard-coded. */
 export const LEAGUE_HALF_FALLBACKS: Record<string, { avg1h: number; avg2h: number }> = {
@@ -361,76 +348,9 @@ export function computeLeagueHalfAverages(
 }
 
 /**
- * Tempo proxies from MatchGoalTiming when present.
- * - fast start: goalInFirst10
- * - late surge: goalInLast10 OR timingBuckets.g76_90plus > 0
- * - paceProxy: rough first-goal minute estimate from early flags only
+ * Tempo proxies live in half-tempo.ts (shared with merged Half Goals / HSH).
+ * Re-exported above for legacy HC callers/tests.
  */
-export function estimateTempoProfile(
-  batches: PredictionBatch[],
-  team: string,
-  opts?: { limit?: number; beforeDate?: string }
-): HcTempoProfile {
-  const limit = opts?.limit ?? DEFAULT_HALF_SAMPLE_LIMIT;
-  const samples: { fast: boolean; late: boolean; earlyPace: number | null }[] = [];
-
-  for (const batch of batches) {
-    for (const match of batch.matches) {
-      const matchDate = match.matchDate ?? batch.date;
-      if (opts?.beforeDate && matchDate >= opts.beforeDate) continue;
-      if (!isTeamInMatch(match, team)) continue;
-      const gt = match.teamStats?.goalTiming;
-      if (!gt) continue;
-
-      const hasFast = gt.goalInFirst10 === true;
-      const hasLate =
-        gt.goalInLast10 === true ||
-        (gt.timingBuckets != null && (gt.timingBuckets.g76_90plus ?? 0) > 0);
-      const hasAnySignal =
-        gt.goalInFirst10 != null ||
-        gt.goalInLast10 != null ||
-        gt.timingBuckets != null;
-      if (!hasAnySignal) continue;
-
-      let earlyPace: number | null = null;
-      if (gt.goalInFirst10 === true) earlyPace = 8;
-      else if (gt.goalInFirst10 === false) earlyPace = 35;
-
-      samples.push({ fast: hasFast, late: hasLate, earlyPace });
-    }
-  }
-
-  samples.reverse();
-  const sliced = samples.slice(0, limit);
-  if (sliced.length === 0) {
-    return {
-      sampleWithTiming: 0,
-      fastStartRate: null,
-      lateSurgeRate: null,
-      paceProxy: null,
-      isFastStarter: false,
-      isLateSurger: false,
-    };
-  }
-
-  const n = sliced.length;
-  const fastStartRate = sliced.filter((s) => s.fast).length / n;
-  const lateSurgeRate = sliced.filter((s) => s.late).length / n;
-  const paces = sliced.map((s) => s.earlyPace).filter((p): p is number => p != null);
-  const paceProxy =
-    paces.length > 0 ? paces.reduce((a, b) => a + b, 0) / paces.length : null;
-
-  return {
-    sampleWithTiming: n,
-    fastStartRate,
-    lateSurgeRate,
-    paceProxy,
-    isFastStarter:
-      (paceProxy != null && paceProxy < FAST_START_PACE_THRESHOLD) ||
-      (fastStartRate != null && fastStartRate >= 0.35),
-    isLateSurger: lateSurgeRate != null && lateSurgeRate > LATE_SURGE_RATE_THRESHOLD,
-  };
-}
 
 export function computeStageA(params: {
   homeAvg: HcTeamHalfAverages;
@@ -467,29 +387,23 @@ export function computeStageA(params: {
   const expA2h =
     expA2hRaw * LEAGUE_ANCHOR_TEAM + leagueAvg.avg2h * (1 - LEAGUE_ANCHOR_TEAM);
 
-  let lambda1h = expH1h + expA1h;
-  let lambda2h = expH2h + expA2h;
-
-  const tempoBoost1h = homeTempo.isFastStarter || awayTempo.isFastStarter;
-  if (tempoBoost1h) lambda1h *= FAST_START_BOOST;
-
-  const lateSurgeBoost2h = homeTempo.isLateSurger || awayTempo.isLateSurger;
-  if (lateSurgeBoost2h) lambda2h *= LATE_SURGE_BOOST;
-
-  // Natural 2H open-play / fatigue factor always applied (brief).
-  const fatigueBoost2h = true;
-  lambda2h *= FATIGUE_BOOST;
+  const nudged = applyHalfTempoNudges(
+    expH1h + expA1h,
+    expH2h + expA2h,
+    homeTempo,
+    awayTempo
+  );
 
   return {
     expH1h,
     expH2h,
     expA1h,
     expA2h,
-    lambda1h: Math.max(0.05, lambda1h),
-    lambda2h: Math.max(0.05, lambda2h),
-    tempoBoost1h,
-    lateSurgeBoost2h,
-    fatigueBoost2h,
+    lambda1h: nudged.lambda1h,
+    lambda2h: nudged.lambda2h,
+    tempoBoost1h: nudged.tempoBoost1h,
+    lateSurgeBoost2h: nudged.lateSurgeBoost2h,
+    fatigueBoost2h: nudged.fatigueBoost2h,
   };
 }
 
@@ -563,32 +477,19 @@ export function buildTacticalNote(params: {
   awayTempo: HcTempoProfile;
   recommendation: HcOutcome;
 }): string {
-  const bits: string[] = [];
-  if (params.homeTempo.isLateSurger) {
-    bits.push(`${params.homeTeam}'s late-surge profile`);
-  }
-  if (params.awayTempo.isLateSurger) {
-    bits.push(`${params.awayTeam}'s late-surge profile`);
-  }
-  if (params.homeTempo.isFastStarter) {
-    bits.push(`${params.homeTeam} as a fast starter`);
-  }
-  if (params.awayTempo.isFastStarter) {
-    bits.push(`${params.awayTeam} as a fast starter`);
-  }
-  if (bits.length === 0) {
-    return params.recommendation === "2h_greater"
-      ? "League-typical second-half dominance; limited tempo signals in history."
-      : "Based on half-goal averages and league anchoring.";
-  }
-  const join = bits.length === 1 ? bits[0]! : `${bits.slice(0, -1).join(", ")} + ${bits[bits.length - 1]}`;
-  if (params.recommendation === "2h_greater") {
-    return `${join} suggests strong 2H dominance.`;
-  }
-  if (params.recommendation === "1h_greater") {
-    return `${join} supports first-half goal lean.`;
-  }
-  return `${join}; halves look evenly matched.`;
+  const recommended =
+    params.recommendation === "1h_greater"
+      ? "1H"
+      : params.recommendation === "2h_greater"
+        ? "2H"
+        : "Tie";
+  return buildHalfGoalsTacticalNote({
+    homeTeam: params.homeTeam,
+    awayTeam: params.awayTeam,
+    homeTempo: params.homeTempo,
+    awayTempo: params.awayTempo,
+    recommended,
+  });
 }
 
 export const HALF_COMPARISON_ML_ENABLED = false;
@@ -660,7 +561,7 @@ export function predictHalfComparison(ctx: HcMatchContext): HcPrediction {
   const stageB = computeStageB(stageA.lambda1h, stageA.lambda2h);
   const recommendation = getRecommendation(stageB);
   const top = topProbability(stageB);
-  const valueAlert = stageB.p1hGreater > VALUE_ALERT_1H_THRESHOLD;
+  const valueAlert = stageB.p1hGreater > HALF_VALUE_ALERT_1H_THRESHOLD;
 
   return {
     matchId: ctx.matchId,

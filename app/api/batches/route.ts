@@ -5,6 +5,8 @@ import { maybeRetrainOnBatchResult } from "@/lib/prediction-log/retrain-ml";
 import { maybeBayesianCalibrateOnBatch } from "@/lib/prediction-log/bayesian-calibration";
 import { computeLeagueBaselines } from "@/lib/prediction-log/league-baselines";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
+import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
+import { batchHasScoredResults } from "@/lib/prediction-log/scoring";
 import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
@@ -58,6 +60,9 @@ export async function POST(request: Request) {
     await saveBatch(synced);
     await maybeRetrainOnBatchResult(synced).catch(() => null);
     await maybeBayesianCalibrateOnBatch(synced).catch(() => null);
+    if (batchHasScoredResults(synced)) {
+      await recomputeAndPersistLearnerStats().catch(() => null);
+    }
     return NextResponse.json({ ok: true, batch: synced });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to save batch";

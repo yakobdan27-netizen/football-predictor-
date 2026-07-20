@@ -217,6 +217,55 @@ assert.equal(confidenceBandFromMargin(0.2, 5, 5, false, true), "low");
   assert.equal(overridden.recommended, "2H");
 }
 
+// --- Tempo nudges raise λ when fast-start / late-surge flags are set ------
+{
+  const home = ratesFromCoeffs("Team A", "Premier League", 1.1, 1.0, 0.95, 1.0, 0.62, 0.78);
+  const away = ratesFromCoeffs("Team B", "Premier League", 0.95, 1.05, 1.0, 0.95, 0.62, 0.78);
+  const baseline = predictHighestScoringHalf({
+    matchId: "tempo-base",
+    homeTeam: "Team A",
+    awayTeam: "Team B",
+    league: "Premier League",
+    homeRates: home,
+    awayRates: away,
+    lgAf1: 0.62,
+    lgAf2: 0.78,
+  });
+  const boosted = predictHighestScoringHalf({
+    matchId: "tempo-boost",
+    homeTeam: "Team A",
+    awayTeam: "Team B",
+    league: "Premier League",
+    homeRates: home,
+    awayRates: away,
+    lgAf1: 0.62,
+    lgAf2: 0.78,
+    homeTempo: {
+      sampleWithTiming: 8,
+      fastStartRate: 0.5,
+      lateSurgeRate: 0.4,
+      paceProxy: 10,
+      isFastStarter: true,
+      isLateSurger: true,
+    },
+    awayTempo: {
+      sampleWithTiming: 8,
+      fastStartRate: 0.1,
+      lateSurgeRate: 0.1,
+      paceProxy: 40,
+      isFastStarter: false,
+      isLateSurger: false,
+    },
+  });
+  assert.ok(boosted.lambda1h > baseline.lambda1h);
+  assert.ok(boosted.lambda2h > baseline.lambda2h);
+  assert.equal(boosted.detail.tempoBoost1h, true);
+  assert.equal(boosted.detail.lateSurgeBoost2h, true);
+  assert.equal(boosted.detail.fatigueBoost2h, true);
+  assert.ok(boosted.tacticalNote.length > 0);
+  assert.ok(Math.abs(boosted.p1h + boosted.p2h + boosted.pTie - 1) < 1e-9);
+}
+
 // --- Batch-best picks highest margin × conf weight ------------------------
 {
   const base = {
@@ -235,6 +284,8 @@ assert.equal(confidenceBandFromMargin(0.2, 5, 5, false, true), "low");
     sampleSizeHome: 10,
     sampleSizeAway: 10,
     usedManualOverride: false,
+    valueAlert: false,
+    tacticalNote: "test",
     detail: {
       lambdaA1: 0.5,
       lambdaB1: 0.5,

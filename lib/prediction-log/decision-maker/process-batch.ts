@@ -85,6 +85,7 @@ export function processBatchDecisions(params: {
     };
     const matchData = aggregateMatchData(ctx);
     const result = generateTopThreeMarkets(matchData, fallbacksFromMatch(batch, match));
+    const comboRow = caches.comboByMatchId.get(match.id) ?? null;
 
     return {
       match,
@@ -92,6 +93,7 @@ export function processBatchDecisions(params: {
       batchDisplayId,
       league: matchLeague(match, batch.league),
       markets: result.markets,
+      bestCombined: comboRow?.selected ?? null,
       sourceCount: result.sourceCount,
       missingSources: result.missingSources,
       incomplete: result.incomplete,

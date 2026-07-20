@@ -1,11 +1,12 @@
 /**
- * Highest Scoring Half (HSH) — two-club attack × defence interaction.
+ * Highest Scoring Half / Half Goals — merged 1H vs 2H engine.
  *
- * Stage A: per-half λ = att × opp_def × Lg × home/away factor (scoring + conceded
- * seed priors blended with live HT). Stage B: independent Poisson grid with
- * Dixon-Coles τ on low ties + mild 2H game-state coupling. Skellam headline for E[D].
+ * Stage A: per-half λ = att × opp_def × Lg × home/away factor, then optional
+ * tempo / late-surge / fatigue nudges (from former Half Comparison).
+ * Stage B: independent Poisson grid with Dixon-Coles τ + mild 2H coupling.
+ * Skellam headline for E[D].
  *
- * Advisory-only: never blocks a bet. Does not feed Recommendation / Half Comparison.
+ * Advisory-only: never blocks a bet.
  */
 import { poissonPmf } from "@/lib/predictor/poisson";
 import { standardizeTeamName } from "@/lib/data/team-names";
@@ -20,6 +21,13 @@ import {
   shrinkCoeff,
   type ClubHalfAttackDefence,
 } from "./hsh-half-rates";
+import {
+  applyHalfTempoNudges,
+  buildHalfGoalsTacticalNote,
+  emptyHalfTempoProfile,
+  HALF_VALUE_ALERT_1H_THRESHOLD,
+  type HalfTempoProfile,
+} from "./half-tempo";
 import { matchLeague } from "./match-league";
 import type { LogMatch, PredictionBatch } from "./types";
 
@@ -105,6 +113,8 @@ export interface HshPrediction {
   sampleSizeHome: number;
   sampleSizeAway: number;
   usedManualOverride: boolean;
+  valueAlert: boolean;
+  tacticalNote: string;
   detail: {
     lambdaA1: number;
     lambdaB1: number;
@@ -137,6 +147,11 @@ export interface HshPrediction {
     baselineHome?: string | null;
     baselineAway?: string | null;
     baselineLeague?: string | null;
+    tempoBoost1h?: boolean;
+    lateSurgeBoost2h?: boolean;
+    fatigueBoost2h?: boolean;
+    homeTempo?: HalfTempoProfile;
+    awayTempo?: HalfTempoProfile;
   };
 }
 
@@ -702,6 +717,8 @@ export interface HshMatchContext {
   awayRates: ClubHalfAttackDefence;
   lgAf1: number;
   lgAf2: number;
+  homeTempo?: HalfTempoProfile;
+  awayTempo?: HalfTempoProfile;
   manualLambda1h?: number;
   manualLambda2h?: number;
   mlProbabilities?: HshStageBResult | null;
@@ -718,8 +735,31 @@ export function predictHighestScoringHalf(ctx: HshMatchContext): HshPrediction {
     lgAf2: ctx.lgAf2,
   });
 
-  const lambda1h = hasManualOverride ? ctx.manualLambda1h! : stageA.lambda1h;
-  const lambda2h = hasManualOverride ? ctx.manualLambda2h! : stageA.lambda2h;
+  const homeTempo = ctx.homeTempo ?? emptyHalfTempoProfile();
+  const awayTempo = ctx.awayTempo ?? emptyHalfTempoProfile();
+
+  let lambda1h = stageA.lambda1h;
+  let lambda2h = stageA.lambda2h;
+  let tempoBoost1h = false;
+  let lateSurgeBoost2h = false;
+  let fatigueBoost2h = false;
+
+  if (!hasManualOverride) {
+    const nudged = applyHalfTempoNudges(
+      stageA.lambda1h,
+      stageA.lambda2h,
+      homeTempo,
+      awayTempo
+    );
+    lambda1h = nudged.lambda1h;
+    lambda2h = nudged.lambda2h;
+    tempoBoost1h = nudged.tempoBoost1h;
+    lateSurgeBoost2h = nudged.lateSurgeBoost2h;
+    fatigueBoost2h = nudged.fatigueBoost2h;
+  } else {
+    lambda1h = ctx.manualLambda1h!;
+    lambda2h = ctx.manualLambda2h!;
+  }
 
   const poissonProbs = computeStageB(lambda1h, lambda2h);
   const finalProbs = HSH_ML_ENABLED
@@ -736,6 +776,15 @@ export function predictHighestScoringHalf(ctx: HshMatchContext): HshPrediction {
     ctx.homeRates.seedOnly,
     ctx.awayRates.seedOnly
   );
+  const recommended = recommendedHalf(finalProbs);
+  const tacticalNote = buildHalfGoalsTacticalNote({
+    homeTeam: ctx.homeTeam,
+    awayTeam: ctx.awayTeam,
+    homeTempo,
+    awayTempo,
+    recommended,
+  });
+  const valueAlert = finalProbs.p1h > HALF_VALUE_ALERT_1H_THRESHOLD;
 
   return {
     matchId: ctx.matchId,
@@ -747,7 +796,7 @@ export function predictHighestScoringHalf(ctx: HshMatchContext): HshPrediction {
     p1h: finalProbs.p1h,
     p2h: finalProbs.p2h,
     pTie: finalProbs.pTie,
-    recommended: recommendedHalf(finalProbs),
+    recommended,
     topProbability: top,
     confidence,
     margin,
@@ -756,6 +805,8 @@ export function predictHighestScoringHalf(ctx: HshMatchContext): HshPrediction {
     sampleSizeHome: Math.round(ctx.homeRates.nMatches),
     sampleSizeAway: Math.round(ctx.awayRates.nMatches),
     usedManualOverride: hasManualOverride,
+    valueAlert,
+    tacticalNote,
     detail: {
       lambdaA1: stageA.lambdaA1,
       lambdaB1: stageA.lambdaB1,
@@ -774,6 +825,11 @@ export function predictHighestScoringHalf(ctx: HshMatchContext): HshPrediction {
       couplingApplied: stageA.couplingApplied,
       seedHome: ctx.homeRates.sourceNote,
       seedAway: ctx.awayRates.sourceNote,
+      tempoBoost1h,
+      lateSurgeBoost2h,
+      fatigueBoost2h,
+      homeTempo,
+      awayTempo,
     },
   };
 }

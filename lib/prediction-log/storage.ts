@@ -442,6 +442,30 @@ export function updateLearnerStats(): LearnerStatsStore {
   return stats;
 }
 
+/**
+ * Prefer server KV learner stats when newer than localStorage; otherwise recompute locally.
+ */
+export async function hydrateLearnerStatsFromServer(): Promise<LearnerStatsStore> {
+  if (!isBrowser()) return emptyLearnerStats();
+  try {
+    const res = await fetch("/api/learner-stats");
+    const data = await res.json();
+    if (!res.ok) return updateLearnerStats();
+    const server = data.stats as LearnerStatsStore | null | undefined;
+    if (!server?.oddsRanges) return updateLearnerStats();
+    const local = loadLearnerStats();
+    const serverTime = Date.parse(server.updatedAt ?? "") || 0;
+    const localTime = Date.parse(local.updatedAt ?? "") || 0;
+    if (serverTime >= localTime) {
+      saveLearnerStats(server);
+      return server;
+    }
+    return updateLearnerStats();
+  } catch {
+    return updateLearnerStats();
+  }
+}
+
 export function loadLearnerEnabled(): boolean {
   if (!isBrowser()) return false;
   try {

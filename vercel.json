@@ -3,6 +3,10 @@
     {
       "path": "/api/livescore-bulk-history",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/fill-telegram-results",
+      "schedule": "0 8 * * *"
     }
   ],
   "functions": {
@@ -46,6 +50,9 @@
       "maxDuration": 60
     },
     "app/api/livescore-bulk-history/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/fill-telegram-results/route.ts": {
       "maxDuration": 60
     },
     "app/api/ml-model/route.ts": {

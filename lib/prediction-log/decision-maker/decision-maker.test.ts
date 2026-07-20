@@ -45,12 +45,16 @@ function source(
 
 test("registry lists multiple result pages (not a fixed four)", () => {
   const pages = listRegisteredResultPages();
-  assert.ok(pages.length >= 6);
+  assert.ok(pages.length >= 5);
   const ids = new Set(pages.map((p) => p.pageId));
-  assert.ok(ids.has("combined-odds"));
   assert.ok(ids.has("corners-analysis"));
   assert.ok(ids.has("recommendation"));
   assert.ok(ids.has("highest-scoring-half"));
+  assert.ok(!ids.has("combined-odds"));
+  assert.ok(!ids.has("combined-odds-extended"));
+  assert.ok(!ids.has("half-comparison"));
+  const hsh = pages.find((p) => p.pageId === "highest-scoring-half");
+  assert.equal(hsh?.baseWeight, 0.15);
 });
 
 test("normalised weights sum to 1 across available sources", () => {
@@ -183,14 +187,14 @@ test("generateTopThreeMarkets merges multi-source scores and flags incomplete", 
           pageLabel: "HSH",
         },
       ]),
-      source("combined-odds", 0.3, [], false),
+      source("league-analysis", 0.15, [], false),
     ],
   };
   const result = generateTopThreeMarkets(data);
   assert.equal(result.markets.length, 3);
   assert.equal(result.sourceCount, 3);
   assert.equal(result.incomplete, false);
-  assert.ok(result.missingSources.includes("combined-odds"));
+  assert.ok(result.missingSources.includes("league-analysis"));
 });
 
 test("incomplete when fewer than 2 sources provide data", () => {
