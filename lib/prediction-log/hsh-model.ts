@@ -28,6 +28,7 @@ import {
   HALF_VALUE_ALERT_1H_THRESHOLD,
   type HalfTempoProfile,
 } from "./half-tempo";
+import { getLeaguePrior } from "./league-priors";
 import { matchLeague } from "./match-league";
 import type { LogMatch, PredictionBatch } from "./types";
 
@@ -745,11 +746,13 @@ export function predictHighestScoringHalf(ctx: HshMatchContext): HshPrediction {
   let fatigueBoost2h = false;
 
   if (!hasManualOverride) {
+    const lateGoalShare = getLeaguePrior(ctx.league).prior.late_goal_share;
     const nudged = applyHalfTempoNudges(
       stageA.lambda1h,
       stageA.lambda2h,
       homeTempo,
-      awayTempo
+      awayTempo,
+      { lateGoalShare }
     );
     lambda1h = nudged.lambda1h;
     lambda2h = nudged.lambda2h;

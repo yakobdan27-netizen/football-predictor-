@@ -1,10 +1,6 @@
-import { Suspense } from "react";
-import { ConcededHalfApp } from "@/components/prediction-log/conceded-half-app";
+import { redirect } from "next/navigation";
 
+/** Former Conceded Half page — merged into Half Goals at /highest-scoring-half. */
 export default function ConcededHalfAnalysisPage() {
-  return (
-    <Suspense fallback={<p className="page-sub">Loading…</p>}>
-      <ConcededHalfApp />
-    </Suspense>
-  );
+  redirect("/highest-scoring-half");
 }

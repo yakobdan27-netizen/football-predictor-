@@ -8,6 +8,10 @@ All intelligence comes from your own data:
 
 - **Prediction Log** — enter batches, predictions, odds, and results (Vercel KV)
 - **AI Learner** — learned patterns, club capacities/histories, and support notes from your history
+- **League Priors** — research-seeded league baselines (Over 2.5, BTTS, corners, home factor, late goals) auto-recomputed from results; view/edit on League Analysis; shrinks hybrid system score and nudges Decision Maker confidence only (never blocks)
+- **PL 2026/27 team cards** — season-scoped 20-club roster (verify via API-Football); numerics filled from DB/live or left null; qualitative style seeds + promoted confidence bias nudge the hybrid system half only (Teams page)
+- **La Liga 2026/27 team cards** — same pattern as PL (API league 140); Under-leaning league prior; verify may overwrite provisional roster; promoted clubs get reduced confidence until samples accrue (Teams page)
+- **Bundesliga 2026/27 team cards** — API-first roster (league 78, expect 18; no hardcoded full list); Over/BTTS-leaning research prior; style seeds qualitative only; hybrid system-half nudges (Teams page)
 - **Recommendation** — generate risk-filtered recommended batches with dynamic batch risk scoring
 - **Analysis** — performance breakdown by odds, market, batch, and club
 - **Backtest** — Dixon-Coles engine evaluation on CSV-uploaded or demo-seeded match history

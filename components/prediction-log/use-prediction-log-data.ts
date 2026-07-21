@@ -23,6 +23,7 @@ import {
   getTeamsQualityCache,
   getStatEngineExtras,
   hydrateLearnerStatsFromServer,
+  hydrateLeaguePriorsFromServer,
 } from "@/lib/prediction-log/storage";
 import type {
   AnalysisHistory,
@@ -35,6 +36,7 @@ import type {
   TeamCharacteristicsStore,
   LeagueProfilesStore,
 } from "@/lib/prediction-log/types";
+import type { LeaguePriorsStore } from "@/lib/prediction-log/league-priors";
 import type { ClubIndex } from "@/lib/prediction-log/club-record-types";
 import type { MlClassifierStore } from "@/lib/prediction-log/ml-model-store";
 import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
@@ -45,6 +47,7 @@ export function usePredictionLogData() {
   const [learnerStats, setLearnerStats] = useState<LearnerStatsStore | null>(null);
   const [teamCharacteristics, setTeamCharacteristics] = useState<TeamCharacteristicsStore | null>(null);
   const [leagueProfiles, setLeagueProfiles] = useState<LeagueProfilesStore | null>(null);
+  const [leaguePriors, setLeaguePriors] = useState<LeaguePriorsStore | null>(null);
   const [clubProfiles, setClubProfiles] = useState<ClubProfilesStore | null>(null);
   const [clubIndex, setClubIndex] = useState<ClubIndex | null>(null);
   const [luckyNumbers, setLuckyNumbers] = useState<LuckyNumbersStore | null>(null);
@@ -71,6 +74,7 @@ export function usePredictionLogData() {
       setLearnerStats(await hydrateLearnerStatsFromServer());
       setTeamCharacteristics(loadTeamCharacteristics());
       setLeagueProfiles(updateLeagueProfiles());
+      setLeaguePriors(await hydrateLeaguePriorsFromServer());
       setClubProfiles(loadClubProfiles());
       setClubIndex(idx);
       setLuckyNumbers(loadLuckyNumbers());
@@ -124,6 +128,7 @@ export function usePredictionLogData() {
     learnerStats,
     teamCharacteristics,
     leagueProfiles,
+    leaguePriors,
     clubProfiles,
     clubIndex,
     luckyNumbers,

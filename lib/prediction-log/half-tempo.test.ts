@@ -46,4 +46,17 @@ import type { PredictionBatch } from "./types";
   assert.equal(tempo.isFastStarter, false);
 }
 
+{
+  const empty = emptyHalfTempoProfile();
+  const late = {
+    ...emptyHalfTempoProfile(),
+    sampleWithTiming: 5,
+    isLateSurger: true,
+    lateSurgeRate: 0.4,
+  };
+  const base = applyHalfTempoNudges(1.0, 1.0, empty, late);
+  const highLate = applyHalfTempoNudges(1.0, 1.0, empty, late, { lateGoalShare: 40 });
+  assert.ok(highLate.lambda2h > base.lambda2h);
+}
+
 console.log("half-tempo tests passed");

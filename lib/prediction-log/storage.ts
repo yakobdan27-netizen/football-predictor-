@@ -39,6 +39,23 @@ import {
   emptyLeagueProfilesStore,
   recomputeLeagueProfiles,
 } from "./league-profiles";
+import {
+  compactPriorsFromProfiles,
+  emptyLeaguePriorsStore,
+  type LeaguePriorsStore,
+} from "./league-priors";
+import {
+  emptyPlSeasonRosterStore,
+  type PlSeasonRosterStore,
+} from "./pl-season-roster";
+import {
+  emptyLlSeasonRosterStore,
+  type LlSeasonRosterStore,
+} from "./ll-season-roster";
+import {
+  emptyBlSeasonRosterStore,
+  type BlSeasonRosterStore,
+} from "./bl-season-roster";
 import type { MlClassifierStore } from "./ml-model-store";
 import type { LeagueBaselinesStore } from "./league-baselines";
 
@@ -48,6 +65,10 @@ const SETTINGS_KEY = "pl_recommendation_settings";
 const LEARNER_STATS_KEY = "pl_ai_learner_stats";
 const LEARNER_ENABLED_KEY = "pl_ai_learner_enabled";
 const MIGRATED_KEY = "pl_kv_migrated";
+const LEAGUE_PRIORS_KEY = "pl_league_priors";
+const PL_SEASON_ROSTER_KEY = "pl_season_roster_2026_27";
+const LL_SEASON_ROSTER_KEY = "pl_ll_season_roster_2026_27";
+const BL_SEASON_ROSTER_KEY = "pl_bl_season_roster_2026_27";
 const TEAMS_QUALITY_KEY = "pl_teams_quality";
 export const LEAGUE_PROFILES_KEY = "pl_league_profiles";
 
@@ -414,7 +435,172 @@ export function updateLeagueProfiles(): LeagueProfilesStore {
   const existing = loadLeagueProfiles();
   const store = recomputeLeagueProfiles(batchesCache, existing);
   saveLeagueProfiles(store);
+  saveLeaguePriors(compactPriorsFromProfiles(store));
   return store;
+}
+
+export function loadLeaguePriors(): LeaguePriorsStore {
+  if (!isBrowser()) return emptyLeaguePriorsStore();
+  try {
+    const raw = localStorage.getItem(LEAGUE_PRIORS_KEY);
+    if (!raw) return compactPriorsFromProfiles(loadLeagueProfiles());
+    const parsed = JSON.parse(raw) as LeaguePriorsStore;
+    return parsed?.priors ? parsed : emptyLeaguePriorsStore();
+  } catch {
+    return emptyLeaguePriorsStore();
+  }
+}
+
+export function saveLeaguePriors(store: LeaguePriorsStore): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(LEAGUE_PRIORS_KEY, JSON.stringify(store));
+}
+
+/**
+ * Prefer server KV league priors when newer than local; otherwise compact from profiles.
+ */
+export async function hydrateLeaguePriorsFromServer(): Promise<LeaguePriorsStore> {
+  if (!isBrowser()) return emptyLeaguePriorsStore();
+  try {
+    const res = await fetch("/api/league-priors");
+    const data = await res.json();
+    if (!res.ok) {
+      const local = compactPriorsFromProfiles(updateLeagueProfiles());
+      saveLeaguePriors(local);
+      return local;
+    }
+    const server = data.store as LeaguePriorsStore | null | undefined;
+    if (!server?.priors) {
+      const local = compactPriorsFromProfiles(updateLeagueProfiles());
+      saveLeaguePriors(local);
+      return local;
+    }
+    const local = loadLeaguePriors();
+    const serverTime = Date.parse(server.updatedAt ?? "") || 0;
+    const localTime = Date.parse(local.updatedAt ?? "") || 0;
+    if (serverTime >= localTime) {
+      saveLeaguePriors(server);
+      return server;
+    }
+    const fromProfiles = compactPriorsFromProfiles(updateLeagueProfiles());
+    saveLeaguePriors(fromProfiles);
+    return fromProfiles;
+  } catch {
+    const local = compactPriorsFromProfiles(updateLeagueProfiles());
+    saveLeaguePriors(local);
+    return local;
+  }
+}
+
+export function loadPlSeasonRoster(): PlSeasonRosterStore {
+  if (!isBrowser()) return emptyPlSeasonRosterStore();
+  try {
+    const raw = localStorage.getItem(PL_SEASON_ROSTER_KEY);
+    if (!raw) return emptyPlSeasonRosterStore();
+    const parsed = JSON.parse(raw) as PlSeasonRosterStore;
+    return parsed?.teams?.length ? parsed : emptyPlSeasonRosterStore();
+  } catch {
+    return emptyPlSeasonRosterStore();
+  }
+}
+
+export function savePlSeasonRoster(store: PlSeasonRosterStore): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(PL_SEASON_ROSTER_KEY, JSON.stringify(store));
+}
+
+export async function hydratePlSeasonRosterFromServer(): Promise<PlSeasonRosterStore> {
+  if (!isBrowser()) return emptyPlSeasonRosterStore();
+  try {
+    const res = await fetch("/api/pl-roster/verify");
+    const data = await res.json();
+    if (!res.ok || !data.store?.teams?.length) {
+      const local = emptyPlSeasonRosterStore();
+      savePlSeasonRoster(local);
+      return local;
+    }
+    const server = data.store as PlSeasonRosterStore;
+    savePlSeasonRoster(server);
+    return server;
+  } catch {
+    const local = emptyPlSeasonRosterStore();
+    savePlSeasonRoster(local);
+    return local;
+  }
+}
+
+export function loadLlSeasonRoster(): LlSeasonRosterStore {
+  if (!isBrowser()) return emptyLlSeasonRosterStore();
+  try {
+    const raw = localStorage.getItem(LL_SEASON_ROSTER_KEY);
+    if (!raw) return emptyLlSeasonRosterStore();
+    const parsed = JSON.parse(raw) as LlSeasonRosterStore;
+    return parsed?.teams?.length ? parsed : emptyLlSeasonRosterStore();
+  } catch {
+    return emptyLlSeasonRosterStore();
+  }
+}
+
+export function saveLlSeasonRoster(store: LlSeasonRosterStore): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(LL_SEASON_ROSTER_KEY, JSON.stringify(store));
+}
+
+export async function hydrateLlSeasonRosterFromServer(): Promise<LlSeasonRosterStore> {
+  if (!isBrowser()) return emptyLlSeasonRosterStore();
+  try {
+    const res = await fetch("/api/ll-roster/verify");
+    const data = await res.json();
+    if (!res.ok || !data.store?.teams?.length) {
+      const local = emptyLlSeasonRosterStore();
+      saveLlSeasonRoster(local);
+      return local;
+    }
+    const server = data.store as LlSeasonRosterStore;
+    saveLlSeasonRoster(server);
+    return server;
+  } catch {
+    const local = emptyLlSeasonRosterStore();
+    saveLlSeasonRoster(local);
+    return local;
+  }
+}
+
+export function loadBlSeasonRoster(): BlSeasonRosterStore {
+  if (!isBrowser()) return emptyBlSeasonRosterStore();
+  try {
+    const raw = localStorage.getItem(BL_SEASON_ROSTER_KEY);
+    if (!raw) return emptyBlSeasonRosterStore();
+    const parsed = JSON.parse(raw) as BlSeasonRosterStore;
+    return parsed?.season ? parsed : emptyBlSeasonRosterStore();
+  } catch {
+    return emptyBlSeasonRosterStore();
+  }
+}
+
+export function saveBlSeasonRoster(store: BlSeasonRosterStore): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(BL_SEASON_ROSTER_KEY, JSON.stringify(store));
+}
+
+export async function hydrateBlSeasonRosterFromServer(): Promise<BlSeasonRosterStore> {
+  if (!isBrowser()) return emptyBlSeasonRosterStore();
+  try {
+    const res = await fetch("/api/bl-roster/verify");
+    const data = await res.json();
+    if (!res.ok || !data.store) {
+      const local = emptyBlSeasonRosterStore();
+      saveBlSeasonRoster(local);
+      return local;
+    }
+    const server = data.store as BlSeasonRosterStore;
+    saveBlSeasonRoster(server);
+    return server;
+  } catch {
+    const local = emptyBlSeasonRosterStore();
+    saveBlSeasonRoster(local);
+    return local;
+  }
 }
 
 export function loadLearnerStats(): LearnerStatsStore {
@@ -682,7 +868,14 @@ export function generateBatchRecommendation(
   // Apply 50/50 hybrid on entry-path recommendations (tiered path freezes separately)
   const withHybrid = {
     ...recommended,
-    matches: applyHybridToRecommendedMatches(recommended.matches, learnerStats),
+    matches: applyHybridToRecommendedMatches(recommended.matches, learnerStats, {
+      leagueName: batch.league,
+      leaguePriors: loadLeaguePriors(),
+      plRoster: loadPlSeasonRoster(),
+      llRoster: loadLlSeasonRoster(),
+      blRoster: loadBlSeasonRoster(),
+      matchDate: batch.date,
+    }),
   };
   return attachCorrectScoreToBatch({ ...batch, recommended: withHybrid });
 }

@@ -8,6 +8,16 @@ import type {
 import { DECISION_MIN_CONFIDENCE, DECISION_MIN_SOURCES } from "./types";
 import { RESULT_PAGE_REGISTRY } from "./result-page-registry";
 import type { DecisionFetchContext } from "./types";
+import {
+  applyLeaguePriorConfidenceModifier,
+  resolvePriorFromStore,
+  type LeaguePriorsStore,
+} from "../league-priors";
+
+type CandidateWithPrior = DecisionMarketCandidate & {
+  priorAlign?: number;
+  priorWarn?: string;
+};
 
 /** Pull markets from every registered result page; soft-fail per source. */
 export function aggregateMatchData(ctx: DecisionFetchContext): AggregatedMatchData {
@@ -56,6 +66,34 @@ export function normalisedSourceWeights(
   return map;
 }
 
+function applyPriorsToSources(
+  sources: MatchSourceBundle[],
+  leagueName: string,
+  leaguePriors: LeaguePriorsStore | null | undefined
+): MatchSourceBundle[] {
+  const prior = resolvePriorFromStore(leaguePriors, leagueName);
+  if (!prior) return sources;
+
+  return sources.map((source) => ({
+    ...source,
+    markets: source.markets.map((m) => {
+      const mod = applyLeaguePriorConfidenceModifier(
+        m.confidence,
+        m.prediction,
+        m.marketKey,
+        prior
+      );
+      const next: CandidateWithPrior = {
+        ...m,
+        confidence: mod.confidence,
+        priorAlign: mod.priorAlign,
+        priorWarn: mod.warn,
+      };
+      return next;
+    }),
+  }));
+}
+
 function mergeCandidates(
   sources: MatchSourceBundle[],
   weights: Map<string, number>
@@ -68,19 +106,25 @@ function mergeCandidates(
     for (const m of source.markets) {
       const id = marketIdentity(m);
       const contribution = m.confidence * w;
+      const withPrior = m as CandidateWithPrior;
+      const priorAlign = withPrior.priorAlign ?? 0;
+      const priorWarn = withPrior.priorWarn;
       const existing = byId.get(id);
       if (!existing) {
         byId.set(id, {
           ...m,
           totalScore: contribution,
           contributingPages: [source.pageId],
+          priorAlign,
+          priorWarn,
         });
       } else {
         existing.totalScore += contribution;
         if (!existing.contributingPages.includes(source.pageId)) {
           existing.contributingPages.push(source.pageId);
         }
-        // Prefer higher confidence for display
+        existing.priorAlign = Math.max(existing.priorAlign ?? 0, priorAlign);
+        if (priorWarn && !existing.priorWarn) existing.priorWarn = priorWarn;
         if (m.confidence > existing.confidence) {
           existing.confidence = m.confidence;
           existing.label = m.label;
@@ -92,12 +136,18 @@ function mergeCandidates(
     }
   }
 
-  return [...byId.values()].sort((a, b) => b.totalScore - a.totalScore);
+  return [...byId.values()].sort(
+    (a, b) =>
+      b.totalScore - a.totalScore ||
+      (b.priorAlign ?? 0) - (a.priorAlign ?? 0) ||
+      b.confidence - a.confidence
+  );
 }
 
 /**
  * Select exactly 3 markets with diversity:
  * at least one goals, one corners, one specialized when available.
+ * Near-ties prefer league-prior alignment.
  */
 export function selectDiverseTopThree(
   scored: ScoredDecisionMarket[]
@@ -117,8 +167,17 @@ export function selectDiverseTopThree(
     picked.push(m);
   };
 
-  const bestOf = (cat: ScoredDecisionMarket["category"]) =>
-    pool.find((m) => m.category === cat && !used.has(marketIdentity(m)));
+  const bestOf = (cat: ScoredDecisionMarket["category"]) => {
+    const candidates = pool.filter(
+      (m) => m.category === cat && !used.has(marketIdentity(m))
+    );
+    if (candidates.length === 0) return undefined;
+    return [...candidates].sort((a, b) => {
+      const scoreDiff = b.totalScore - a.totalScore;
+      if (Math.abs(scoreDiff) > 2) return scoreDiff;
+      return (b.priorAlign ?? 0) - (a.priorAlign ?? 0) || scoreDiff;
+    })[0];
+  };
 
   take(bestOf("goals"));
   take(bestOf("corners"));
@@ -129,7 +188,6 @@ export function selectDiverseTopThree(
     take(m);
   }
 
-  // Secondary: fill from full scored list (may be below threshold) to guarantee 3
   if (picked.length < 3) {
     for (const m of scored) {
       if (picked.length >= 3) break;
@@ -140,12 +198,6 @@ export function selectDiverseTopThree(
   return picked.slice(0, 3);
 }
 
-/**
- * Pad to exactly 3 when the system still has fewer distinct markets.
- * Uses placeholder markers only as last resort from the best available candidates
- * duplicated with a distinct synthetic key — preferred: return what we have and
- * let processBatch invent soft placeholders from match shell.
- */
 export function ensureThreeMarkets(
   markets: ScoredDecisionMarket[],
   fallbacks: DecisionMarketCandidate[]
@@ -186,15 +238,23 @@ export function ensureThreeMarkets(
 
 export function generateTopThreeMarkets(
   matchData: AggregatedMatchData,
-  fallbacks: DecisionMarketCandidate[] = []
+  fallbacks: DecisionMarketCandidate[] = [],
+  opts?: {
+    leagueName?: string;
+    leaguePriors?: LeaguePriorsStore | null;
+  }
 ): {
   markets: ScoredDecisionMarket[];
   sourceCount: number;
   missingSources: string[];
   incomplete: boolean;
 } {
-  const weights = normalisedSourceWeights(matchData.sources);
-  const scored = mergeCandidates(matchData.sources, weights);
+  const sources =
+    opts?.leagueName != null
+      ? applyPriorsToSources(matchData.sources, opts.leagueName, opts.leaguePriors)
+      : matchData.sources;
+  const weights = normalisedSourceWeights(sources);
+  const scored = mergeCandidates(sources, weights);
   const diverse = selectDiverseTopThree(scored);
   const markets = ensureThreeMarkets(diverse, fallbacks);
 

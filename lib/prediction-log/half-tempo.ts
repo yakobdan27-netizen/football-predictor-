@@ -4,6 +4,7 @@
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
 import type { PredictionBatch } from "./types";
+import { lateGoalTempoScale } from "./league-priors";
 
 export interface HalfTempoProfile {
   sampleWithTiming: number;
@@ -121,7 +122,8 @@ export function applyHalfTempoNudges(
   lambda1h: number,
   lambda2h: number,
   homeTempo: HalfTempoProfile,
-  awayTempo: HalfTempoProfile
+  awayTempo: HalfTempoProfile,
+  opts?: { lateGoalShare?: number | null }
 ): HalfTempoNudgeResult {
   let l1 = lambda1h;
   let l2 = lambda2h;
@@ -129,11 +131,12 @@ export function applyHalfTempoNudges(
   const tempoBoost1h = homeTempo.isFastStarter || awayTempo.isFastStarter;
   if (tempoBoost1h) l1 *= FAST_START_BOOST;
 
+  const lateScale = lateGoalTempoScale(opts?.lateGoalShare);
   const lateSurgeBoost2h = homeTempo.isLateSurger || awayTempo.isLateSurger;
-  if (lateSurgeBoost2h) l2 *= LATE_SURGE_BOOST;
+  if (lateSurgeBoost2h) l2 *= LATE_SURGE_BOOST * lateScale;
 
   const fatigueBoost2h = true;
-  l2 *= FATIGUE_BOOST;
+  l2 *= FATIGUE_BOOST * (0.5 + 0.5 * lateScale);
 
   return {
     lambda1h: Math.max(0.05, l1),

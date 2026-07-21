@@ -14,7 +14,6 @@ const links = [
   { href: "/combined-odds", label: "Combo", icon: "🎲", desktopLabel: "Combined Odds" },
   { href: "/combined-odds-extended", label: "Combo+", icon: "➕", desktopLabel: "Extended Combos" },
   { href: "/highest-scoring-half", label: "Half", icon: "⏱️", desktopLabel: "Half Goals" },
-  { href: "/conceded-half-analysis", label: "Conc.", icon: "🥅", desktopLabel: "Conceded Half" },
   { href: "/corners-analysis", label: "Cor.", icon: "📐", desktopLabel: "Corners" },
   { href: "/settings", label: "Set", icon: "⚙️", desktopLabel: "Settings" },
   { href: "/analysis", label: "Stats", icon: "📊", desktopLabel: "Analysis" },

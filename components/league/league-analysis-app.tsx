@@ -10,10 +10,11 @@ import { GoalTimingChart } from "./goal-timing-chart";
 import { LeagueOverridePanel } from "./league-override-panel";
 import { LeagueEngineImpact } from "./league-engine-impact";
 import { LeagueMatchupCard } from "./league-matchup-card";
+import { LeaguePriorsCard } from "./league-priors-card";
 import type { League } from "@/lib/prediction-log/types";
 
 export function LeagueAnalysisApp() {
-  const { ready, leagueProfiles, learnerStats, refresh } = usePredictionLogData();
+  const { ready, leagueProfiles, leaguePriors, learnerStats, refresh } = usePredictionLogData();
   const metas = useMemo(() => allLeagueMetas(), []);
   const seasons = useMemo(() => {
     const set = new Set<string>(["2025/26", "2024/25", "2023/24", "2022/23", "2021/22"]);
@@ -99,6 +100,17 @@ export function LeagueAnalysisApp() {
       </div>
 
       <LeagueMatchupCard />
+
+      <LeaguePriorsCard
+        store={leaguePriors}
+        onRecompute={() => {
+          void fetch("/api/league-priors", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recompute: true }),
+          }).then(() => refresh());
+        }}
+      />
 
       {league ? (
         <>

@@ -20,7 +20,7 @@ export function CombinedOddsSettingsPanel({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.75rem" }}>
           {(["safe", "balanced", "aggressive"] as const).map((tier) => (
             <div key={tier}>
-              <label className="label">{tier} min P_final (%)</label>
+              <label className="label">{tier} accumulator floor (%)</label>
               <input
                 className="input"
                 type="number"
@@ -40,6 +40,10 @@ export function CombinedOddsSettingsPanel({
             </div>
           ))}
         </div>
+        <p style={{ margin: 0, fontSize: "0.8125rem", color: "var(--muted)" }}>
+          Floors are soft warnings for the batch accumulator. Per-match combo picks always use the
+          highest probability among enabled markets.
+        </p>
 
         <div>
           <label className="label">Better alternative threshold (%)</label>

@@ -51,6 +51,11 @@ export function CombinedOddsMatchCard({
           <div>
             <span style={{ color: "var(--muted)" }}>COMBO: </span>
             <strong>{selected.label}</strong>
+            {match.belowTierFloor ? (
+              <span style={{ color: "var(--warn)", marginLeft: "0.35rem", fontSize: "0.75rem" }}>
+                (below tier floor)
+              </span>
+            ) : null}
           </div>
           <div>
             <span style={{ color: "var(--muted)" }}>Probability: </span>
@@ -95,8 +100,8 @@ export function CombinedOddsMatchCard({
         </div>
       ) : (
         <div style={{ marginTop: "0.5rem", fontSize: "0.875rem" }}>
-          <p style={{ margin: "0 0 0.35rem", color: "var(--warn)" }}>
-            No safe combo — use single market
+          <p style={{ margin: "0 0 0.35rem", color: "var(--muted)" }}>
+            No combo markets available — use single market
           </p>
           {match.fallbackSingle ? (
             <p style={{ margin: 0, color: "var(--muted)" }}>

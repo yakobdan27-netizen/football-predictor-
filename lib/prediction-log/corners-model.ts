@@ -15,6 +15,11 @@ import {
   type CornersSeedConfidence,
 } from "./corners-baselines";
 import { matchLeague } from "./match-league";
+import {
+  getLeaguePrior,
+  LEAGUE_PRIOR_FULL_SAMPLE,
+  shrinkTowardLeaguePrior,
+} from "./league-priors";
 import type { LogMatch, PredictionBatch } from "./types";
 
 export type CornersConfidence = CornersSeedConfidence;
@@ -203,14 +208,33 @@ export function predictCornersMatch(params: {
     lookupLeagueCornersBaseline(params.league)?.leagueBase ?? DEFAULT_LEAGUE_BASE;
   const base = Math.max(0.5, leagueBase);
 
-  const lambdaHome = Math.max(
+  let lambdaHome = Math.max(
     0.2,
     base * (home.won / base) * (away.conceded / base)
   );
-  const lambdaAway = Math.max(
+  let lambdaAway = Math.max(
     0.2,
     base * (away.won / base) * (home.conceded / base)
   );
+
+  // Thin-sample shrink toward league average corners per side
+  const prior = getLeaguePrior(params.league);
+  const sidePrior =
+    prior.prior.avg_total_corners != null
+      ? prior.prior.avg_total_corners / 2
+      : base;
+  const thinSample = Math.min(home.nMatches, away.nMatches, home.liveMatches + away.liveMatches);
+  if (thinSample < LEAGUE_PRIOR_FULL_SAMPLE) {
+    lambdaHome = Math.max(
+      0.2,
+      shrinkTowardLeaguePrior(lambdaHome, sidePrior, thinSample)
+    );
+    lambdaAway = Math.max(
+      0.2,
+      shrinkTowardLeaguePrior(lambdaAway, sidePrior, thinSample)
+    );
+  }
+
   const expectedTotal = lambdaHome + lambdaAway;
 
   const pOver95 = poissonOverLine(9.5, expectedTotal);

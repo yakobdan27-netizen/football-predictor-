@@ -1,8 +1,9 @@
 import { defaultCombinedOddsSettings } from "@/lib/prediction-log/combo-settings";
-import { processBatchDecisions } from "@/lib/prediction-log/decision-maker";
+import { formatUserMarketEvalLine, processBatchDecisions } from "@/lib/prediction-log/decision-maker";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
 import { loadLearnerStatsStore } from "@/lib/prediction-log/learner-stats-store";
+import { loadLeaguePriorsStore } from "@/lib/prediction-log/league-priors-store";
 import { recomputeAnalysis } from "@/lib/prediction-log/analysis";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { getOwnedBatch } from "./ownership";
@@ -23,6 +24,13 @@ export interface BotCombinedOdd {
   value: number | null;
 }
 
+export interface BotUserMarketEval {
+  status: "filled" | "none";
+  line: string;
+  comment: string;
+  probabilityPct?: number;
+}
+
 export interface BotMatchDecision {
   matchId: string;
   homeTeam: string;
@@ -30,8 +38,11 @@ export interface BotMatchDecision {
   league: string;
   date: string;
   markets: BotDecisionMarket[];
-  /** Display-only; not part of the top-3 engine. */
+  /** Mandatory 4th decision. */
   bestCombined: BotCombinedOdd | null;
+  /** Mandatory 5th decision. */
+  userMarketEval: BotUserMarketEval;
+  confidenceScore: number;
   incomplete: boolean;
 }
 
@@ -65,6 +76,7 @@ export async function runDecisionForOwnedBatch(
 
   const teamsQuality = await loadTeamsQualityStore().catch(() => null);
   const learnerStats = await loadLearnerStatsStore().catch(() => null);
+  const leaguePriors = await loadLeaguePriorsStore().catch(() => null);
 
   const rows = processBatchDecisions({
     batch,
@@ -73,6 +85,7 @@ export async function runDecisionForOwnedBatch(
     analysis,
     teamsQuality,
     learnerStats,
+    leaguePriors,
   });
 
   return {
@@ -91,7 +104,7 @@ export async function runDecisionForOwnedBatch(
         prediction: m.prediction,
         confidence: Math.round(m.confidence),
         category: m.category,
-        warn: confidenceWarn(m.confidence),
+        warn: confidenceWarn(m.confidence) || Boolean(m.priorWarn),
       })),
       bestCombined: row.bestCombined
         ? {
@@ -101,6 +114,13 @@ export async function runDecisionForOwnedBatch(
             value: row.bestCombined.value,
           }
         : null,
+      userMarketEval: {
+        status: row.userMarketEval.status,
+        line: formatUserMarketEvalLine(row.userMarketEval),
+        comment: row.userMarketEval.comment,
+        probabilityPct: row.userMarketEval.probabilityPct,
+      },
+      confidenceScore: row.confidenceScore,
     })),
   };
 }
@@ -124,10 +144,16 @@ export function formatDecisionMessages(result: BotDecisionResponse): string[] {
         d.bestCombined.odds != null && d.bestCombined.odds > 1
           ? d.bestCombined.odds.toFixed(2)
           : "—";
-      block += `4) Combined Odd: ${d.bestCombined.label} @ ${odds} (${Math.round(d.bestCombined.pFinal)}%) — display only\n`;
+      block += `4) Combined Odd: ${d.bestCombined.label} @ ${odds} (${Math.round(d.bestCombined.pFinal)}%)\n`;
     } else {
-      block += `4) Combined Odd: none qualifying\n`;
+      block += `4) Combined Odd: no combo available\n`;
     }
+    if (d.userMarketEval.status === "filled") {
+      block += `5) ${d.userMarketEval.line} — ${d.userMarketEval.comment}\n`;
+    } else {
+      block += `5) No user market selected\n`;
+    }
+    block += `Confidence: ${Math.round(d.confidenceScore)}%\n`;
     if (d.incomplete) {
       block += `(Limited sources — advisory only)\n`;
     }

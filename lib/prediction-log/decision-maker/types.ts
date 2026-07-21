@@ -9,7 +9,6 @@ import type { TeamsQualityStore } from "../teams-quality-types";
 import type { MatchComboResult } from "../combo-selection";
 import type { HshPrediction } from "../hsh-model";
 import type { CornersMatchPrediction } from "../corners-model";
-import type { ConcededHalfPrediction } from "../conceded-half-model";
 
 /** Diversity buckets for top-3 selection. */
 export type DecisionMarketCategory = "goals" | "corners" | "specialized";
@@ -30,6 +29,10 @@ export interface DecisionMarketCandidate {
 export interface ScoredDecisionMarket extends DecisionMarketCandidate {
   totalScore: number;
   contributingPages: string[];
+  /** +1 aligned with league prior, -1 fights, 0 neutral. */
+  priorAlign?: number;
+  /** Soft warning when pick fights league prior (never a block). */
+  priorWarn?: string;
 }
 
 export interface DecisionFetchContext {
@@ -47,7 +50,6 @@ export interface DecisionFetchContext {
 export interface DecisionBatchCaches {
   hshByMatchId: Map<string, HshPrediction>;
   cornersByMatchId: Map<string, CornersMatchPrediction>;
-  concededByMatchId: Map<string, ConcededHalfPrediction>;
   comboByMatchId: Map<string, MatchComboResult>;
   comboExtendedByMatchId: Map<string, MatchComboResult>;
 }
@@ -84,13 +86,27 @@ export interface MatchDecisionRow {
   /** Exactly three markets from the Decision Maker engine. */
   markets: ScoredDecisionMarket[];
   /**
-   * Display-only best Combined Odds pick for this match.
-   * Not scored into the top-3 engine — shown as a fourth option in the UI.
+   * Mandatory 4th decision: best Combined Odds pick (exclude top-3 overlap when possible).
+   * Null only when no combo candidates / no score grid.
    */
   bestCombined: MatchComboResult["selected"];
+  /** Mandatory 5th decision: evaluate user's filled market, or "none". */
+  userMarketEval: UserMarketEvaluation;
+  /** Overall row confidence 0–100. */
+  confidenceScore: number;
   sourceCount: number;
   missingSources: string[];
   incomplete: boolean;
+}
+
+export interface UserMarketEvaluation {
+  status: "filled" | "none";
+  marketKey?: string;
+  marketLabel?: string;
+  predictionLabel?: string;
+  probabilityPct?: number;
+  /** Short natural-language comment (≤140 chars). */
+  comment: string;
 }
 
 export const DECISION_MIN_CONFIDENCE = 60;

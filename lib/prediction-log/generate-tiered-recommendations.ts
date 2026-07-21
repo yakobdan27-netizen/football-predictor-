@@ -264,8 +264,18 @@ function freezeRecommendedBatch(
           pFinal,
           confidenceBand: pFinal != null ? confidenceBand(pFinal) : pick.confidenceBand,
         };
-        // 50/50 hybrid: AI learner × 0.5 + system pFinal × 0.5
-        return [key, applyHybridToRecommendedPick(withSystem, learnerStats ?? null)];
+        // 50/50 hybrid: AI learner × 0.5 + system pFinal × 0.5 (system shrunk toward league prior)
+        return [
+          key,
+          applyHybridToRecommendedPick(withSystem, learnerStats ?? null, {
+            leagueName: batch.league,
+            marketKey: key,
+            matchSampleSize: withSystem.dataSampleSize,
+            homeTeam: match.homeTeam,
+            awayTeam: match.awayTeam,
+            matchDate: batch.date,
+          }),
+        ];
       })
     ) as RecommendedMatch["predictions"];
 

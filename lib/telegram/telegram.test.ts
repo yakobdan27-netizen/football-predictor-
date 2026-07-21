@@ -97,7 +97,7 @@ test("buildTelegramBatch stores market prediction and odds", () => {
   assert.equal(b.matches[0]!.predictions["1x2"]?.odds, 1.85);
 });
 
-test("formatDecisionMessages includes 3 markets and warn marker", () => {
+test("formatDecisionMessages includes 5 decisions and warn marker", () => {
   const result: BotDecisionResponse = {
     batchId: "b1",
     batchName: "Demo",
@@ -109,11 +109,18 @@ test("formatDecisionMessages includes 3 markets and warn marker", () => {
         league: "Premier League",
         date: "2026-07-20",
         incomplete: false,
+        confidenceScore: 68,
         bestCombined: {
           label: "BTTS + Over 2.5",
           odds: 1.85,
           pFinal: 62,
           value: 4.2,
+        },
+        userMarketEval: {
+          status: "filled",
+          line: "User market: Over 2.5 – 67%",
+          comment: "Good — selected market aligns with the engine (≈67%).",
+          probabilityPct: 67,
         },
         markets: [
           {
@@ -149,4 +156,7 @@ test("formatDecisionMessages includes 3 markets and warn marker", () => {
   assert.ok(msgs[0]!.includes("⚠️"));
   assert.ok(msgs[0]!.includes("Combined Odd"));
   assert.ok(msgs[0]!.includes("BTTS + Over 2.5"));
+  assert.ok(msgs[0]!.includes("User market: Over 2.5"));
+  assert.ok(msgs[0]!.includes("Confidence: 68%"));
+  assert.ok(!msgs[0]!.includes("display only"));
 });

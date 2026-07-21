@@ -112,7 +112,7 @@ export function CombinedOddsExtendedApp() {
         ))}
       </div>
       <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "-0.5rem", marginBottom: "1rem" }}>
-        Tier sets the minimum combo probability that qualifies for a pick and the batch accumulator floor.
+        Tier sets the accumulator floor and soft below-floor warnings. Per-match picks always use the top combo probability.
         This choice is local to this page (independent of the main Combined Odds page).
       </p>
 

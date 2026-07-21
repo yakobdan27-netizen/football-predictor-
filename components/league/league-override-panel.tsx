@@ -4,7 +4,8 @@ import { useState } from "react";
 import { LEAGUE_TRAIT_GROUPS } from "@/lib/prediction-log/league-profiles";
 import { saveManualLeagueField } from "@/lib/prediction-log/league-profiles";
 import { leagueProfileKey } from "@/lib/prediction-log/season";
-import { loadLeagueProfiles, saveLeagueProfiles } from "@/lib/prediction-log/storage";
+import { loadLeagueProfiles, saveLeagueProfiles, saveLeaguePriors } from "@/lib/prediction-log/storage";
+import { compactPriorsFromProfiles } from "@/lib/prediction-log/league-priors";
 import type { League, LeagueCharacterProfile, LeagueCharacterTrait } from "@/lib/prediction-log/types";
 
 interface LeagueOverridePanelProps {
@@ -15,7 +16,7 @@ interface LeagueOverridePanelProps {
 export function LeagueOverridePanel({ league, onUpdate }: LeagueOverridePanelProps) {
   const [open, setOpen] = useState(false);
 
-  function saveTrait(key: keyof LeagueCharacterProfile, raw: string) {
+  async function saveTrait(key: keyof LeagueCharacterProfile, raw: string) {
     if (key === "goal_timing_curve") return;
     const value = parseFloat(raw);
     if (!Number.isFinite(value)) return;
@@ -23,6 +24,16 @@ export function LeagueOverridePanel({ league, onUpdate }: LeagueOverridePanelPro
     let store = loadLeagueProfiles();
     store = saveManualLeagueField(store, storeKey, key, value);
     saveLeagueProfiles(store);
+    const priors = compactPriorsFromProfiles(store);
+    saveLeaguePriors(priors);
+    const prior = priors.priors[league.leagueId];
+    if (prior) {
+      await fetch("/api/league-priors", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prior }),
+      }).catch(() => null);
+    }
     const updated = store.leagues[storeKey];
     if (updated) onUpdate(updated);
   }
@@ -46,7 +57,7 @@ export function LeagueOverridePanel({ league, onUpdate }: LeagueOverridePanelPro
               key={key}
               label={label}
               trait={trait}
-              onSave={(v) => saveTrait(key, v)}
+              onSave={(v) => void saveTrait(key, v)}
             />
           );
         })}

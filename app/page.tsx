@@ -78,9 +78,6 @@ export default function DashboardPage() {
             <Link href="/highest-scoring-half" className="btn btn-secondary btn-full">
               Half Goals (1H vs 2H)
             </Link>
-            <Link href="/conceded-half-analysis" className="btn btn-secondary btn-full">
-              Conceded Half
-            </Link>
             <Link href="/corners-analysis" className="btn btn-secondary btn-full">
               Corners Analysis
             </Link>

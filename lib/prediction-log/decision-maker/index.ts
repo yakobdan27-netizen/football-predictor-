@@ -10,6 +10,7 @@ export {
   type MatchSourceBundle,
   type ResultPageDefinition,
   type ScoredDecisionMarket,
+  type UserMarketEvaluation,
 } from "./types";
 export { bandToConfidence, clampConfidence, confidenceTone } from "./confidence";
 export {
@@ -34,3 +35,14 @@ export {
   processAllBatchesDecisions,
   processBatchDecisions,
 } from "./process-batch";
+export {
+  comboOverlapsTopThree,
+  pickMandatoryCombo,
+  relatedMarketKeysForCombo,
+} from "./combo-exclude";
+export {
+  buildUserMarketEvaluation,
+  computeRowConfidenceScore,
+  formatUserMarketEvalLine,
+  USER_MARKET_EVAL_MAX_COMMENT,
+} from "./user-market-evaluation";

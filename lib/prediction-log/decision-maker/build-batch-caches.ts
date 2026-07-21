@@ -1,9 +1,5 @@
 import { evaluateBatchCombos } from "../combo-selection";
 import { EXTENDED_COMBO_FAMILY_IDS } from "../combo-markets-config";
-import {
-  buildConcededMatchLog,
-  predictConcededHalfMatch,
-} from "../conceded-half-model";
 import { predictCornersMatch } from "../corners-model";
 import { estimateTempoProfile } from "../half-tempo";
 import {
@@ -48,7 +44,6 @@ export function buildDecisionBatchCaches(params: {
   const caches: DecisionBatchCaches = {
     hshByMatchId: new Map(),
     cornersByMatchId: new Map(),
-    concededByMatchId: new Map(),
     comboByMatchId: new Map(),
     comboExtendedByMatchId: new Map(),
   };
@@ -100,26 +95,6 @@ export function buildDecisionBatchCaches(params: {
           league: matchLeague(match, batch.league),
           batches: allBatches,
           beforeDate: batch.date,
-        })
-      );
-    }
-  } catch {
-    /* keep empty */
-  }
-
-  try {
-    const logRows = buildConcededMatchLog(allBatches);
-    for (const match of batch.matches) {
-      caches.concededByMatchId.set(
-        match.id,
-        predictConcededHalfMatch({
-          matchId: match.id,
-          homeTeam: match.homeTeam,
-          awayTeam: match.awayTeam,
-          league: matchLeague(match, batch.league),
-          batches: allBatches,
-          beforeDate: batch.date,
-          logRows,
         })
       );
     }

@@ -33,6 +33,8 @@ export interface MatchComboResult {
   fallbackSingle: FrozenMarketEntry | null;
   allEvaluated: ComboCandidate[];
   hasGrid: boolean;
+  /** True when a combo was selected but pFinal is under the active tier floor (soft warning only). */
+  belowTierFloor: boolean;
 }
 
 export interface ComboAccumulatorResult {
@@ -61,13 +63,17 @@ function toCandidate(
   };
 }
 
-function pickBestCombo(
-  evaluated: ComboCandidate[],
+/** Always pick highest pFinal — tier floor never empties the selection. */
+export function pickBestCombo(evaluated: ComboCandidate[]): ComboCandidate | null {
+  if (evaluated.length === 0) return null;
+  return evaluated.reduce((best, c) => (c.pFinal > best.pFinal ? c : best));
+}
+
+function belowFloorFlag(
+  selected: ComboCandidate | null,
   tierFloor: number
-): ComboCandidate | null {
-  const qualifying = evaluated.filter((c) => c.pFinal >= tierFloor);
-  if (qualifying.length === 0) return null;
-  return qualifying.reduce((best, c) => (c.pFinal > best.pFinal ? c : best));
+): boolean {
+  return selected != null && selected.pFinal < tierFloor;
 }
 
 function pickAlternative(
@@ -126,6 +132,7 @@ export function evaluateMatchCombos(
         fallbackSingle,
         allEvaluated: [selectedCombo],
         hasGrid: false,
+        belowTierFloor: belowFloorFlag(selectedCombo, tierFloor),
       };
     }
     return {
@@ -137,6 +144,7 @@ export function evaluateMatchCombos(
       fallbackSingle,
       allEvaluated: [],
       hasGrid: false,
+      belowTierFloor: false,
     };
   }
 
@@ -165,7 +173,7 @@ export function evaluateMatchCombos(
   }
 
   evaluated.sort((a, b) => b.pFinal - a.pFinal);
-  let best = pickBestCombo(evaluated, tierFloor);
+  let best = pickBestCombo(evaluated);
   if (userComboId) {
     const userPick = evaluated.find((c) => c.comboId === userComboId);
     if (userPick) best = userPick;
@@ -197,6 +205,7 @@ export function evaluateMatchCombos(
     fallbackSingle,
     allEvaluated: evaluated,
     hasGrid: true,
+    belowTierFloor: belowFloorFlag(best, tierFloor),
   };
 }
 

@@ -5,6 +5,10 @@ import { maybeBayesianCalibrateOnBatch } from "@/lib/prediction-log/bayesian-cal
 import { computeLeagueBaselines } from "@/lib/prediction-log/league-baselines";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
 import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
+import { recomputeAndPersistLeaguePriors } from "@/lib/prediction-log/league-priors-store";
+import { recomputePlSeasonCards } from "@/lib/prediction-log/pl-season-store";
+import { recomputeLlSeasonCards } from "@/lib/prediction-log/ll-season-store";
+import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
 import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
 import { scoreMatch, scoreBatch, marketsEnteredCount } from "@/lib/prediction-log/scoring";
 import { matchLeague } from "@/lib/prediction-log/match-league";
@@ -247,6 +251,10 @@ export async function syncPredictionLogResults(
 
   if (summary.updatedBatches > 0) {
     await recomputeAndPersistLearnerStats().catch(() => null);
+    await recomputeAndPersistLeaguePriors().catch(() => null);
+    await recomputePlSeasonCards().catch(() => null);
+    await recomputeLlSeasonCards().catch(() => null);
+    await recomputeBlSeasonCards().catch(() => null);
   }
 
   return summary;
@@ -323,6 +331,10 @@ export async function replaceMatchResultsFromApi(
   await saveBatch(synced);
   summary.updatedBatches = 1;
   await recomputeAndPersistLearnerStats().catch(() => null);
+  await recomputeAndPersistLeaguePriors().catch(() => null);
+  await recomputePlSeasonCards().catch(() => null);
+  await recomputeLlSeasonCards().catch(() => null);
+  await recomputeBlSeasonCards().catch(() => null);
   return summary;
 }
 

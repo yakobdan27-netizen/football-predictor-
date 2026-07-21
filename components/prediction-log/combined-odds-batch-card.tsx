@@ -44,7 +44,7 @@ export function CombinedOddsBatchCard({
       ? `SAFE for ${TIER_LABELS[tier]} tier ✓`
       : accumulator.status === "below_floor"
         ? `Below ${TIER_LABELS[tier]} floor`
-        : "Insufficient qualifying legs";
+        : "Insufficient legs for accumulator";
 
   return (
     <div className="card" style={{ borderColor: accentColor, marginBottom: "1.5rem" }}>

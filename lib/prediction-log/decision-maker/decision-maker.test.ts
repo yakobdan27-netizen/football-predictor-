@@ -43,18 +43,22 @@ function source(
   };
 }
 
-test("registry lists multiple result pages (not a fixed four)", () => {
+test("registry lists result pages; Half Goals only (no standalone Conceded Half)", () => {
   const pages = listRegisteredResultPages();
   assert.ok(pages.length >= 5);
   const ids = new Set(pages.map((p) => p.pageId));
   assert.ok(ids.has("corners-analysis"));
   assert.ok(ids.has("recommendation"));
   assert.ok(ids.has("highest-scoring-half"));
+  assert.ok(ids.has("user-market-evaluation"));
+  assert.ok(!ids.has("conceded-half"));
   assert.ok(!ids.has("combined-odds"));
   assert.ok(!ids.has("combined-odds-extended"));
   assert.ok(!ids.has("half-comparison"));
   const hsh = pages.find((p) => p.pageId === "highest-scoring-half");
   assert.equal(hsh?.baseWeight, 0.15);
+  const ume = pages.find((p) => p.pageId === "user-market-evaluation");
+  assert.equal(ume?.baseWeight, 0);
 });
 
 test("normalised weights sum to 1 across available sources", () => {

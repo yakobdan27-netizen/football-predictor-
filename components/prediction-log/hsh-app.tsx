@@ -7,14 +7,26 @@ import {
   type HshPrediction,
 } from "@/lib/prediction-log/hsh-model";
 import { tempoProfileLabel } from "@/lib/prediction-log/half-tempo";
+import {
+  recommendationLabel,
+  type ConcededConfidence,
+  type ConcededHalfPrediction,
+  type ConcededHalfTeamStats,
+} from "@/lib/prediction-log/conceded-half-model";
+import { matchLeague } from "@/lib/prediction-log/match-league";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHshPredictions } from "./use-hsh-predictions";
+import { useConcededHalfPredictions, useConcededHalfStats } from "./use-conceded-half-stats";
 
 function pct(p: number): string {
   return `${Math.round(p * 100)}%`;
 }
 
-function confidenceStyle(c: HshConfidence): CSSProperties {
+function pctN(n: number): string {
+  return `${Math.round(n)}%`;
+}
+
+function confidenceStyle(c: HshConfidence | ConcededConfidence): CSSProperties {
   switch (c) {
     case "high":
       return { background: "rgba(34, 197, 94, 0.2)", color: "#15803d" };
@@ -33,6 +45,12 @@ function confidenceNote(c: HshConfidence, margin: number, seedOnly: boolean): st
   return "Low confidence (advisory only)";
 }
 
+function profileStyle(profile: string): CSSProperties {
+  if (profile === "Slow Starter") return { color: "#b45309" };
+  if (profile === "Late Collapser") return { color: "#b91c1c" };
+  return { color: "var(--muted)" };
+}
+
 export function HshApp() {
   const { ready, error, batches } = usePredictionLogData();
   const sortedBatches = useMemo(
@@ -41,6 +59,7 @@ export function HshApp() {
   );
   const [batchId, setBatchId] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [concededExpandedId, setConcededExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
@@ -48,6 +67,17 @@ export function HshApp() {
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
   const { predictions, loading, error: predError } = useHshPredictions(batch, batches, {});
+
+  const batchLeague = useMemo(() => {
+    if (!batch?.matches.length) return batch?.league ?? null;
+    return matchLeague(batch.matches[0]!, batch.league);
+  }, [batch]);
+
+  const { logRows, teamStats } = useConcededHalfStats(batches, {
+    league: batchLeague,
+    season: "all",
+  });
+  const concededPredictions = useConcededHalfPredictions(batch, batches, logRows);
 
   const summary = useMemo(() => {
     if (!predictions.length) return null;
@@ -73,8 +103,8 @@ export function HshApp() {
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Half Goals (1H vs 2H)</h1>
         <p className="page-sub">
-          Attack × defence λs with tempo nudges, then Dixon-Coles Stage B — advisory only, never
-          blocks a pick.
+          Attack × defence λs with tempo nudges, then Dixon-Coles Stage B — plus defence / conceded
+          half support. Advisory only, never blocks a pick.
         </p>
       </div>
 
@@ -97,6 +127,7 @@ export function HshApp() {
             onChange={(e) => {
               setBatchId(e.target.value);
               setExpandedId(null);
+              setConcededExpandedId(null);
             }}
           >
             {sortedBatches.length === 0 && <option value="">No batches</option>}
@@ -137,7 +168,7 @@ export function HshApp() {
       ) : predictions.length === 0 ? (
         <p className="page-sub">This batch has no matches.</p>
       ) : (
-        <div className="card" style={{ overflowX: "auto" }}>
+        <div className="card" style={{ overflowX: "auto", marginBottom: "1.5rem" }}>
           <table className="table" style={{ width: "100%", fontSize: "0.8125rem" }}>
             <thead>
               <tr>
@@ -167,7 +198,178 @@ export function HshApp() {
           </table>
         </div>
       )}
+
+      <DefenceConcededPanel
+        teamStats={teamStats}
+        predictions={concededPredictions}
+        leagueLabel={batchLeague}
+        expandedId={concededExpandedId}
+        onToggle={(id) =>
+          setConcededExpandedId((cur) => (cur === id ? null : id))
+        }
+      />
     </div>
+  );
+}
+
+function DefenceConcededPanel({
+  teamStats,
+  predictions,
+  leagueLabel,
+  expandedId,
+  onToggle,
+}: {
+  teamStats: ConcededHalfTeamStats[];
+  predictions: ConcededHalfPrediction[];
+  leagueLabel: string | null;
+  expandedId: string | null;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div style={{ marginTop: "0.5rem" }}>
+      <h2 style={{ fontSize: "1.05rem", fontWeight: 700, margin: "0 0 0.35rem" }}>
+        Defence / conceded half
+      </h2>
+      <p className="page-sub" style={{ marginTop: 0 }}>
+        Support profiles for Half Goals defence rates
+        {leagueLabel ? ` (${leagueLabel})` : ""}. Advisory only — does not change Stage A.
+      </p>
+
+      {teamStats.length === 0 ? (
+        <p className="page-sub">
+          No half-conceded samples yet. Enter HT scores on settled batches to populate defence
+          profiles.
+        </p>
+      ) : (
+        <div className="card" style={{ overflowX: "auto", marginBottom: "1.25rem" }}>
+          <table className="data-table" style={{ minWidth: "52rem", fontSize: "0.8125rem" }}>
+            <thead>
+              <tr>
+                <th>Team</th>
+                <th>Avg Conc.</th>
+                <th>1H</th>
+                <th>2H</th>
+                <th>1H&gt;2H %</th>
+                <th>2H&gt;1H %</th>
+                <th>Profile</th>
+                <th>Conf.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teamStats.slice(0, 40).map((row) => (
+                <tr key={`${row.team}|${row.league}|${row.season}`}>
+                  <td>
+                    <strong>{row.team}</strong>
+                    <div style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+                      n=
+                      {row.liveMatches != null
+                        ? `${row.liveMatches} live`
+                        : row.matchesPlayed}
+                    </div>
+                  </td>
+                  <td>{row.avgConceded.toFixed(2)}</td>
+                  <td>{row.avg1hConceded.toFixed(2)}</td>
+                  <td>{row.avg2hConceded.toFixed(2)}</td>
+                  <td>{pctN(row.conc1hGt2hPct)}</td>
+                  <td>{pctN(row.conc2hGt1hPct)}</td>
+                  <td style={profileStyle(row.profile)}>{row.profile}</td>
+                  <td>
+                    <span className="badge" style={confidenceStyle(row.confidence)}>
+                      {row.confidence}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {teamStats.length > 40 && (
+            <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+              Showing top 40 of {teamStats.length} teams.
+            </p>
+          )}
+        </div>
+      )}
+
+      {predictions.length > 0 && (
+        <>
+          <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem" }}>
+            Match conceded lean (0.5 scored + 0.5 conceded)
+          </h3>
+          <div className="card" style={{ overflowX: "auto" }}>
+            <table className="data-table" style={{ minWidth: "44rem", fontSize: "0.8125rem" }}>
+              <thead>
+                <tr>
+                  <th>Match</th>
+                  <th>λ 1H</th>
+                  <th>λ 2H</th>
+                  <th>P(1H&gt;2H)</th>
+                  <th>P(=)</th>
+                  <th>P(2H&gt;1H)</th>
+                  <th>Lean</th>
+                  <th>Conf.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {predictions.map((p) => (
+                  <ConcededPredictionRow
+                    key={p.matchId}
+                    prediction={p}
+                    expanded={expandedId === p.matchId}
+                    onToggle={() => onToggle(p.matchId)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ConcededPredictionRow({
+  prediction: p,
+  expanded,
+  onToggle,
+}: {
+  prediction: ConcededHalfPrediction;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr onClick={onToggle} style={{ cursor: "pointer" }} title="Click for detail">
+        <td>
+          {p.homeTeam} vs {p.awayTeam}
+        </td>
+        <td>{p.lambda1h.toFixed(2)}</td>
+        <td>{p.lambda2h.toFixed(2)}</td>
+        <td>{pct(p.p1hGreater)}</td>
+        <td>{pct(p.pEqual)}</td>
+        <td>{pct(p.p2hGreater)}</td>
+        <td>{recommendationLabel(p.recommendation)}</td>
+        <td>
+          <span className="badge" style={confidenceStyle(p.confidence)}>
+            {p.confidence}
+          </span>
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={8} style={{ background: "var(--surface2)", padding: "1rem" }}>
+            <div style={{ display: "grid", gap: "0.35rem", fontSize: "0.8125rem" }}>
+              <div>
+                Expected — home 1H/2H {p.expHome1h.toFixed(2)}/{p.expHome2h.toFixed(2)} · away{" "}
+                {p.expAway1h.toFixed(2)}/{p.expAway2h.toFixed(2)}
+              </div>
+              <div style={{ color: "var(--muted)" }}>
+                Samples home {p.sampleSizeHome} · away {p.sampleSizeAway}
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

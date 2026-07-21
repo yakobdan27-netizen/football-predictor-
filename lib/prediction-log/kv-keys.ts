@@ -38,4 +38,12 @@ export const KV_KEYS = {
   telegramUpdateClaim: (updateId: number) => `telegram:upd:v1:${updateId}`,
   /** Global AI Learner stats (web + telegram scored batches). */
   learnerStats: "learnerStats:v1",
+  /** Compact league priors (research seeds + live recompute). */
+  leaguePriors: "leaguePriors:v1",
+  /** Premier League 2026/27 season roster + team cards. */
+  plSeasonRoster: "plSeasonRoster:v1:2026_27",
+  /** La Liga 2026/27 season roster + team cards. */
+  llSeasonRoster: "llSeasonRoster:v1:2026_27",
+  /** Bundesliga 2026/27 season roster + team cards. */
+  blSeasonRoster: "blSeasonRoster:v1:2026_27",
 } as const;

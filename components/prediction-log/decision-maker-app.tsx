@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   categoryIcon,
   confidenceTone,
+  formatUserMarketEvalLine,
   listRegisteredResultPages,
   processBatchDecisions,
   type MatchDecisionRow,
   type ScoredDecisionMarket,
+  type UserMarketEvaluation,
 } from "@/lib/prediction-log/decision-maker";
 import type { ComboCandidate } from "@/lib/prediction-log/combo-selection";
 import { getBatchDisplayId } from "@/lib/prediction-log/snapshot-readers";
@@ -89,7 +91,6 @@ function MarketCell({ market }: { market: ScoredDecisionMarket }) {
   );
 }
 
-/** Display-only Combined Odds — not part of the top-3 engine. */
 function CombinedOddCell({ combo }: { combo: ComboCandidate | null }) {
   if (!combo) {
     return (
@@ -103,7 +104,7 @@ function CombinedOddCell({ combo }: { combo: ComboCandidate | null }) {
           fontSize: "0.8rem",
         }}
       >
-        No qualifying combo
+        No combo available
       </div>
     );
   }
@@ -115,13 +116,13 @@ function CombinedOddCell({ combo }: { combo: ComboCandidate | null }) {
         borderRadius: 10,
         padding: "0.65rem 0.75rem",
         minWidth: 160,
-        border: "1px dashed rgba(59, 130, 246, 0.45)",
+        border: "1px solid rgba(59, 130, 246, 0.45)",
       }}
     >
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
         <span aria-hidden>🎲</span>
         <span style={{ fontSize: "0.7rem", fontWeight: 700, opacity: 0.85 }}>
-          Best combined
+          Combination Odd
         </span>
       </div>
       <div style={{ fontWeight: 700, fontSize: "0.9rem", lineHeight: 1.25 }}>
@@ -133,8 +134,46 @@ function CombinedOddCell({ combo }: { combo: ComboCandidate | null }) {
         {combo.odds != null && combo.odds > 1 ? combo.odds.toFixed(2) : "—"}
         {combo.value != null ? ` · value ${combo.value.toFixed(1)}` : ""}
       </div>
-      <div style={{ fontSize: "0.65rem", marginTop: 2, opacity: 0.8 }}>
-        Combined Odds (display only)
+    </div>
+  );
+}
+
+function UserMarketEvalCell({ evalRow }: { evalRow: UserMarketEvaluation }) {
+  if (evalRow.status === "none") {
+    return (
+      <div
+        style={{
+          borderRadius: 10,
+          padding: "0.65rem 0.75rem",
+          minWidth: 160,
+          background: "var(--surface2)",
+          color: "var(--muted)",
+          fontSize: "0.8rem",
+        }}
+      >
+        No user market selected
+      </div>
+    );
+  }
+  const pct = evalRow.probabilityPct ?? 0;
+  return (
+    <div
+      style={{
+        ...toneStyle(pct),
+        borderRadius: 10,
+        padding: "0.65rem 0.75rem",
+        minWidth: 180,
+      }}
+    >
+      <div style={{ fontSize: "0.7rem", fontWeight: 700, opacity: 0.85, marginBottom: 4 }}>
+        User market
+      </div>
+      <div style={{ fontWeight: 700, fontSize: "0.85rem", lineHeight: 1.25 }}>
+        {formatUserMarketEvalLine(evalRow)}
+      </div>
+      <ConfidenceBar confidence={pct} />
+      <div style={{ fontSize: "0.7rem", marginTop: 4, lineHeight: 1.35, opacity: 0.9 }}>
+        {evalRow.comment}
       </div>
     </div>
   );
@@ -142,25 +181,24 @@ function CombinedOddCell({ combo }: { combo: ComboCandidate | null }) {
 
 function DecisionRow({
   row,
+  batchDate,
   expanded,
   onToggle,
 }: {
   row: MatchDecisionRow;
+  batchDate: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
   const [m1, m2, m3] = row.markets;
+  const dateTime = row.match.matchDate ?? batchDate;
 
   return (
     <>
-      {/* Desktop row */}
       <tr className="dm-desktop-row">
-        <td style={{ minWidth: 200, verticalAlign: "top" }}>
+        <td style={{ minWidth: 160, verticalAlign: "top" }}>
           <div style={{ fontWeight: 700 }}>
             {row.match.homeTeam} vs {row.match.awayTeam}
-          </div>
-          <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: 2 }}>
-            {row.league}
           </div>
           {row.incomplete && (
             <div
@@ -172,24 +210,34 @@ function DecisionRow({
                 fontWeight: 600,
               }}
             >
-              ⚠ Incomplete sources ({row.sourceCount})
+              ⚠ Incomplete ({row.sourceCount})
             </div>
           )}
         </td>
-        <td style={{ minWidth: 180 }}>{m1 ? <MarketCell market={m1} /> : "—"}</td>
-        <td style={{ minWidth: 180 }}>{m2 ? <MarketCell market={m2} /> : "—"}</td>
-        <td style={{ minWidth: 180 }}>{m3 ? <MarketCell market={m3} /> : "—"}</td>
-        <td style={{ minWidth: 180 }}>
+        <td style={{ minWidth: 100, fontSize: "0.8rem", verticalAlign: "top" }}>
+          {row.league}
+        </td>
+        <td style={{ minWidth: 90, fontSize: "0.8rem", color: "var(--muted)", verticalAlign: "top" }}>
+          {dateTime}
+        </td>
+        <td style={{ minWidth: 160 }}>{m1 ? <MarketCell market={m1} /> : "—"}</td>
+        <td style={{ minWidth: 160 }}>{m2 ? <MarketCell market={m2} /> : "—"}</td>
+        <td style={{ minWidth: 160 }}>{m3 ? <MarketCell market={m3} /> : "—"}</td>
+        <td style={{ minWidth: 160 }}>
           <CombinedOddCell combo={row.bestCombined} />
         </td>
-        <td style={{ minWidth: 110, fontSize: "0.8rem", color: "var(--muted)" }}>
-          {row.batchDisplayId}
+        <td style={{ minWidth: 180 }}>
+          <UserMarketEvalCell evalRow={row.userMarketEval} />
+        </td>
+        <td style={{ minWidth: 90, verticalAlign: "top" }}>
+          <div style={{ ...toneStyle(row.confidenceScore), borderRadius: 10, padding: "0.5rem" }}>
+            <ConfidenceBar confidence={row.confidenceScore} />
+          </div>
         </td>
       </tr>
 
-      {/* Mobile card */}
       <tr className="dm-mobile-row">
-        <td colSpan={6} style={{ padding: "0.5rem 0" }}>
+        <td colSpan={9} style={{ padding: "0.5rem 0" }}>
           <button
             type="button"
             onClick={onToggle}
@@ -209,7 +257,7 @@ function DecisionRow({
                   {row.match.homeTeam} vs {row.match.awayTeam}
                 </div>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                  {row.league} · {row.batchDisplayId}
+                  {row.league} · {dateTime} · conf {row.confidenceScore}%
                   {row.incomplete ? " · ⚠ incomplete" : ""}
                 </div>
               </div>
@@ -233,6 +281,7 @@ function DecisionRow({
                 {m2 && <MarketCell market={m2} />}
                 {m3 && <MarketCell market={m3} />}
                 <CombinedOddCell combo={row.bestCombined} />
+                <UserMarketEvalCell evalRow={row.userMarketEval} />
               </div>
             )}
           </button>
@@ -251,6 +300,7 @@ export function DecisionMakerApp() {
     analysis,
     teamsQuality,
     learnerStats,
+    leaguePriors,
   } = usePredictionLogData();
 
   const [batchId, setBatchId] = useState("");
@@ -279,8 +329,9 @@ export function DecisionMakerApp() {
       analysis,
       teamsQuality,
       learnerStats,
+      leaguePriors,
     });
-  }, [batch, batches, comboSettings, analysis, teamsQuality, learnerStats]);
+  }, [batch, batches, comboSettings, analysis, teamsQuality, learnerStats, leaguePriors]);
 
   const registry = listRegisteredResultPages();
 
@@ -296,8 +347,8 @@ export function DecisionMakerApp() {
     <div>
       <h1 className="page-title">Batch Decision Maker</h1>
       <p className="page-sub">
-        Selects exactly three markets per match from analysis pages, plus a display-only best
-        Combined Odd as a fourth option (does not change the top-3 engine). Never drops fixtures.
+        Exactly five decisions per match: three system markets, one mandatory Combination Odd, and
+        one user-market evaluation. Never drops fixtures.
       </p>
 
       <div className="card" style={{ marginBottom: "1rem" }}>
@@ -359,15 +410,18 @@ export function DecisionMakerApp() {
           </div>
 
           <div className="table-wrap">
-            <table className="data-table dm-table" style={{ minWidth: 1080 }}>
+            <table className="data-table dm-table" style={{ minWidth: 1400 }}>
               <thead>
                 <tr>
-                  <th style={{ width: "18%" }}>Match</th>
-                  <th style={{ width: "18%" }}>Market 1</th>
-                  <th style={{ width: "18%" }}>Market 2</th>
-                  <th style={{ width: "18%" }}>Market 3</th>
-                  <th style={{ width: "18%" }}>Combined Odd</th>
-                  <th style={{ width: "10%" }}>Batch ID</th>
+                  <th>Match</th>
+                  <th>League</th>
+                  <th>Date/Time</th>
+                  <th>1st Best Market</th>
+                  <th>2nd Best Market</th>
+                  <th>3rd Best Market</th>
+                  <th>Mandatory Combination Odd</th>
+                  <th>User Market Evaluation</th>
+                  <th>Confidence Score</th>
                 </tr>
               </thead>
               <tbody>
@@ -375,6 +429,7 @@ export function DecisionMakerApp() {
                   <DecisionRow
                     key={row.match.id}
                     row={row}
+                    batchDate={batch.date}
                     expanded={!!expanded[row.match.id]}
                     onToggle={() =>
                       setExpanded((prev) => ({

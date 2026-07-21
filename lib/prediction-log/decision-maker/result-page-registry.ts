@@ -3,7 +3,6 @@
  * Add new analysis pages here — the engine discovers them automatically.
  */
 import { leanLabel } from "../corners-model";
-import { recommendationLabel as concededLabel } from "../conceded-half-model";
 import { getLeagueMatchupAnalysis } from "../league-matchup-analysis";
 import { LOG_MARKET_MAP, pickOptionsForMarket } from "../markets-config";
 import { matchLeague } from "../match-league";
@@ -87,22 +86,6 @@ function fromHsh(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
       category: "specialized",
       pageId: "highest-scoring-half",
       pageLabel: "Half Goals",
-    },
-  ];
-}
-
-function fromConceded(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
-  const p = ctx.caches.concededByMatchId.get(ctx.match.id);
-  if (!p) return [];
-  return [
-    {
-      marketKey: "conceded_half",
-      label: "Conceded half lean",
-      prediction: concededLabel(p.recommendation),
-      confidence: bandToConfidence(p.confidence, p.topProbability),
-      category: "specialized",
-      pageId: "conceded-half",
-      pageLabel: "Conceded Half",
     },
   ];
 }
@@ -201,18 +184,22 @@ export const RESULT_PAGE_REGISTRY: ResultPageDefinition[] = [
     fetchResults: fromHsh,
   },
   {
-    pageId: "conceded-half",
-    pageLabel: "Conceded Half",
-    href: "/conceded-half-analysis",
-    baseWeight: 0.05,
-    fetchResults: fromConceded,
-  },
-  {
     pageId: "league-analysis",
     pageLabel: "League Analysis",
     href: "/league-analysis",
     baseWeight: 0.15,
     fetchResults: fromLeagueAnalysis,
+  },
+  /**
+   * Discovery-only: 5th Decision Maker slot is built in process-batch.
+   * fetchResults returns [] so this never enters top-3 scoring.
+   */
+  {
+    pageId: "user-market-evaluation",
+    pageLabel: "User Market Evaluation",
+    href: "/decision-maker",
+    baseWeight: 0,
+    fetchResults: () => [],
   },
 ];
 

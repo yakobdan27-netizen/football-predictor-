@@ -1,9 +1,10 @@
 /**
- * Conceded Half Analysis — defensive mirror of half scoring.
+ * Conceded half defence rates — support data for Half Goals (merged UI).
+ * Standalone page redirected to /highest-scoring-half; baselines still feed HSH DA rates.
  *
  * Aggregates goals conceded by half from batch teamStats (opponent HT/FT).
  * Advisory-only match blend (0.5 scored + 0.5 opp conceded) — never blocks picks.
- * Does not alter Half-Comparison Stage A.
+ * Does not alter Half Goals Stage A.
  */
 import { poissonPmf } from "@/lib/predictor/poisson";
 import { standardizeTeamName } from "@/lib/data/team-names";
