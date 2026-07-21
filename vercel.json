@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/fill-telegram-results",
-      "schedule": "0 * * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "functions": {
