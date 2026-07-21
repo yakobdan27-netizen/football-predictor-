@@ -15,6 +15,7 @@ import { matchLeague } from "@/lib/prediction-log/match-league";
 import type { LogMarketKey, LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
 import { sleep } from "./client";
 import {
+  fetchFixtureByIdCached,
   fetchFixtureStatisticsCached,
   fetchFixturesCached,
   seasonAndLeagueForBatchDate,
@@ -41,7 +42,14 @@ export interface SyncResultsSummary {
   unavailable?: boolean;
 }
 
-function matchNeedsSync(match: LogMatch): boolean {
+const FINISHED = new Set(["FT", "AET", "PEN"]);
+const ABANDONED = new Set(["AB", "AWD", "WO", "CANC", "ABD"]);
+
+function statusShort(f: ApiFootballFixture): string {
+  return (f.fixture?.status?.short ?? "").trim().toUpperCase();
+}
+
+export function matchNeedsSync(match: LogMatch): boolean {
   const hg = match.teamStats?.home?.goals;
   const ag = match.teamStats?.away?.goals;
   if (hg == null || ag == null) return true;
@@ -58,15 +66,15 @@ function matchNeedsSync(match: LogMatch): boolean {
   return false;
 }
 
-function batchNeedsSync(batch: PredictionBatch): boolean {
+export function batchNeedsSync(batch: PredictionBatch): boolean {
   return batch.matches.some(matchNeedsSync);
 }
 
 export function indexFixtures(fixtures: ApiFootballFixture[]): Map<string, ApiFootballFixture> {
   const map = new Map<string, ApiFootballFixture>();
   for (const f of fixtures) {
-    const short = f.fixture?.status?.short?.toUpperCase?.() ?? "";
-    if (short !== "FT" && short !== "AET" && short !== "PEN") continue;
+    const short = statusShort(f);
+    if (!FINISHED.has(short)) continue;
     const key = fixturePairKey(f.teams.home.name, f.teams.away.name);
     if (!map.has(key)) {
       map.set(key, f);
@@ -83,7 +91,7 @@ type FetchBucket = {
 };
 
 function bucketForMatch(batch: PredictionBatch, match: LogMatch): FetchBucket {
-  const date = apiDateOnly(batch.date);
+  const date = apiDateOnly(match.matchDate ?? batch.date);
   const league = matchLeague(match, batch.league);
   const leagueId = apiLeagueId(league);
   const season = apiSeasonFromDate(date);
@@ -107,6 +115,75 @@ async function loadFixtureIndex(
   const index = indexFixtures(fixtures);
   cache.set(bucket.key, index);
   return index;
+}
+
+async function lookupFixtureForMatch(
+  batch: PredictionBatch,
+  match: LogMatch,
+  fixtureCache: Map<string, Map<string, ApiFootballFixture>>,
+  byIdCache: Map<number, ApiFootballFixture | null>
+): Promise<{ fixture: ApiFootballFixture | null; skip: boolean; status?: string }> {
+  if (match.apiFixtureId != null) {
+    let fixture = byIdCache.get(match.apiFixtureId);
+    if (fixture === undefined) {
+      fixture = await fetchFixtureByIdCached(match.apiFixtureId);
+      byIdCache.set(match.apiFixtureId, fixture);
+      await sleep(100);
+    }
+    if (!fixture) return { fixture: null, skip: false };
+    const short = statusShort(fixture);
+    if (ABANDONED.has(short)) {
+      return { fixture, skip: true, status: short };
+    }
+    if (!FINISHED.has(short)) {
+      return { fixture, skip: true, status: short };
+    }
+    return { fixture, skip: false, status: short };
+  }
+
+  const bucket = bucketForMatch(batch, match);
+  let fixtureIndex = await loadFixtureIndex(bucket, fixtureCache);
+  if (
+    fixtureIndex.size === 0 &&
+    bucket.leagueId != null &&
+    !fixtureCache.has(`all:${bucket.season}:${bucket.date}`)
+  ) {
+    fixtureIndex = await loadFixtureIndex(
+      {
+        key: `all:${bucket.season}:${bucket.date}`,
+        date: bucket.date,
+        season: bucket.season,
+        leagueId: null,
+      },
+      fixtureCache
+    );
+  }
+  const key = fixturePairKey(match.homeTeam, match.awayTeam);
+  return { fixture: fixtureIndex.get(key) ?? null, skip: false };
+}
+
+function applyFixtureSync(
+  match: LogMatch,
+  fixture: ApiFootballFixture,
+  stats: ApiFootballStatBlock[] | null,
+  overwrite: boolean
+): { merged: LogMatch; conflicts: ApiFieldConflict[] } {
+  const conflicts = overwrite
+    ? []
+    : detectApiConflicts(match, fixture, stats);
+  const updates = mapFixtureToMatchUpdates(fixture, stats, match, { overwrite });
+  let merged = mergeMatchUpdates(match, updates);
+  merged = {
+    ...merged,
+    apiFixtureId: match.apiFixtureId ?? fixture.fixture.id,
+    fixtureStatus: statusShort(fixture),
+    matchDate: match.matchDate ?? apiDateOnly(fixture.fixture.date),
+    homeApiTeamId: match.homeApiTeamId ?? fixture.teams.home.id,
+    awayApiTeamId: match.awayApiTeamId ?? fixture.teams.away.id,
+  };
+  merged = applyTeamStatsSync(merged);
+  merged = scoreMatch(merged);
+  return { merged, conflicts };
 }
 
 export async function syncPredictionLogResults(
@@ -141,6 +218,7 @@ export async function syncPredictionLogResults(
   if (!pendingBatches.length) return summary;
 
   const fixtureCache = new Map<string, Map<string, ApiFootballFixture>>();
+  const byIdCache = new Map<number, ApiFootballFixture | null>();
 
   for (const batch of pendingBatches) {
     let batchChanged = false;
@@ -152,30 +230,12 @@ export async function syncPredictionLogResults(
         continue;
       }
 
-      const bucket = bucketForMatch(batch, match);
-      let fixtureIndex: Map<string, ApiFootballFixture>;
+      let lookup: Awaited<ReturnType<typeof lookupFixtureForMatch>>;
       try {
-        fixtureIndex = await loadFixtureIndex(bucket, fixtureCache);
-        // If league-scoped fetch found nothing, try date-only once for mixed naming
-        if (
-          fixtureIndex.size === 0 &&
-          bucket.leagueId != null &&
-          !fixtureCache.has(`all:${bucket.season}:${bucket.date}`)
-        ) {
-          const fallback = await loadFixtureIndex(
-            {
-              key: `all:${bucket.season}:${bucket.date}`,
-              date: bucket.date,
-              season: bucket.season,
-              leagueId: null,
-            },
-            fixtureCache
-          );
-          fixtureIndex = fallback;
-        }
+        lookup = await lookupFixtureForMatch(batch, match, fixtureCache, byIdCache);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        summary.errors.push(`${batch.batchName} (${bucket.date}): ${msg}`);
+        summary.errors.push(`${batch.batchName}: ${msg}`);
         if (msg.includes("API_FOOTBALL_KEY") || /rate|limit|quota/i.test(msg)) {
           summary.unavailable = true;
         }
@@ -183,8 +243,17 @@ export async function syncPredictionLogResults(
         continue;
       }
 
-      const key = fixturePairKey(match.homeTeam, match.awayTeam);
-      const fixture = fixtureIndex.get(key);
+      if (lookup.skip) {
+        if (lookup.status && lookup.status !== match.fixtureStatus) {
+          updatedMatches.push({ ...match, fixtureStatus: lookup.status });
+          batchChanged = true;
+        } else {
+          updatedMatches.push(match);
+        }
+        continue;
+      }
+
+      const fixture = lookup.fixture;
       if (!fixture) {
         summary.matchesNotFound++;
         updatedMatches.push(match);
@@ -197,15 +266,8 @@ export async function syncPredictionLogResults(
         await sleep(150);
       }
 
-      const conflicts = detectApiConflicts(match, fixture, stats);
+      const { merged, conflicts } = applyFixtureSync(match, fixture, stats, false);
       if (conflicts.length) summary.conflicts.push(...conflicts);
-
-      const updates = mapFixtureToMatchUpdates(fixture, stats, match, {
-        overwrite: false,
-      });
-      let merged = mergeMatchUpdates(match, updates);
-      merged = applyTeamStatsSync(merged);
-      merged = scoreMatch(merged);
 
       if (JSON.stringify(merged) !== JSON.stringify(match)) {
         batchChanged = true;
@@ -282,6 +344,7 @@ export async function replaceMatchResultsFromApi(
 
   const want = new Set(matchIds);
   const fixtureCache = new Map<string, Map<string, ApiFootballFixture>>();
+  const byIdCache = new Map<number, ApiFootballFixture | null>();
   let changed = false;
   const updatedMatches: LogMatch[] = [];
 
@@ -291,10 +354,9 @@ export async function replaceMatchResultsFromApi(
       continue;
     }
 
-    const bucket = bucketForMatch(batch, match);
-    let fixtureIndex: Map<string, ApiFootballFixture>;
+    let lookup: Awaited<ReturnType<typeof lookupFixtureForMatch>>;
     try {
-      fixtureIndex = await loadFixtureIndex(bucket, fixtureCache);
+      lookup = await lookupFixtureForMatch(batch, match, fixtureCache, byIdCache);
     } catch (e) {
       summary.errors.push(e instanceof Error ? e.message : String(e));
       summary.unavailable = true;
@@ -302,18 +364,18 @@ export async function replaceMatchResultsFromApi(
       continue;
     }
 
-    const fixture = fixtureIndex.get(fixturePairKey(match.homeTeam, match.awayTeam));
-    if (!fixture) {
+    if (lookup.skip || !lookup.fixture) {
       summary.matchesNotFound++;
-      updatedMatches.push(match);
+      updatedMatches.push(
+        lookup.status
+          ? { ...match, fixtureStatus: lookup.status }
+          : match
+      );
       continue;
     }
 
-    const stats = await fetchFixtureStatisticsCached(fixture.fixture.id);
-    const updates = mapFixtureToMatchUpdates(fixture, stats, match, { overwrite: true });
-    let merged = mergeMatchUpdates(match, updates);
-    merged = applyTeamStatsSync(merged);
-    merged = scoreMatch(merged);
+    const stats = await fetchFixtureStatisticsCached(lookup.fixture.fixture.id);
+    const { merged } = applyFixtureSync(match, lookup.fixture, stats, true);
     changed = true;
     summary.matchesSynced++;
     updatedMatches.push(merged);

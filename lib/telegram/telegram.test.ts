@@ -85,6 +85,10 @@ test("buildTelegramBatch stores market prediction and odds", () => {
         awayTeam: "Chelsea",
         league: "Premier League",
         date: "2026-07-20",
+        apiFixtureId: 999,
+        fixtureStatus: "NS",
+        homeApiTeamId: 42,
+        awayApiTeamId: 49,
         marketKey: "1x2",
         prediction: "home",
         odds: 1.85,
@@ -95,6 +99,15 @@ test("buildTelegramBatch stores market prediction and odds", () => {
   assert.equal(b.source, "telegram");
   assert.equal(b.matches[0]!.predictions["1x2"]?.prediction, "home");
   assert.equal(b.matches[0]!.predictions["1x2"]?.odds, 1.85);
+  assert.equal(b.matches[0]!.apiFixtureId, 999);
+  assert.equal(b.matches[0]!.matchDate, "2026-07-20");
+});
+
+test("parseBulkMatchText allows missing date when defaults omit date", () => {
+  const parsed = parseBulkMatchText("Arsenal vs Chelsea", {});
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(parsed.matches[0]!.date, "");
 });
 
 test("formatDecisionMessages includes 5 decisions and warn marker", () => {

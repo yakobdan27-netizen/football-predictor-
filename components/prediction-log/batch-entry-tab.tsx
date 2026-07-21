@@ -54,6 +54,7 @@ import {
   evaluateStopLoss,
 } from "@/lib/prediction-log/strategy-rules";
 import { DuplicateBlockModal } from "./duplicate-block-modal";
+import { deriveBatchDateFromMatches, todayIsoDate } from "@/lib/prediction-log/batch-date";
 
 function emptyMatch(settings: CombinedOddsSettings, league: string): LogMatch {
   return {
@@ -109,8 +110,8 @@ export function BatchEntryTab({
   onSaved,
   onViewBatch,
 }: BatchEntryTabProps) {
-  const today = new Date().toISOString().slice(0, 10);
-  const [date, setDate] = useState(today);
+  /** Local date for Livescore import only — not the batch gameday. */
+  const [livescoreImportDate, setLivescoreImportDate] = useState(todayIsoDate);
   const [defaultLeague, setDefaultLeague] = useState<string>(LEAGUE_OPTIONS[0]);
   const [fixtureLeague, setFixtureLeague] = useState<string>(LEAGUE_OPTIONS[0]);
   const [batchName, setBatchName] = useState("");
@@ -123,6 +124,7 @@ export function BatchEntryTab({
   const [loadingFixtures, setLoadingFixtures] = useState(false);
   const [fixtureMsg, setFixtureMsg] = useState<string | null>(null);
   const [duplicateHits, setDuplicateHits] = useState<DuplicateHit[] | null>(null);
+  const stubDate = deriveBatchDateFromMatches(matches);
 
   function addMatch() {
     setMatches((prev) => [...prev, emptyMatch(comboSettings, defaultLeague)]);
@@ -136,7 +138,11 @@ export function BatchEntryTab({
       const res = await fetch("/api/livescore-fixtures", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, league: fixtureLeague, competition: fixtureLeague }),
+        body: JSON.stringify({
+          date: livescoreImportDate,
+          league: fixtureLeague,
+          competition: fixtureLeague,
+        }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
@@ -262,7 +268,7 @@ export function BatchEntryTab({
       const batchLeague = deriveBatchLeague(normalizedMatches, defaultLeague);
       const stubBatch: PredictionBatch = {
         id: "freeze-stub",
-        date,
+        date: stubDate,
         league: batchLeague,
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
@@ -274,7 +280,7 @@ export function BatchEntryTab({
         freezeComboProbabilities(
           normalizedMatches,
           batchLeague,
-          date,
+          stubDate,
           clubRecords,
           clubIndex,
           allExisting
@@ -287,7 +293,7 @@ export function BatchEntryTab({
 
       const batch: PredictionBatch = {
         id: newId(),
-        date,
+        date: stubDate,
         league: batchLeague,
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
@@ -304,6 +310,7 @@ export function BatchEntryTab({
         return;
       }
 
+      // Server resolves fixtures and sets matchDate / apiFixtureId / batch.date
       await upsertBatch(batch);
       const all = loadBatches();
       const savedBatch = all.find((b) => b.id === batch.id) ?? batch;
@@ -347,18 +354,10 @@ export function BatchEntryTab({
               placeholder="PL Matchday 34"
             />
           </div>
-          <div>
-            <label className="label">Date</label>
-            <input
-              className="input"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
           <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
-            Use the League column on each match row to mix competitions (e.g. Premier League + La Liga). The
-            dropdown above only sets the default for new rows and Livescore import.
+            Match dates are set automatically from API-Football when you save. Use the League column on each
+            row to mix competitions. The controls below only set the default for new rows and optional
+            Livescore import.
           </p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
             <select
@@ -378,16 +377,24 @@ export function BatchEntryTab({
                 </option>
               ))}
             </select>
+            <input
+              className="input"
+              type="date"
+              value={livescoreImportDate}
+              onChange={(e) => setLivescoreImportDate(e.target.value)}
+              aria-label="Livescore import date"
+              style={{ maxWidth: "160px" }}
+            />
             <button
               type="button"
               className="btn btn-secondary"
-              disabled={loadingFixtures || !date}
+              disabled={loadingFixtures || !livescoreImportDate}
               onClick={() => void loadFixturesFromLivescore()}
             >
               {loadingFixtures ? "Loading fixtures…" : "Load fixtures from Livescore"}
             </button>
             <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-              Import fixtures for the selected league and date (manual entry always works).
+              Optional Livescore slate import (date is for import only). Manual team entry always works.
             </span>
           </div>
           {fixtureMsg && (
@@ -400,7 +407,7 @@ export function BatchEntryTab({
         mode="entry"
         matches={matches}
         defaultLeague={defaultLeague}
-        date={date}
+        date={stubDate}
         comboSettings={comboSettings}
         bankrollStrategy={settings.bankrollStrategy}
         teamsQuality={teamsQuality}
@@ -413,7 +420,7 @@ export function BatchEntryTab({
         mode="entry"
         matches={matches}
         defaultLeague={defaultLeague}
-        date={date}
+        date={stubDate}
         batchName={batchName}
         comboSettings={comboSettings}
         bankrollStrategy={settings.bankrollStrategy}

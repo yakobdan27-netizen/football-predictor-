@@ -146,9 +146,15 @@ export interface LogMatch {
   /**
    * True per-match date (YYYY-MM-DD), for batches that bundle many matches spanning a
    * date range under one `batch.date` (e.g. bulk reference-fixture imports). Falls back
-   * to `batch.date` when unset — normal single-gameday batches don't need this.
+   * to `batch.date` when unset. Set automatically from API-Football fixture kickoff.
    */
   matchDate?: string;
+  /** API-Football fixture id when resolved from team pair. */
+  apiFixtureId?: number;
+  /** API-Football status short code (NS, FT, PST, …). */
+  fixtureStatus?: string;
+  homeApiTeamId?: number;
+  awayApiTeamId?: number;
   homeClubId?: string;
   awayClubId?: string;
   predictions: Partial<Record<LogMarketKey, MarketPrediction>>;

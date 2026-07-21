@@ -19,6 +19,11 @@ export const KV_KEYS = {
   /** Cached API-Football fixture statistics by fixture id. */
   apiFootballStats: (fixtureId: number | string) =>
     `apiFootball:stats:v1:${fixtureId}`,
+  /** Team name → API-Football team id map for a league+season. */
+  apiFootballTeamMap: (leagueId: number, season: number) =>
+    `apiFootball:teamMap:v1:${leagueId}:${season}`,
+  /** Short-TTL cache for upcoming fixture resolve by pair. */
+  apiFootballResolve: (key: string) => `apiFootball:resolve:v1:${key}`,
   /** Bulk last-5 scrape progress (failed leagues for retry). */
   livescoreBulkProgress: "livescore:bulk:v1:progress",
   /** Saved reco walk-forward backtest run ids (newest first). */

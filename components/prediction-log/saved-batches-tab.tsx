@@ -708,7 +708,11 @@ export function SavedBatchesTab({
             >
               <strong>{batch.batchName}</strong>
               <div style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "0.25rem" }}>
-                {batchLeagueDisplay(batch)} · {batch.date} · {batch.matches.length} matches · {scoredLabel}
+                {batchLeagueDisplay(batch)} · {batch.date}
+                {batch.matches.some((m) => m.matchDate && m.matchDate !== batch.date)
+                  ? ` (per-match dates)`
+                  : ""}{" "}
+                · {batch.matches.length} matches · {scoredLabel}
                 {" · "}
                 <span style={{ color: batch.source === "telegram" ? "var(--accent)" : "inherit" }}>
                   {batch.source === "telegram" ? "Telegram" : "Web"}

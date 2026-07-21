@@ -16,7 +16,6 @@ export interface TelegramUser {
 export type TelegramSessionStep =
   | "idle"
   | "await_batch_name"
-  | "await_batch_date"
   | "await_league"
   | "await_home"
   | "await_away"
@@ -32,7 +31,12 @@ export interface TelegramDraftMatch {
   homeTeam: string;
   awayTeam: string;
   league: string;
+  /** Fixture kickoff date YYYY-MM-DD from API-Football. */
   date: string;
+  apiFixtureId?: number;
+  fixtureStatus?: string;
+  homeApiTeamId?: number;
+  awayApiTeamId?: number;
   marketKey?: LogMarketKey;
   prediction?: string;
   line?: number;
@@ -43,13 +47,16 @@ export interface TelegramDraftMatch {
 export interface TelegramSession {
   step: TelegramSessionStep;
   draftBatchName?: string;
-  /** Shared date applied to every match in this batch. */
-  draftBatchDate?: string;
   draftMatches: TelegramDraftMatch[];
   /** In-progress match (before odds confirm). */
   draftLeague?: string;
   draftHome?: string;
   draftAway?: string;
+  draftMatchDate?: string;
+  draftApiFixtureId?: number;
+  draftFixtureStatus?: string;
+  draftHomeApiTeamId?: number;
+  draftAwayApiTeamId?: number;
   draftMarketKey?: LogMarketKey;
   draftLine?: number;
   draftPrediction?: string;

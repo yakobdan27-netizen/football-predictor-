@@ -8,7 +8,11 @@ import { normalizeApiTeamName, fixturePairKey } from "./team-resolve";
 
 export interface ApiFootballFixture {
   fixture: { id: number; date: string; status: { short: string } };
-  teams: { home: { name: string }; away: { name: string } };
+  league?: { id?: number; name?: string };
+  teams: {
+    home: { id?: number; name: string };
+    away: { id?: number; name: string };
+  };
   goals: { home: number | null; away: number | null };
   score: {
     halftime?: { home: number | null; away: number | null };

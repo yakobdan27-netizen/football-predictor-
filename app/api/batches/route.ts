@@ -12,6 +12,7 @@ import { recomputeLlSeasonCards } from "@/lib/prediction-log/ll-season-store";
 import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
 import { batchHasScoredResults } from "@/lib/prediction-log/scoring";
 import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
+import { attachFixturesToBatch } from "@/lib/football-api/resolve-upcoming-fixture";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
 export async function GET() {
@@ -34,14 +35,35 @@ export async function DELETE() {
   }
 }
 
+function batchNeedsFixtureResolve(batch: PredictionBatch): boolean {
+  return batch.matches.some(
+    (m) =>
+      Boolean(m.homeTeam?.trim() && m.awayTeam?.trim()) &&
+      (m.apiFixtureId == null || !m.matchDate)
+  );
+}
+
 export async function POST(request: Request) {
   try {
-    const batch = (await request.json()) as PredictionBatch;
+    let batch = (await request.json()) as PredictionBatch;
     if (!batch?.id || !batch.batchName) {
       return NextResponse.json({ error: "Invalid batch" }, { status: 400 });
     }
+
     const allBatches = await loadAllBatches();
     const isNewBatch = !allBatches.some((b) => b.id === batch.id);
+
+    // Resolve fixtures on create only — updates (result fill, edits) must not
+    // re-query upcoming fixtures or they can block saving finished matches.
+    if (isNewBatch && batchNeedsFixtureResolve(batch)) {
+      try {
+        batch = await attachFixturesToBatch(batch);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Fixture resolve failed";
+        return NextResponse.json({ error: msg }, { status: 400 });
+      }
+    }
+
     if (isNewBatch) {
       const duplicates = findCrossBatchDuplicates({
         incomingBatch: batch,

@@ -203,6 +203,10 @@ export function buildTelegramBatch(params: {
     awayTeam: string;
     league: string;
     date: string;
+    apiFixtureId?: number;
+    fixtureStatus?: string;
+    homeApiTeamId?: number;
+    awayApiTeamId?: number;
     marketKey?: import("@/lib/prediction-log/types").LogMarketKey;
     prediction?: string;
     line?: number;
@@ -241,6 +245,10 @@ export function buildTelegramBatch(params: {
         awayTeam: m.awayTeam,
         league: m.league,
         matchDate: m.date,
+        apiFixtureId: m.apiFixtureId,
+        fixtureStatus: m.fixtureStatus,
+        homeApiTeamId: m.homeApiTeamId,
+        awayApiTeamId: m.awayApiTeamId,
         predictions,
         actualResults: {},
         scored: {},

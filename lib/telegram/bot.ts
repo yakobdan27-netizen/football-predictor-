@@ -6,8 +6,10 @@ import {
 } from "@/lib/prediction-log/markets-config";
 import { isValidOdds } from "@/lib/prediction-log/odds-bands";
 import { saveBatch } from "@/lib/prediction-log/club-store";
+import { deriveBatchDateFromMatches } from "@/lib/prediction-log/batch-date";
 import { deriveBatchLeague } from "@/lib/prediction-log/match-league";
 import type { LogMarketKey } from "@/lib/prediction-log/types";
+import { attachFixturesToBatch, resolveUpcomingFixture } from "@/lib/football-api/resolve-upcoming-fixture";
 import {
   buildTelegramBatch,
   formatDecisionMessages,
@@ -18,7 +20,6 @@ import {
   anotherKeyboard,
   batchesKeyboard,
   confirmKeyboard,
-  dateKeyboard,
   fixtureKeyboard,
   leagueKeyboard,
   lineKeyboard,
@@ -30,7 +31,7 @@ import {
   oddsKeyboard,
   pickKeyboard,
 } from "@/lib/telegram/entry-keyboards";
-import { listLeagues, listTeams, isValidIsoDate, todayIsoDate } from "@/lib/telegram/team-resolve";
+import { listLeagues, listTeams } from "@/lib/telegram/team-resolve";
 import { TELEGRAM_MAX_BATCH_MATCHES } from "@/lib/telegram/parse-bulk-matches";
 import type { TelegramDraftMatch, TelegramSession, TelegramSessionStep, TelegramUser } from "@/lib/telegram/types";
 import { listBatchesForUser } from "@/lib/telegram/ownership";
@@ -101,7 +102,7 @@ async function sessionOrEmpty(telegramId: string): Promise<TelegramSession> {
 }
 
 function inCreateFlow(session: TelegramSession): boolean {
-  return Boolean(session.draftBatchName && session.draftBatchDate);
+  return Boolean(session.draftBatchName);
 }
 
 /** Soft-resume: keep create flow alive when user taps an older keyboard. */
@@ -232,6 +233,11 @@ function clearMatchDraft(session: TelegramSession): void {
   session.draftLeague = undefined;
   session.draftHome = undefined;
   session.draftAway = undefined;
+  session.draftMatchDate = undefined;
+  session.draftApiFixtureId = undefined;
+  session.draftFixtureStatus = undefined;
+  session.draftHomeApiTeamId = undefined;
+  session.draftAwayApiTeamId = undefined;
   session.draftMarketKey = undefined;
   session.draftLine = undefined;
   session.draftPrediction = undefined;
@@ -241,7 +247,8 @@ function clearMatchDraft(session: TelegramSession): void {
 }
 
 function formatDraftLine(m: TelegramDraftMatch): string {
-  const head = `${m.homeTeam} vs ${m.awayTeam} — ${m.league}`;
+  const dateBit = m.date ? ` · ${m.date}` : "";
+  const head = `${m.homeTeam} vs ${m.awayTeam} — ${m.league}${dateBit}`;
   if (!m.marketKey || !m.prediction || m.odds == null) return head;
   const def = LOG_MARKET_MAP[m.marketKey];
   const pick =
@@ -389,7 +396,10 @@ export function getTelegramBot(): Telegraf {
 
   bot.action(CB.dateToday, async (ctx) => {
     if (!(await gate(ctx))) return;
-    await setBatchDate(ctx, todayIsoDate());
+    await ctx.reply(
+      "Match dates are set automatically from fixtures. Tap Create Batch and enter a name.",
+      mainMenuKeyboard()
+    );
   });
 
   bot.action(/^lg:(\d+)$/, async (ctx) => {
@@ -528,11 +538,40 @@ export function getTelegramBot(): Telegraf {
     session.draftMarketKey = undefined;
     session.draftLine = undefined;
     session.draftPrediction = undefined;
+    await saveSession(tgId, session);
+    await ctx.reply(`Looking up fixture…\n🏠 ${session.draftHome}\n✈️ ${team}`);
+    const resolved = await resolveUpcomingFixture({
+      homeTeam: session.draftHome,
+      awayTeam: team,
+      league: session.draftLeague,
+    });
+    if (!resolved.ok) {
+      session.draftAway = undefined;
+      await saveSession(tgId, session);
+      const sug =
+        resolved.error.suggestions?.length
+          ? `\nSuggestions: ${resolved.error.suggestions.join(", ")}`
+          : "";
+      await ctx.reply(
+        `${resolved.error.message}${sug}\n\nPick a different away club.`,
+        fixtureKeyboard({
+          league: session.draftLeague,
+          page: session.listPage ?? 0,
+          letter: session.teamLetter,
+          selectedHome: session.draftHome,
+        })
+      );
+      return;
+    }
+    session.draftMatchDate = resolved.fixture.matchDate;
+    session.draftApiFixtureId = resolved.fixture.apiFixtureId;
+    session.draftFixtureStatus = resolved.fixture.fixtureStatus;
+    session.draftHomeApiTeamId = resolved.fixture.homeApiTeamId;
+    session.draftAwayApiTeamId = resolved.fixture.awayApiTeamId;
     session.step = "await_market";
     await saveSession(tgId, session);
-    await editWizard(
-      ctx,
-      `✅ Fixture\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
+    await ctx.reply(
+      `✅ Fixture · ${resolved.fixture.matchDate}\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
       marketKeyboard(0)
     );
   });
@@ -786,22 +825,9 @@ export function getTelegramBot(): Telegraf {
         return;
       }
       session.draftBatchName = text.slice(0, 80);
-      session.step = "await_batch_date";
-      await saveSession(tgId, session);
-      await ctx.reply(
-        "Batch date for all matches? Send YYYY-MM-DD or tap Today.",
-        dateKeyboard()
-      );
-      return;
-    }
-
-    if (session.step === "await_batch_date") {
-      if (!isValidIsoDate(text) && text.toLowerCase() !== "today") {
-        await ctx.reply("Send YYYY-MM-DD or tap Today.", dateKeyboard());
-        return;
-      }
-      const date = text.toLowerCase() === "today" ? todayIsoDate() : text.trim();
-      await setBatchDate(ctx, date);
+      session.draftMatches = [];
+      clearMatchDraft(session);
+      await startNextMatch(ctx, session, tgId);
       return;
     }
 
@@ -816,22 +842,6 @@ export function getTelegramBot(): Telegraf {
 
   botSingleton = bot;
   return bot;
-}
-
-async function setBatchDate(ctx: Context, date: string) {
-  const tgId = String(ctx.from!.id);
-  const session = await sessionOrEmpty(tgId);
-  if (!session.draftBatchName) {
-    await ctx.reply(
-      "No active batch in progress. Tap Create Batch to start.",
-      mainMenuKeyboard()
-    );
-    return;
-  }
-  session.draftBatchDate = date;
-  session.draftMatches = [];
-  clearMatchDraft(session);
-  await startNextMatch(ctx, session, tgId);
 }
 
 async function showFixturePage(ctx: Context, page: number) {
@@ -891,7 +901,8 @@ async function commitMatchWithOdds(
   odds: number
 ) {
   if (
-    !session.draftBatchDate ||
+    !session.draftMatchDate ||
+    !session.draftApiFixtureId ||
     !session.draftLeague ||
     !session.draftHome ||
     !session.draftAway ||
@@ -912,7 +923,11 @@ async function commitMatchWithOdds(
     homeTeam: session.draftHome,
     awayTeam: session.draftAway,
     league: session.draftLeague,
-    date: session.draftBatchDate,
+    date: session.draftMatchDate,
+    apiFixtureId: session.draftApiFixtureId,
+    fixtureStatus: session.draftFixtureStatus,
+    homeApiTeamId: session.draftHomeApiTeamId,
+    awayApiTeamId: session.draftAwayApiTeamId,
     marketKey: session.draftMarketKey as LogMarketKey,
     prediction: session.draftPrediction,
     line: session.draftLine,
@@ -970,14 +985,25 @@ async function saveDraftBatch(ctx: Context, user: TelegramUser) {
       scored: {},
     }))
   );
-  const date = session.draftBatchDate || session.draftMatches[0]!.date;
-  const batch = buildTelegramBatch({
+  const date = deriveBatchDateFromMatches(
+    session.draftMatches.map((m) => ({ matchDate: m.date }))
+  );
+  let batch = buildTelegramBatch({
     ownerUserId: user.id,
     batchName: session.draftBatchName,
     date,
     league,
     matches: session.draftMatches,
   });
+  try {
+    batch = await attachFixturesToBatch(batch);
+  } catch (e) {
+    await ctx.reply(
+      e instanceof Error ? e.message : "Could not resolve fixtures for this batch.",
+      mainMenuKeyboard()
+    );
+    return;
+  }
   await saveBatch(batch);
   await addUserBatchId(user.id, batch.id);
   await clearSession(tgId);
@@ -994,7 +1020,7 @@ function helpText(): string {
     "ℹ️ Help",
     "",
     "Create Batch:",
-    "1) Name + date + league",
+    "1) Name + league (dates come from fixtures)",
     "2) One club list: 🏠 left = HOME, ✈️ right = AWAY",
     "3) Market → line → pick → odds",
     `4) Up to ${TELEGRAM_MAX_BATCH_MATCHES} matches, then Save`,

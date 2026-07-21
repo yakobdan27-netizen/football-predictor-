@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/fill-telegram-results",
-      "schedule": "0 8 * * *"
+      "schedule": "0 * * * *"
     }
   ],
   "functions": {
@@ -53,6 +53,9 @@
       "maxDuration": 60
     },
     "app/api/cron/fill-telegram-results/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/fixtures/resolve/route.ts": {
       "maxDuration": 60
     },
     "app/api/ml-model/route.ts": {

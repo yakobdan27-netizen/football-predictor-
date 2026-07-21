@@ -36,7 +36,7 @@ export type BulkParseResult = BulkParseOk | BulkParseErr;
  */
 export function parseBulkMatchText(
   text: string,
-  defaults: { date: string; league?: string }
+  defaults: { date?: string; league?: string } = {}
 ): BulkParseResult {
   const lines = text
     .split(/\r?\n/)
@@ -70,8 +70,8 @@ export function parseBulkMatchText(
       continue;
     }
 
-    const date = parsed.date || defaults.date;
-    if (!isValidIsoDate(date)) {
+    const date = parsed.date || defaults.date || "";
+    if (date && !isValidIsoDate(date)) {
       errors.push(`Line ${lineNo}: invalid date "${date}". Use YYYY-MM-DD.`);
       continue;
     }
