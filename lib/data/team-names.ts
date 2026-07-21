@@ -88,7 +88,6 @@ export const TEAM_ALIASES: Record<string, string> = {
   Leverkusen: "Leverkusen",
   "VfB Stuttgart": "Stuttgart",
   Stuttgart: "Stuttgart",
-  "Bayern München": "Bayern Munich",
   "FC Bayern München": "Bayern Munich",
   "FC Bayern Munich": "Bayern Munich",
   "1. FC Köln": "FC Koln",
