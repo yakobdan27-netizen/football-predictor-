@@ -1,4 +1,8 @@
-import { readAdminSessionFromCookies, getAdminSecret } from "@/lib/admin/auth";
+import {
+  ADMIN_SECRET_MISSING_MSG,
+  getAdminSecret,
+  readAdminSessionFromCookies,
+} from "@/lib/admin/auth";
 import { AdminUnlockForm } from "@/components/admin/admin-unlock-form";
 
 export default async function AdminLayout({
@@ -12,9 +16,7 @@ export default async function AdminLayout({
         <h1 className="page-title" style={{ fontSize: "1.25rem" }}>
           Admin unavailable
         </h1>
-        <p className="page-sub">
-          Set <code>ADMIN_SECRET</code> in the environment, then reload.
-        </p>
+        <p className="page-sub">{ADMIN_SECRET_MISSING_MSG}</p>
       </div>
     );
   }

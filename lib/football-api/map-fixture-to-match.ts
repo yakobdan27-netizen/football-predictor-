@@ -234,6 +234,7 @@ export function detectApiConflicts(
 /**
  * Build API-sourced updates. Never overwrites existing manual teamStats / actuals
  * unless `overwrite` is true (Replace action).
+ * Manual FT settlements are never clobbered on auto-sync (`overwrite` false).
  */
 export function mapFixtureToMatchUpdates(
   fixture: ApiFootballFixture,
@@ -251,12 +252,24 @@ export function mapFixtureToMatchUpdates(
   const htag = ht?.away;
   const hasHt = hthg != null && htag != null;
 
-  const actualResults: Partial<Record<LogMarketKey, MarketActual>> = hasHt
-    ? applyHalfTimeGoalsToActuals(match, hg, ag, hthg!, htag!, { overwrite })
-    : {
-        ...match.actualResults,
-        ...applyGoalsToActuals(match, hg, ag, { overwrite }),
-      };
+  const hasManualFt =
+    match.resultSource === "manual" &&
+    match.teamStats?.home?.goals != null &&
+    match.teamStats?.away?.goals != null &&
+    Number.isFinite(match.teamStats.home.goals) &&
+    Number.isFinite(match.teamStats.away.goals);
+
+  /** Auto-sync must not replace a manual settlement's goals / HT / resultSource. */
+  const protectManual = !overwrite && hasManualFt;
+
+  const actualResults: Partial<Record<LogMarketKey, MarketActual>> = protectManual
+    ? { ...match.actualResults }
+    : hasHt
+      ? applyHalfTimeGoalsToActuals(match, hg, ag, hthg!, htag!, { overwrite })
+      : {
+          ...match.actualResults,
+          ...applyGoalsToActuals(match, hg, ag, { overwrite }),
+        };
 
   let teamStats: MatchTeamStats | undefined = match.teamStats
     ? {
@@ -280,6 +293,7 @@ export function mapFixtureToMatchUpdates(
     value: number | null | undefined
   ) => {
     if (value == null) return;
+    if (protectManual) return;
     if (!overwrite && teamStats![side][field] != null) return;
     teamStats![side][field] = value;
   };
@@ -289,7 +303,7 @@ export function mapFixtureToMatchUpdates(
   if (hasHt) {
     setGoal("home", "firstHalfGoals", hthg);
     setGoal("away", "firstHalfGoals", htag);
-    if (overwrite || !teamStats.firstHalfResult) {
+    if (!protectManual && (overwrite || !teamStats.firstHalfResult)) {
       teamStats.firstHalfResult = ftResult(hthg, htag);
     }
   }
@@ -321,7 +335,9 @@ export function mapFixtureToMatchUpdates(
   return {
     actualResults,
     teamStats,
-    resultSource: match.resultSource ?? "api-football",
+    resultSource: overwrite
+      ? "api-football"
+      : (match.resultSource ?? "api-football"),
   };
 }
 

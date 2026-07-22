@@ -145,6 +145,26 @@ const overwritten = mapFixtureToMatchUpdates(sampleFixture, reversedStats, withM
 });
 assert.equal(overwritten.teamStats?.home?.goals, 2);
 assert.equal(overwritten.teamStats?.home?.corners, 7);
+assert.equal(overwritten.resultSource, "api-football");
+
+const manualSettled: LogMatch = {
+  ...baseMatch,
+  resultSource: "manual",
+  actualResults: { "1x2": { actual: "away" } },
+  teamStats: {
+    home: { goals: 0, firstHalfGoals: 0, corners: 3 },
+    away: { goals: 1, firstHalfGoals: 0, corners: 2 },
+  },
+};
+const keepManual = mapFixtureToMatchUpdates(sampleFixture, reversedStats, manualSettled);
+assert.equal(keepManual.resultSource, "manual");
+assert.equal(keepManual.teamStats?.home?.goals, 0);
+assert.equal(keepManual.teamStats?.away?.goals, 1);
+assert.equal(keepManual.teamStats?.home?.firstHalfGoals, 0);
+assert.equal(keepManual.actualResults?.["1x2"]?.actual, "away");
+// Empty stats fields may still fill; corners already set stay.
+assert.equal(keepManual.teamStats?.home?.corners, 3);
+assert.equal(keepManual.teamStats?.home?.totalShots, 14);
 
 const parsed = parseFixtureStatistics(
   reversedStats,

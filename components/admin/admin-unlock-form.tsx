@@ -20,10 +20,14 @@ export function AdminUnlockForm() {
         body: JSON.stringify({ password }),
       });
       const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Unlock failed");
+      if (!res.ok) {
+        throw new Error(data.error ?? "Admin authentication required");
+      }
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unlock failed");
+      setError(
+        err instanceof Error ? err.message : "Admin authentication required"
+      );
     } finally {
       setBusy(false);
     }
@@ -32,11 +36,9 @@ export function AdminUnlockForm() {
   return (
     <div className="card" style={{ maxWidth: 420, margin: "2rem auto" }}>
       <h1 className="page-title" style={{ fontSize: "1.25rem" }}>
-        Admin unlock
+        Admin authentication required
       </h1>
-      <p className="page-sub">
-        Enter the admin password (<code>ADMIN_SECRET</code>) to continue.
-      </p>
+      <p className="page-sub">Enter the admin password to continue.</p>
       <form onSubmit={onSubmit} style={{ display: "grid", gap: "0.75rem" }}>
         <div>
           <label className="label" htmlFor="admin-pw">
@@ -53,7 +55,9 @@ export function AdminUnlockForm() {
           />
         </div>
         {error && (
-          <p style={{ color: "var(--danger)", margin: 0, fontSize: "0.875rem" }}>{error}</p>
+          <p style={{ color: "var(--danger)", margin: 0, fontSize: "0.875rem" }}>
+            {error}
+          </p>
         )}
         <button type="submit" className="btn btn-primary" disabled={busy || !password}>
           {busy ? "Checking…" : "Unlock"}

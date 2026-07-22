@@ -347,7 +347,7 @@ export function ManualResultsApp() {
         </div>
       </form>
 
-      <div className="card" style={{ overflowX: "auto" }}>
+      <div className="card">
         <h2 style={{ fontWeight: 700, marginBottom: "0.75rem", fontSize: "1rem" }}>
           Recent fills
         </h2>
@@ -356,56 +356,108 @@ export function ManualResultsApp() {
         ) : records.length === 0 ? (
           <p className="page-sub">No manual results yet.</p>
         ) : (
-          <table className="table" style={{ width: "100%", minWidth: 720 }}>
-            <thead>
-              <tr>
-                <th>League</th>
-                <th>Home</th>
-                <th>Away</th>
-                <th>FT</th>
-                <th>HT</th>
-                <th>Filled at</th>
-                <th>By</th>
-                <th>Batches</th>
-                <th>Source</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <style>{`
+              @media (max-width: 720px) {
+                .admin-mr-table-wrap { display: none !important; }
+                .admin-mr-cards { display: grid !important; gap: 0.75rem; }
+              }
+              @media (min-width: 721px) {
+                .admin-mr-cards { display: none !important; }
+              }
+            `}</style>
+            <div className="admin-mr-cards">
               {records.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.league}</td>
-                  <td>{r.homeTeam}</td>
-                  <td>{r.awayTeam}</td>
-                  <td>
-                    {r.ftHome}–{r.ftAway}
-                  </td>
-                  <td>
+                <div
+                  key={`card-${r.id}`}
+                  style={{
+                    border: "1px solid var(--border, #ddd)",
+                    borderRadius: 8,
+                    padding: "0.75rem",
+                    display: "grid",
+                    gap: "0.35rem",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>
+                    {r.homeTeam} vs {r.awayTeam}
+                  </div>
+                  <div style={{ color: "var(--muted)" }}>{r.league}</div>
+                  <div>
+                    FT {r.ftHome}–{r.ftAway}
                     {r.htHome != null && r.htAway != null
-                      ? `${r.htHome}–${r.htAway}`
-                      : "—"}
-                  </td>
-                  <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>
-                    {new Date(r.filledAt).toLocaleString()}
-                  </td>
-                  <td>{r.filledBy}</td>
-                  <td>{r.batchesUpdatedCount}</td>
-                  <td>manual</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      style={{ fontSize: "0.8rem", padding: "0.25rem 0.5rem" }}
-                      disabled={rerunningId === r.id}
-                      onClick={() => void onRerun(r.id)}
-                    >
-                      {rerunningId === r.id ? "…" : "Re-run match"}
-                    </button>
-                  </td>
-                </tr>
+                      ? ` · HT ${r.htHome}–${r.htAway}`
+                      : ""}
+                  </div>
+                  <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>
+                    {r.filledBy} · {new Date(r.filledAt).toLocaleString()} ·{" "}
+                    {r.batchesUpdatedCount} batch(es) · manual
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ fontSize: "0.8rem", padding: "0.35rem 0.6rem", justifySelf: "start" }}
+                    disabled={rerunningId === r.id}
+                    onClick={() => void onRerun(r.id)}
+                  >
+                    {rerunningId === r.id ? "…" : "Re-run match"}
+                  </button>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+            <div className="admin-mr-table-wrap" style={{ overflowX: "auto" }}>
+              <table className="table" style={{ width: "100%", minWidth: 720 }}>
+                <thead>
+                  <tr>
+                    <th>League</th>
+                    <th>Home</th>
+                    <th>Away</th>
+                    <th>FT</th>
+                    <th>HT</th>
+                    <th>Filled at</th>
+                    <th>By</th>
+                    <th>Batches</th>
+                    <th>Source</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.league}</td>
+                      <td>{r.homeTeam}</td>
+                      <td>{r.awayTeam}</td>
+                      <td>
+                        {r.ftHome}–{r.ftAway}
+                      </td>
+                      <td>
+                        {r.htHome != null && r.htAway != null
+                          ? `${r.htHome}–${r.htAway}`
+                          : "—"}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap", fontSize: "0.8rem" }}>
+                        {new Date(r.filledAt).toLocaleString()}
+                      </td>
+                      <td>{r.filledBy}</td>
+                      <td>{r.batchesUpdatedCount}</td>
+                      <td>manual</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ fontSize: "0.8rem", padding: "0.25rem 0.5rem" }}
+                          disabled={rerunningId === r.id}
+                          onClick={() => void onRerun(r.id)}
+                        >
+                          {rerunningId === r.id ? "…" : "Re-run match"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

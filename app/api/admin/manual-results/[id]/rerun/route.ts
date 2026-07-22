@@ -7,10 +7,10 @@ import {
 } from "@/lib/prediction-log/manual-results-store";
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const denied = await requireAdminRequest();
+  const denied = await requireAdminRequest(request);
   if (denied) return denied;
 
   const { id } = await context.params;

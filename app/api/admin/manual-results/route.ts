@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdminRequest } from "@/lib/admin/auth";
 import { NEXT_MATCHES_LEAGUES } from "@/lib/football-api/fetch-upcoming-league";
+import { apiSeasonFromDate } from "@/lib/football-api/leagues";
+import { resolveApiTeamId } from "@/lib/football-api/team-id-map";
+import { todayIsoDate } from "@/lib/prediction-log/batch-date";
 import { backfillBatchesFromManualResult } from "@/lib/prediction-log/manual-result-apply";
 import {
   listManualResults,
@@ -29,7 +32,7 @@ function parseOptionalNonNegInt(
 }
 
 export async function GET(request: Request) {
-  const denied = await requireAdminRequest();
+  const denied = await requireAdminRequest(request);
   if (denied) return denied;
 
   const url = new URL(request.url);
@@ -54,7 +57,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const denied = await requireAdminRequest();
+  const denied = await requireAdminRequest(request);
   if (denied) return denied;
 
   let body: Record<string, unknown>;
@@ -125,14 +128,34 @@ export async function POST(request: Request) {
 
   const filledBy = String(body.filledBy ?? "").trim() || "admin";
 
-  const homeApiTeamId =
+  let homeApiTeamId =
     typeof body.homeApiTeamId === "number" && Number.isFinite(body.homeApiTeamId)
       ? body.homeApiTeamId
       : undefined;
-  const awayApiTeamId =
+  let awayApiTeamId =
     typeof body.awayApiTeamId === "number" && Number.isFinite(body.awayApiTeamId)
       ? body.awayApiTeamId
       : undefined;
+
+  const season = apiSeasonFromDate(matchDate ?? todayIsoDate());
+  if (homeApiTeamId == null || awayApiTeamId == null) {
+    try {
+      const [homeHit, awayHit] = await Promise.all([
+        homeApiTeamId == null
+          ? resolveApiTeamId({ teamName: homeTeam, league, season })
+          : Promise.resolve(null),
+        awayApiTeamId == null
+          ? resolveApiTeamId({ teamName: awayTeam, league, season })
+          : Promise.resolve(null),
+      ]);
+      if (homeHit?.teamId != null) homeApiTeamId = homeHit.teamId;
+      if (awayHit?.teamId != null) awayApiTeamId = awayHit.teamId;
+    } catch (e) {
+      console.warn("manual-results team id resolve skipped", {
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
 
   const filledAt = new Date().toISOString();
   let record: ManualResultRecord = {

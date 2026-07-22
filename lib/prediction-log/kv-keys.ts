@@ -57,4 +57,7 @@ export const KV_KEYS = {
   /** Manual FT/HT result records (admin fill). */
   manualResultsIndex: "manualResults:v1:index",
   manualResult: (id: string) => `manualResult:v1:${id}`,
+  /** Failed admin unlock attempts per IP + minute bucket. */
+  adminUnlockRateLimit: (ip: string, minuteBucket: string) =>
+    `admin:unlockRl:v1:${ip}:${minuteBucket}`,
 } as const;
