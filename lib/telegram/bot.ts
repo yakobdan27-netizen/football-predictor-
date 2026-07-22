@@ -31,7 +31,7 @@ import {
   oddsKeyboard,
   pickKeyboard,
 } from "@/lib/telegram/entry-keyboards";
-import { listLeagues, listTeams } from "@/lib/telegram/team-resolve";
+import { listLeagues, listTeams, todayIsoDate } from "@/lib/telegram/team-resolve";
 import { TELEGRAM_MAX_BATCH_MATCHES } from "@/lib/telegram/parse-bulk-matches";
 import type { TelegramDraftMatch, TelegramSession, TelegramSessionStep, TelegramUser } from "@/lib/telegram/types";
 import { listBatchesForUser } from "@/lib/telegram/ownership";
@@ -539,39 +539,36 @@ export function getTelegramBot(): Telegraf {
     session.draftLine = undefined;
     session.draftPrediction = undefined;
     await saveSession(tgId, session);
-    await ctx.reply(`Looking up fixture…\n🏠 ${session.draftHome}\n✈️ ${team}`);
+    await ctx.reply(`Looking up fixture (optional)…\n🏠 ${session.draftHome}\n✈️ ${team}`);
     const resolved = await resolveUpcomingFixture({
       homeTeam: session.draftHome,
       awayTeam: team,
       league: session.draftLeague,
     });
-    if (!resolved.ok) {
-      session.draftAway = undefined;
+    if (resolved.ok) {
+      session.draftMatchDate = resolved.fixture.matchDate;
+      session.draftApiFixtureId = resolved.fixture.apiFixtureId;
+      session.draftFixtureStatus = resolved.fixture.fixtureStatus;
+      session.draftHomeApiTeamId = resolved.fixture.homeApiTeamId;
+      session.draftAwayApiTeamId = resolved.fixture.awayApiTeamId;
+      session.step = "await_market";
       await saveSession(tgId, session);
-      const sug =
-        resolved.error.suggestions?.length
-          ? `\nSuggestions: ${resolved.error.suggestions.join(", ")}`
-          : "";
       await ctx.reply(
-        `${resolved.error.message}${sug}\n\nPick a different away club.`,
-        fixtureKeyboard({
-          league: session.draftLeague,
-          page: session.listPage ?? 0,
-          letter: session.teamLetter,
-          selectedHome: session.draftHome,
-        })
+        `✅ Fixture · ${resolved.fixture.matchDate}\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
+        marketKeyboard(0)
       );
       return;
     }
-    session.draftMatchDate = resolved.fixture.matchDate;
-    session.draftApiFixtureId = resolved.fixture.apiFixtureId;
-    session.draftFixtureStatus = resolved.fixture.fixtureStatus;
-    session.draftHomeApiTeamId = resolved.fixture.homeApiTeamId;
-    session.draftAwayApiTeamId = resolved.fixture.awayApiTeamId;
+    // API miss is supportive only — continue without fixture_id
+    session.draftMatchDate = todayIsoDate();
+    session.draftApiFixtureId = undefined;
+    session.draftFixtureStatus = undefined;
+    session.draftHomeApiTeamId = undefined;
+    session.draftAwayApiTeamId = undefined;
     session.step = "await_market";
     await saveSession(tgId, session);
     await ctx.reply(
-      `✅ Fixture · ${resolved.fixture.matchDate}\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
+      `⚠️ Fixture not found in API (ok to continue).\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
       marketKeyboard(0)
     );
   });
@@ -901,8 +898,6 @@ async function commitMatchWithOdds(
   odds: number
 ) {
   if (
-    !session.draftMatchDate ||
-    !session.draftApiFixtureId ||
     !session.draftLeague ||
     !session.draftHome ||
     !session.draftAway ||
@@ -923,7 +918,7 @@ async function commitMatchWithOdds(
     homeTeam: session.draftHome,
     awayTeam: session.draftAway,
     league: session.draftLeague,
-    date: session.draftMatchDate,
+    date: session.draftMatchDate || todayIsoDate(),
     apiFixtureId: session.draftApiFixtureId,
     fixtureStatus: session.draftFixtureStatus,
     homeApiTeamId: session.draftHomeApiTeamId,
@@ -995,15 +990,7 @@ async function saveDraftBatch(ctx: Context, user: TelegramUser) {
     league,
     matches: session.draftMatches,
   });
-  try {
-    batch = await attachFixturesToBatch(batch);
-  } catch (e) {
-    await ctx.reply(
-      e instanceof Error ? e.message : "Could not resolve fixtures for this batch.",
-      mainMenuKeyboard()
-    );
-    return;
-  }
+  batch = await attachFixturesToBatch(batch).catch(() => batch);
   await saveBatch(batch);
   await addUserBatchId(user.id, batch.id);
   await clearSession(tgId);
@@ -1020,7 +1007,7 @@ function helpText(): string {
     "ℹ️ Help",
     "",
     "Create Batch:",
-    "1) Name + league (dates come from fixtures)",
+    "1) Name + league (fixture dates optional from API)",
     "2) One club list: 🏠 left = HOME, ✈️ right = AWAY",
     "3) Market → line → pick → odds",
     `4) Up to ${TELEGRAM_MAX_BATCH_MATCHES} matches, then Save`,

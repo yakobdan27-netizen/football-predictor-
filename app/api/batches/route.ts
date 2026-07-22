@@ -53,15 +53,9 @@ export async function POST(request: Request) {
     const allBatches = await loadAllBatches();
     const isNewBatch = !allBatches.some((b) => b.id === batch.id);
 
-    // Resolve fixtures on create only — updates (result fill, edits) must not
-    // re-query upcoming fixtures or they can block saving finished matches.
+    // Best-effort fixture enrich on create — never blocks save if API misses.
     if (isNewBatch && batchNeedsFixtureResolve(batch)) {
-      try {
-        batch = await attachFixturesToBatch(batch);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Fixture resolve failed";
-        return NextResponse.json({ error: msg }, { status: 400 });
-      }
+      batch = await attachFixturesToBatch(batch).catch(() => batch);
     }
 
     if (isNewBatch) {

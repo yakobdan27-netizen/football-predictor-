@@ -286,8 +286,8 @@ export function applyResolvedFixtureToMatch(
 }
 
 /**
- * Resolve fixtures for every match missing apiFixtureId.
- * Throws with a user-facing message on first failure.
+ * Best-effort: attach fixture metadata when API finds a match.
+ * Missing fixtures / API failures do NOT block — API data is supportive only.
  */
 export async function attachFixturesToBatch(
   batch: PredictionBatch
@@ -298,20 +298,25 @@ export async function attachFixturesToBatch(
       matches.push(match);
       continue;
     }
-    const league = matchLeague(match, batch.league);
-    const result = await resolveUpcomingFixture({
-      homeTeam: match.homeTeam,
-      awayTeam: match.awayTeam,
-      league: league === "Mixed" ? null : league,
-    });
-    if (!result.ok) {
-      const sug =
-        result.error.suggestions?.length
-          ? ` Suggestions: ${result.error.suggestions.join(", ")}.`
-          : "";
-      throw new Error(`${result.error.message}${sug}`);
+    if (!match.homeTeam?.trim() || !match.awayTeam?.trim()) {
+      matches.push(match);
+      continue;
     }
-    matches.push(applyResolvedFixtureToMatch(match, result.fixture));
+    const league = matchLeague(match, batch.league);
+    try {
+      const result = await resolveUpcomingFixture({
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        league: league === "Mixed" ? null : league,
+      });
+      if (result.ok) {
+        matches.push(applyResolvedFixtureToMatch(match, result.fixture));
+      } else {
+        matches.push(match);
+      }
+    } catch {
+      matches.push(match);
+    }
   }
   const date = deriveBatchDateFromMatches(matches, batch.date);
   return { ...batch, matches, date };
