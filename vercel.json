@@ -58,6 +58,12 @@
     "app/api/fixtures/resolve/route.ts": {
       "maxDuration": 60
     },
+    "app/api/fixtures/upcoming/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/fixtures/open-in-dm/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/ml-model/route.ts": {
       "maxDuration": 60
     },

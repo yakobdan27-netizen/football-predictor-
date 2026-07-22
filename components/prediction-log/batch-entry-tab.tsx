@@ -54,7 +54,9 @@ import {
   evaluateStopLoss,
 } from "@/lib/prediction-log/strategy-rules";
 import { DuplicateBlockModal } from "./duplicate-block-modal";
+import { BatchFixturePicker } from "./batch-fixture-picker";
 import { deriveBatchDateFromMatches, todayIsoDate } from "@/lib/prediction-log/batch-date";
+import type { NextMatchesLeague } from "@/lib/football-api/fetch-upcoming-league";
 
 function emptyMatch(settings: CombinedOddsSettings, league: string): LogMatch {
   return {
@@ -124,6 +126,7 @@ export function BatchEntryTab({
   const [loadingFixtures, setLoadingFixtures] = useState(false);
   const [fixtureMsg, setFixtureMsg] = useState<string | null>(null);
   const [duplicateHits, setDuplicateHits] = useState<DuplicateHit[] | null>(null);
+  const [showLivescore, setShowLivescore] = useState(false);
   const stubDate = deriveBatchDateFromMatches(matches);
 
   function addMatch() {
@@ -355,53 +358,69 @@ export function BatchEntryTab({
             />
           </div>
           <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
-            Match dates are set automatically from API-Football when you save. Use the League column on each
-            row to mix competitions. The controls below only set the default for new rows and optional
-            Livescore import.
+            Prefer adding from upcoming fixtures below (date and fixture id are set automatically). You can
+            still add blank rows and pick teams manually.
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
-            <select
-              className="select"
-              value={fixtureLeague}
-              onChange={(e) => {
-                const next = e.target.value;
-                setFixtureLeague(next);
-                setDefaultLeague(next);
-              }}
-              style={{ maxWidth: "220px" }}
-              aria-label="League for fixture import"
-            >
-              {LEAGUE_OPTIONS.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
-            <input
-              className="input"
-              type="date"
-              value={livescoreImportDate}
-              onChange={(e) => setLivescoreImportDate(e.target.value)}
-              aria-label="Livescore import date"
-              style={{ maxWidth: "160px" }}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={loadingFixtures || !livescoreImportDate}
-              onClick={() => void loadFixturesFromLivescore()}
-            >
-              {loadingFixtures ? "Loading fixtures…" : "Load fixtures from Livescore"}
-            </button>
-            <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-              Optional Livescore slate import (date is for import only). Manual team entry always works.
-            </span>
-          </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => setShowLivescore((v) => !v)}
+            style={{ justifySelf: "start", minHeight: 40 }}
+          >
+            {showLivescore ? "Hide Livescore import" : "Optional: Livescore import"}
+          </button>
+          {showLivescore && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+              <select
+                className="select"
+                value={fixtureLeague}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setFixtureLeague(next);
+                  setDefaultLeague(next);
+                }}
+                style={{ maxWidth: "220px" }}
+                aria-label="League for Livescore import"
+              >
+                {LEAGUE_OPTIONS.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input"
+                type="date"
+                value={livescoreImportDate}
+                onChange={(e) => setLivescoreImportDate(e.target.value)}
+                aria-label="Livescore import date"
+                style={{ maxWidth: "160px" }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={loadingFixtures || !livescoreImportDate}
+                onClick={() => void loadFixturesFromLivescore()}
+              >
+                {loadingFixtures ? "Loading fixtures…" : "Load fixtures from Livescore"}
+              </button>
+            </div>
+          )}
           {fixtureMsg && (
             <p style={{ fontSize: "0.8125rem", color: "var(--accent)", margin: 0 }}>{fixtureMsg}</p>
           )}
         </div>
       </div>
+
+      <BatchFixturePicker
+        matches={matches}
+        comboSettings={comboSettings}
+        onMatchesChange={setMatches}
+        onLeagueChange={(league: NextMatchesLeague) => {
+          setDefaultLeague(league);
+          setFixtureLeague(league);
+        }}
+      />
 
       <BatchMatchTable
         mode="entry"

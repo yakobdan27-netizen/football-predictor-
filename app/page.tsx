@@ -66,6 +66,9 @@ export default function DashboardPage() {
             <Link href="/prediction-log" className="btn btn-primary btn-full">
               Prediction Log
             </Link>
+            <Link href="/next-matches" className="btn btn-secondary btn-full">
+              Next Matches
+            </Link>
             <Link href="/ai-learner" className="btn btn-secondary btn-full">
               AI Learner
             </Link>

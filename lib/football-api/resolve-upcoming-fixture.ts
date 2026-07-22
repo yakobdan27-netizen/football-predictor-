@@ -39,6 +39,11 @@ function isUpcomingStatus(short: string): boolean {
   return s === "NS" || s === "TBD";
 }
 
+/** Exported for upcoming-league listing filters. */
+export function isUpcomingFixtureStatus(short: string): boolean {
+  return isUpcomingStatus(short);
+}
+
 function kickoffMs(iso: string): number {
   const t = Date.parse(iso);
   return Number.isFinite(t) ? t : 0;

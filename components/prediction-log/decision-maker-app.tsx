@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   categoryIcon,
   confidenceTone,
@@ -12,7 +13,11 @@ import {
   type UserMarketEvaluation,
 } from "@/lib/prediction-log/decision-maker";
 import type { ComboCandidate } from "@/lib/prediction-log/combo-selection";
-import { getBatchDisplayId } from "@/lib/prediction-log/snapshot-readers";
+import {
+  getBatchDisplayId,
+  resolveBatchByQuery,
+} from "@/lib/prediction-log/snapshot-readers";
+import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
 import { usePredictionLogData } from "./use-prediction-log-data";
 
 function toneStyle(confidence: number): CSSProperties {
@@ -184,18 +189,35 @@ function DecisionRow({
   batchDate,
   expanded,
   onToggle,
+  highlight,
 }: {
   row: MatchDecisionRow;
   batchDate: string;
   expanded: boolean;
   onToggle: () => void;
+  highlight?: boolean;
 }) {
   const [m1, m2, m3] = row.markets;
   const dateTime = row.match.matchDate ?? batchDate;
+  const rowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    if (highlight && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlight]);
 
   return (
     <>
-      <tr className="dm-desktop-row">
+      <tr
+        ref={rowRef}
+        className="dm-desktop-row"
+        style={
+          highlight
+            ? { outline: "2px solid var(--accent)", outlineOffset: -2 }
+            : undefined
+        }
+      >
         <td style={{ minWidth: 160, verticalAlign: "top" }}>
           <div style={{ fontWeight: 700 }}>
             {row.match.homeTeam} vs {row.match.awayTeam}
@@ -244,7 +266,7 @@ function DecisionRow({
             style={{
               width: "100%",
               textAlign: "left",
-              border: "1px solid var(--border)",
+              border: highlight ? "2px solid var(--accent)" : "1px solid var(--border)",
               borderRadius: 12,
               padding: "0.85rem",
               background: "var(--surface)",
@@ -292,6 +314,11 @@ function DecisionRow({
 }
 
 export function DecisionMakerApp() {
+  const searchParams = useSearchParams();
+  const batchQuery = searchParams.get("batch");
+  const fixtureIdRaw = searchParams.get("fixture_id");
+  const focusFixtureId = fixtureIdRaw ? Number(fixtureIdRaw) : null;
+
   const {
     ready,
     error,
@@ -301,10 +328,33 @@ export function DecisionMakerApp() {
     teamsQuality,
     learnerStats,
     leaguePriors,
+    refresh,
   } = usePredictionLogData();
 
   const [batchId, setBatchId] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [deeplinkReady, setDeeplinkReady] = useState(!batchQuery);
+
+  useEffect(() => {
+    if (!batchQuery) {
+      setDeeplinkReady(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        await reloadBatchesFromServer();
+        await refresh();
+      } catch {
+        /* keep existing cache */
+      } finally {
+        if (!cancelled) setDeeplinkReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [batchQuery, refresh]);
 
   const sortedBatches = useMemo(
     () =>
@@ -314,9 +364,27 @@ export function DecisionMakerApp() {
     [batches]
   );
 
+  const deepLinkedBatch = useMemo(
+    () => resolveBatchByQuery(batches, batchQuery),
+    [batches, batchQuery]
+  );
+
   useEffect(() => {
+    if (deepLinkedBatch) {
+      setBatchId(deepLinkedBatch.id);
+      return;
+    }
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
-  }, [sortedBatches, batchId]);
+  }, [deepLinkedBatch, sortedBatches, batchId]);
+
+  useEffect(() => {
+    if (focusFixtureId == null || !Number.isFinite(focusFixtureId)) return;
+    const batch = sortedBatches.find((b) => b.id === batchId);
+    const match = batch?.matches.find((m) => m.apiFixtureId === focusFixtureId);
+    if (match) {
+      setExpanded((prev) => ({ ...prev, [match.id]: true }));
+    }
+  }, [focusFixtureId, batchId, sortedBatches]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
 
@@ -335,7 +403,7 @@ export function DecisionMakerApp() {
 
   const registry = listRegisteredResultPages();
 
-  if (!ready) {
+  if (!ready || !deeplinkReady) {
     return <p className="page-sub">Loading decision sources…</p>;
   }
 
@@ -431,6 +499,10 @@ export function DecisionMakerApp() {
                     row={row}
                     batchDate={batch.date}
                     expanded={!!expanded[row.match.id]}
+                    highlight={
+                      focusFixtureId != null &&
+                      row.match.apiFixtureId === focusFixtureId
+                    }
                     onToggle={() =>
                       setExpanded((prev) => ({
                         ...prev,

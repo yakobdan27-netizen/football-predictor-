@@ -24,6 +24,9 @@ export const KV_KEYS = {
     `apiFootball:teamMap:v1:${leagueId}:${season}`,
   /** Short-TTL cache for upcoming fixture resolve by pair. */
   apiFootballResolve: (key: string) => `apiFootball:resolve:v1:${key}`,
+  /** Cached upcoming fixtures for a league+season+next. */
+  apiFootballUpcoming: (leagueId: number, season: number, next: number) =>
+    `apiFootball:upcoming:v1:${leagueId}:${season}:n${next}`,
   /** Bulk last-5 scrape progress (failed leagues for retry). */
   livescoreBulkProgress: "livescore:bulk:v1:progress",
   /** Saved reco walk-forward backtest run ids (newest first). */
