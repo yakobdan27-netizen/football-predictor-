@@ -96,6 +96,13 @@ export default function DashboardPage() {
             <Link href="/guide" className="btn btn-secondary btn-full">
               Operating guide
             </Link>
+            <Link
+              href="/admin/manual-results"
+              className="btn btn-secondary btn-full"
+              style={{ opacity: 0.75 }}
+            >
+              Admin → Manual Results
+            </Link>
           </div>
         </div>
       </div>
