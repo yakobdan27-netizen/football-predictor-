@@ -46,13 +46,18 @@ export interface BlSeasonRosterStore {
 
 export const BL_SEASON_ROSTER_SCHEMA_VERSION = 1;
 
-/** Known promoted hints — third side comes from API only. */
-const BRIEF_PROMOTED_RAW = ["Hamburg", "Schalke"] as const;
-const BRIEF_RELEGATED_RAW = ["Wolfsburg"] as const;
+/** Known promoted hints — remaining sides come from API only. */
+const BRIEF_PROMOTED_RAW = ["Paderborn"] as const;
+
+/** Clubs with uncertain status across sources — log RECONCILE on verify. */
+const BRIEF_RECONCILE_RAW = ["Wolfsburg", "Heidenheim"] as const;
+
+/** Best-guess relegations — verify may overwrite; Wolfsburg is RECONCILE not hard-coded. */
+const BRIEF_RELEGATED_RAW = [] as const;
 
 /**
  * Clubs treated as prior-season / established top-flight for promotion detection.
- * Excludes Wolfsburg (relegated) and Hamburg/Schalke (promoted hints).
+ * Includes Wolfsburg + Heidenheim as survivors until API reconcile (not auto-promoted).
  */
 const BRIEF_PRIOR_SURVIVOR_RAW = [
   "Augsburg",
@@ -73,9 +78,14 @@ const BRIEF_PRIOR_SURVIVOR_RAW = [
   "Stuttgart",
   "Union Berlin",
   "Werder Bremen",
+  "Wolfsburg",
 ] as const;
 
 export const BL_2026_27_PROMOTED_HINTS: string[] = BRIEF_PROMOTED_RAW.map((t) =>
+  standardizeTeamName(t)
+);
+
+export const BL_2026_27_RECONCILE: string[] = BRIEF_RECONCILE_RAW.map((t) =>
   standardizeTeamName(t)
 );
 
@@ -139,6 +149,11 @@ export const BL_STYLE_SEEDS: Record<string, BlStyleSeed> = {
     summary: "Compact, lower goal output; Under / low-event lean.",
     leans: ["under"],
   },
+  Wolfsburg: {
+    summary:
+      "Established Bundesliga attack profile; Over / BTTS lean when open — qualitative only; status RECONCILE vs API.",
+    leans: ["over", "btts"],
+  },
   "Union Berlin": {
     summary: "Extremely compact, low-scoring; Under / low BTTS.",
     leans: ["under"],
@@ -166,6 +181,35 @@ export function blStyleSeedForTeam(team: string): BlStyleSeed | null {
   const name = standardizeTeamName(team);
   if (isBlPromotedHint(name)) return null;
   return BL_STYLE_SEEDS[name] ?? null;
+}
+
+/** Build RECONCILE mismatch rows for Wolfsburg / Heidenheim vs live API roster. */
+export function blReconcileMismatches(
+  apiTeams: string[]
+): Array<{ provisional: string; reason: string }> {
+  const set = new Set(apiTeams.map((t) => standardizeTeamName(t)));
+  const out: Array<{ provisional: string; reason: string }> = [];
+  for (const club of BL_2026_27_RECONCILE) {
+    const inApi = set.has(club);
+    const inSurvivors = BL_PRIOR_SEASON_SURVIVORS.includes(club);
+    if (inSurvivors && !inApi) {
+      out.push({
+        provisional: club,
+        reason: `RECONCILE:${club} — listed as prior survivor but missing from API roster`,
+      });
+    } else if (!inSurvivors && inApi) {
+      out.push({
+        provisional: club,
+        reason: `RECONCILE:${club} — present in API but not in prior survivor set`,
+      });
+    } else {
+      out.push({
+        provisional: club,
+        reason: `RECONCILE:${club} — status uncertain across sources (inApi=${inApi})`,
+      });
+    }
+  }
+  return out;
 }
 
 export function emptyBlTeamSeasonCard(

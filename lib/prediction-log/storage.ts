@@ -56,6 +56,14 @@ import {
   emptyBlSeasonRosterStore,
   type BlSeasonRosterStore,
 } from "./bl-season-roster";
+import {
+  emptySaSeasonRosterStore,
+  type SaSeasonRosterStore,
+} from "./sa-season-roster";
+import {
+  emptyL1SeasonRosterStore,
+  type L1SeasonRosterStore,
+} from "./l1-season-roster";
 import type { MlClassifierStore } from "./ml-model-store";
 import type { LeagueBaselinesStore } from "./league-baselines";
 
@@ -69,6 +77,8 @@ const LEAGUE_PRIORS_KEY = "pl_league_priors";
 const PL_SEASON_ROSTER_KEY = "pl_season_roster_2026_27";
 const LL_SEASON_ROSTER_KEY = "pl_ll_season_roster_2026_27";
 const BL_SEASON_ROSTER_KEY = "pl_bl_season_roster_2026_27";
+const SA_SEASON_ROSTER_KEY = "pl_sa_season_roster_2026_27";
+const L1_SEASON_ROSTER_KEY = "pl_l1_season_roster_2026_27";
 const TEAMS_QUALITY_KEY = "pl_teams_quality";
 export const LEAGUE_PROFILES_KEY = "pl_league_profiles";
 
@@ -603,6 +613,80 @@ export async function hydrateBlSeasonRosterFromServer(): Promise<BlSeasonRosterS
   }
 }
 
+export function loadSaSeasonRoster(): SaSeasonRosterStore {
+  if (!isBrowser()) return emptySaSeasonRosterStore();
+  try {
+    const raw = localStorage.getItem(SA_SEASON_ROSTER_KEY);
+    if (!raw) return emptySaSeasonRosterStore();
+    const parsed = JSON.parse(raw) as SaSeasonRosterStore;
+    return parsed?.teams?.length ? parsed : emptySaSeasonRosterStore();
+  } catch {
+    return emptySaSeasonRosterStore();
+  }
+}
+
+export function saveSaSeasonRoster(store: SaSeasonRosterStore): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(SA_SEASON_ROSTER_KEY, JSON.stringify(store));
+}
+
+export async function hydrateSaSeasonRosterFromServer(): Promise<SaSeasonRosterStore> {
+  if (!isBrowser()) return emptySaSeasonRosterStore();
+  try {
+    const res = await fetch("/api/sa-roster/verify");
+    const data = await res.json();
+    if (!res.ok || !data.store?.teams?.length) {
+      const local = emptySaSeasonRosterStore();
+      saveSaSeasonRoster(local);
+      return local;
+    }
+    const server = data.store as SaSeasonRosterStore;
+    saveSaSeasonRoster(server);
+    return server;
+  } catch {
+    const local = emptySaSeasonRosterStore();
+    saveSaSeasonRoster(local);
+    return local;
+  }
+}
+
+export function loadL1SeasonRoster(): L1SeasonRosterStore {
+  if (!isBrowser()) return emptyL1SeasonRosterStore();
+  try {
+    const raw = localStorage.getItem(L1_SEASON_ROSTER_KEY);
+    if (!raw) return emptyL1SeasonRosterStore();
+    const parsed = JSON.parse(raw) as L1SeasonRosterStore;
+    return parsed?.season ? parsed : emptyL1SeasonRosterStore();
+  } catch {
+    return emptyL1SeasonRosterStore();
+  }
+}
+
+export function saveL1SeasonRoster(store: L1SeasonRosterStore): void {
+  if (!isBrowser()) return;
+  localStorage.setItem(L1_SEASON_ROSTER_KEY, JSON.stringify(store));
+}
+
+export async function hydrateL1SeasonRosterFromServer(): Promise<L1SeasonRosterStore> {
+  if (!isBrowser()) return emptyL1SeasonRosterStore();
+  try {
+    const res = await fetch("/api/l1-roster/verify");
+    const data = await res.json();
+    if (!res.ok || !data.store) {
+      const local = emptyL1SeasonRosterStore();
+      saveL1SeasonRoster(local);
+      return local;
+    }
+    const server = data.store as L1SeasonRosterStore;
+    saveL1SeasonRoster(server);
+    return server;
+  } catch {
+    const local = emptyL1SeasonRosterStore();
+    saveL1SeasonRoster(local);
+    return local;
+  }
+}
+
 export function loadLearnerStats(): LearnerStatsStore {
   if (!isBrowser()) return emptyLearnerStats();
   try {
@@ -874,6 +958,8 @@ export function generateBatchRecommendation(
       plRoster: loadPlSeasonRoster(),
       llRoster: loadLlSeasonRoster(),
       blRoster: loadBlSeasonRoster(),
+      saRoster: loadSaSeasonRoster(),
+      l1Roster: loadL1SeasonRoster(),
       matchDate: batch.date,
     }),
   };

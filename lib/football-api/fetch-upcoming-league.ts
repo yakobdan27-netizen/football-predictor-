@@ -16,6 +16,7 @@ export const NEXT_MATCHES_LEAGUES = [
   "La Liga",
   "Serie A",
   "Bundesliga",
+  "Ligue 1",
 ] as const satisfies readonly LeagueOption[];
 
 export type NextMatchesLeague = (typeof NEXT_MATCHES_LEAGUES)[number];

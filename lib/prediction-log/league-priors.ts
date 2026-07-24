@@ -91,6 +91,7 @@ export const RESEARCH_LEAGUE_PRIOR_SEEDS: Record<string, Omit<LeaguePriorRecord,
     leagueId: "ligue_1",
     leagueName: "Ligue 1",
     season: "2021-26",
+    /** Provisional seed until live 2026/27 recompute — do not treat as historical average. */
     over25_rate: 55,
     btts_rate: 52,
     avg_total_corners: 9.9,

@@ -28,13 +28,14 @@ test("LL provisional roster has 20 teams", () => {
   assert.ok(LL_2026_27_PROVISIONAL_TEAMS.includes("Malaga"));
 });
 
-test("LL promoted flags and null style seeds", () => {
+test("LL promoted flags — Racing thin seed; Deportivo/Malaga qualitative", () => {
   for (const t of LL_2026_27_PROMOTED) {
     const card = emptyLlTeamSeasonCard(t);
     assert.equal(card.is_promoted, true);
-    assert.equal(card.style_seed, null);
   }
   assert.equal(llStyleSeedForTeam("Racing Santander"), null);
+  assert.ok(llStyleSeedForTeam("Deportivo"));
+  assert.ok(llStyleSeedForTeam("Malaga"));
   assert.equal(llStyleSeedForTeam("Osasuna"), null);
   assert.ok(llStyleSeedForTeam("Getafe"));
   assert.ok(LL_STYLE_SEEDS["Ath Madrid"]);

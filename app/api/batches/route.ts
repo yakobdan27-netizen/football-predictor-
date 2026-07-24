@@ -10,6 +10,8 @@ import { recomputeAndPersistLeaguePriors } from "@/lib/prediction-log/league-pri
 import { recomputePlSeasonCards } from "@/lib/prediction-log/pl-season-store";
 import { recomputeLlSeasonCards } from "@/lib/prediction-log/ll-season-store";
 import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
+import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
+import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
 import { batchHasScoredResults } from "@/lib/prediction-log/scoring";
 import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
 import { attachFixturesToBatch } from "@/lib/football-api/resolve-upcoming-fixture";
@@ -86,6 +88,8 @@ export async function POST(request: Request) {
       await recomputePlSeasonCards().catch(() => null);
       await recomputeLlSeasonCards().catch(() => null);
       await recomputeBlSeasonCards().catch(() => null);
+      await recomputeSaSeasonCards().catch(() => null);
+      await recomputeL1SeasonCards().catch(() => null);
     }
     return NextResponse.json({ ok: true, batch: synced });
   } catch (e) {

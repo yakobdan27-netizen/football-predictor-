@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   BL_2026_27_PROMOTED_HINTS,
+  BL_2026_27_RECONCILE,
   BL_EXPECTED_TEAM_COUNT,
   BL_STYLE_SEEDS,
+  blReconcileMismatches,
   computeDataConfidence,
   emptyBlSeasonRosterStore,
   emptyBlTeamSeasonCard,
@@ -34,7 +36,8 @@ test("BL store starts empty until verify (no hardcoded 18)", () => {
   assert.equal(store.teams.length, 0);
   assert.equal(store.roster_verified, false);
   assert.deepEqual(store.promoted, BL_2026_27_PROMOTED_HINTS);
-  assert.ok(store.relegated_out.includes("Wolfsburg"));
+  assert.ok(BL_2026_27_PROMOTED_HINTS.includes("Paderborn"));
+  assert.equal(store.relegated_out.length, 0);
 });
 
 test("BL promoted hints have null style seeds", () => {
@@ -45,7 +48,26 @@ test("BL promoted hints have null style seeds", () => {
     assert.equal(blStyleSeedForTeam(t), null);
   }
   assert.ok(BL_STYLE_SEEDS["Bayern Munich"]);
+  assert.ok(BL_STYLE_SEEDS.Wolfsburg);
   assert.ok(BL_STYLE_SEEDS.Augsburg.leans.includes("under"));
+});
+
+test("BL RECONCILE mismatches for Wolfsburg/Heidenheim", () => {
+  assert.ok(BL_2026_27_RECONCILE.includes("Wolfsburg"));
+  assert.ok(BL_2026_27_RECONCILE.includes("Heidenheim"));
+  const withBoth = blReconcileMismatches([
+    "Bayern Munich",
+    "Wolfsburg",
+    "Heidenheim",
+    "Paderborn",
+  ]);
+  assert.ok(withBoth.every((m) => m.reason.startsWith("RECONCILE:")));
+  const missingWolf = blReconcileMismatches(["Bayern Munich", "Heidenheim", "Paderborn"]);
+  assert.ok(
+    missingWolf.some(
+      (m) => m.provisional === "Wolfsburg" && m.reason.includes("missing from API")
+    )
+  );
 });
 
 test("fillBlTeamSeasonCard leaves numerics null without 2026/27 DB rows", () => {
@@ -85,7 +107,6 @@ test("hybrid system score pulls toward Bundesliga Over prior when conf low", () 
     awayTeam: "Augsburg",
     matchDate: "2026-09-15",
   });
-  // Prior is Over-leaning (~63.5) so Under pick with high system score shrinks down
   assert.ok(audited.score < 80);
   assert.ok(audited.notes.length > 0);
 
@@ -117,7 +138,7 @@ test("teamsForLeague BL 2026/27 uses store only (empty fallback)", () => {
   assert.ok(legacy.length >= 18);
 });
 
-test("verify overwrite sets 18 teams (unit)", () => {
+test("verify overwrite sets 18 teams with Paderborn promoted (unit)", () => {
   const store = emptyBlSeasonRosterStore();
   const eighteen = [
     "Bayern Munich",
@@ -134,8 +155,8 @@ test("verify overwrite sets 18 teams (unit)", () => {
     "Heidenheim",
     "Union Berlin",
     "Mainz",
-    "Hamburg",
-    "Schalke",
+    "Paderborn",
+    "Wolfsburg",
     "St Pauli",
     "FC Koln",
   ];
@@ -144,13 +165,14 @@ test("verify overwrite sets 18 teams (unit)", () => {
   store.roster_verified = true;
   store.cards = buildAllBlSeasonCards([], undefined, eighteen);
   store.promoted = eighteen.filter((t) => isBlPromotedTeam(t, eighteen));
+  store.mismatches = blReconcileMismatches(eighteen);
 
   assert.equal(store.teams.length, 18);
-  assert.ok(store.promoted.includes("Hamburg"));
-  assert.ok(store.promoted.includes("Schalke"));
-  assert.ok(!store.teams.includes("Wolfsburg"));
-  assert.equal(store.cards.Hamburg!.style_seed, null);
-  assert.equal(store.cards.Hamburg!.is_promoted, true);
+  assert.ok(store.promoted.includes("Paderborn"));
+  assert.ok(store.teams.includes("Wolfsburg"));
+  assert.equal(store.cards.Paderborn!.style_seed, null);
+  assert.equal(store.cards.Paderborn!.is_promoted, true);
+  assert.ok(store.mismatches.some((m) => m.reason.startsWith("RECONCILE:Wolfsburg")));
 });
 
 test("hybrid never blocks markets for BL", () => {

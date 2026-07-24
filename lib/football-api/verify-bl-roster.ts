@@ -14,6 +14,7 @@ import {
   BL_EXPECTED_TEAM_COUNT,
   BL_LEAGUE_NAME,
   BL_SEASON_2026_27,
+  blReconcileMismatches,
   emptyBlSeasonRosterStore,
   isBlPromotedTeam,
   type BlSeasonRosterStore,
@@ -107,6 +108,10 @@ export async function verifyBl2026Roster(): Promise<VerifyBlRosterResult> {
   }
 
   const roster_verified = teams.length === BL_EXPECTED_TEAM_COUNT;
+  const mismatches = blReconcileMismatches(teams);
+  for (const m of mismatches) {
+    console.warn(`[verify-bl-roster] ${m.reason}`);
+  }
 
   const store: BlSeasonRosterStore = {
     schemaVersion: base.schemaVersion,
@@ -115,7 +120,7 @@ export async function verifyBl2026Roster(): Promise<VerifyBlRosterResult> {
     teams,
     promoted,
     relegated_out: [...BL_2026_27_RELEGATED_OUT],
-    mismatches: [],
+    mismatches,
     cards,
     verifyError: roster_verified
       ? null

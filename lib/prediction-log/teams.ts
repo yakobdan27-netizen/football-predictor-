@@ -21,25 +21,40 @@ import {
   BL_SEASON_2026_27,
   type BlSeasonRosterStore,
 } from "./bl-season-roster";
+import {
+  SA_2026_27_PROVISIONAL_TEAMS,
+  SA_LEAGUE_NAME,
+  SA_SEASON_2026_27,
+  type SaSeasonRosterStore,
+} from "./sa-season-roster";
+import {
+  L1_LEAGUE_NAME,
+  L1_SEASON_2026_27,
+  type L1SeasonRosterStore,
+} from "./l1-season-roster";
 import { seasonForDate } from "./season";
 
 const LEAGUE_ROSTERS = [...DEMO_DOMESTIC_LEAGUES, ...DEMO_UEFA_COMPETITIONS];
 
+export type SeasonRosterOpts = {
+  season?: string | null;
+  matchDate?: string | null;
+  plRoster?: PlSeasonRosterStore | null;
+  llRoster?: LlSeasonRosterStore | null;
+  blRoster?: BlSeasonRosterStore | null;
+  saRoster?: SaSeasonRosterStore | null;
+  l1Roster?: L1SeasonRosterStore | null;
+};
+
 /**
- * Roster for a league. When PL/LL/BL + 2026/27, use the season-scoped
+ * Roster for a league. When PL/LL/SA/BL/L1 + 2026/27, use the season-scoped
  * club list (verified or provisional) instead of the multi-season demo pool.
- * Bundesliga returns store teams only (API-first — empty until verify).
+ * Bundesliga / Ligue 1 return store teams only (API-first — empty until verify).
  */
 export function teamsForLeague(
   league: string,
   qualityStore?: TeamsQualityStore | null,
-  opts?: {
-    season?: string | null;
-    matchDate?: string | null;
-    plRoster?: PlSeasonRosterStore | null;
-    llRoster?: LlSeasonRosterStore | null;
-    blRoster?: BlSeasonRosterStore | null;
-  }
+  opts?: SeasonRosterOpts
 ): string[] {
   const season =
     opts?.season ??
@@ -59,8 +74,20 @@ export function teamsForLeague(
     return [...new Set(fromStore)].sort();
   }
 
+  if (league === SA_LEAGUE_NAME && season === SA_SEASON_2026_27) {
+    const fromStore = opts?.saRoster?.teams?.length
+      ? opts.saRoster.teams
+      : SA_2026_27_PROVISIONAL_TEAMS;
+    return [...new Set(fromStore)].sort();
+  }
+
   if (league === BL_LEAGUE_NAME && season === BL_SEASON_2026_27) {
     const fromStore = opts?.blRoster?.teams?.length ? opts.blRoster.teams : [];
+    return [...new Set(fromStore)].sort();
+  }
+
+  if (league === L1_LEAGUE_NAME && season === L1_SEASON_2026_27) {
+    const fromStore = opts?.l1Roster?.teams?.length ? opts.l1Roster.teams : [];
     return [...new Set(fromStore)].sort();
   }
 
@@ -76,13 +103,7 @@ export function isValidFixture(
   away: string,
   league: string,
   qualityStore?: TeamsQualityStore | null,
-  opts?: {
-    season?: string | null;
-    matchDate?: string | null;
-    plRoster?: PlSeasonRosterStore | null;
-    llRoster?: LlSeasonRosterStore | null;
-    blRoster?: BlSeasonRosterStore | null;
-  }
+  opts?: SeasonRosterOpts
 ): boolean {
   if (!home || !away || home === away) return false;
   const teams = new Set(teamsForLeague(league, qualityStore, opts));

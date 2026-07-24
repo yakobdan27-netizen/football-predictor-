@@ -54,6 +54,10 @@ export const KV_KEYS = {
   llSeasonRoster: "llSeasonRoster:v1:2026_27",
   /** Bundesliga 2026/27 season roster + team cards. */
   blSeasonRoster: "blSeasonRoster:v1:2026_27",
+  /** Serie A 2026/27 season roster + team cards. */
+  saSeasonRoster: "saSeasonRoster:v1:2026_27",
+  /** Ligue 1 2026/27 season roster + team cards. */
+  l1SeasonRoster: "l1SeasonRoster:v1:2026_27",
   /** Manual FT/HT result records (admin fill). */
   manualResultsIndex: "manualResults:v1:index",
   manualResult: (id: string) => `manualResult:v1:${id}`,

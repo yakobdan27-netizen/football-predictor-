@@ -35,6 +35,18 @@ import {
   getBlCardFromStore,
   type BlSeasonRosterStore,
 } from "./bl-season-roster";
+import {
+  SA_LEAGUE_NAME,
+  SA_SEASON_2026_27,
+  getSaCardFromStore,
+  type SaSeasonRosterStore,
+} from "./sa-season-roster";
+import {
+  L1_LEAGUE_NAME,
+  L1_SEASON_2026_27,
+  getL1CardFromStore,
+  type L1SeasonRosterStore,
+} from "./l1-season-roster";
 import { seasonForDate } from "./season";
 import type { LearnerStatsStore, LogMarketKey, RecommendedPick } from "./types";
 
@@ -73,6 +85,10 @@ export interface HybridPriorOpts {
   llRoster?: LlSeasonRosterStore | null;
   /** Bundesliga 2026/27 cards for team-level confidence / style seeds. */
   blRoster?: BlSeasonRosterStore | null;
+  /** Serie A 2026/27 cards for team-level confidence / style seeds. */
+  saRoster?: SaSeasonRosterStore | null;
+  /** Ligue 1 2026/27 cards for team-level confidence / style seeds. */
+  l1Roster?: L1SeasonRosterStore | null;
   homeTeam?: string;
   awayTeam?: string;
   matchDate?: string;
@@ -167,6 +183,28 @@ function relevantCards(opts?: HybridPriorOpts): PlTeamSeasonCard[] {
     }
     if (opts.awayTeam) {
       const c = getBlCardFromStore(opts.blRoster, opts.awayTeam);
+      if (c) out.push(c);
+    }
+  }
+
+  if (opts?.saRoster && opts.leagueName === SA_LEAGUE_NAME && season === SA_SEASON_2026_27) {
+    if (opts.homeTeam) {
+      const c = getSaCardFromStore(opts.saRoster, opts.homeTeam);
+      if (c) out.push(c);
+    }
+    if (opts.awayTeam) {
+      const c = getSaCardFromStore(opts.saRoster, opts.awayTeam);
+      if (c) out.push(c);
+    }
+  }
+
+  if (opts?.l1Roster && opts.leagueName === L1_LEAGUE_NAME && season === L1_SEASON_2026_27) {
+    if (opts.homeTeam) {
+      const c = getL1CardFromStore(opts.l1Roster, opts.homeTeam);
+      if (c) out.push(c);
+    }
+    if (opts.awayTeam) {
+      const c = getL1CardFromStore(opts.l1Roster, opts.awayTeam);
       if (c) out.push(c);
     }
   }

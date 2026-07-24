@@ -1,7 +1,9 @@
 import { TeamsQualityApp } from "@/components/teams/teams-quality-app";
 import { PlSeasonRosterCard } from "@/components/teams/pl-season-roster-card";
 import { LlSeasonRosterCard } from "@/components/teams/ll-season-roster-card";
+import { SaSeasonRosterCard } from "@/components/teams/sa-season-roster-card";
 import { BlSeasonRosterCard } from "@/components/teams/bl-season-roster-card";
+import { L1SeasonRosterCard } from "@/components/teams/l1-season-roster-card";
 
 export default function TeamsPage() {
   return (
@@ -14,7 +16,9 @@ export default function TeamsPage() {
       </p>
       <PlSeasonRosterCard />
       <LlSeasonRosterCard />
+      <SaSeasonRosterCard />
       <BlSeasonRosterCard />
+      <L1SeasonRosterCard />
       <TeamsQualityApp />
     </div>
   );

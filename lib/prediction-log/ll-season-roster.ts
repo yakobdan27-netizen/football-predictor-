@@ -137,6 +137,19 @@ export const LL_STYLE_SEEDS: Record<string, LlStyleSeed> = {
     summary: "Open games; BTTS lean.",
     leans: ["btts"],
   },
+  Deportivo: {
+    summary:
+      "Historic top-flight club returning; prior La Liga spells show moderate BTTS and home competitiveness — qualitative only until 2026/27 samples.",
+    leans: ["btts", "home_over"],
+    notes: "No numeric seeds from lower-division years.",
+  },
+  Malaga: {
+    summary:
+      "Returning side with prior La Liga history; often mid/lower-table, Under lean when compact.",
+    leans: ["under"],
+    notes: "Qualitative only — wait for real 2026/27 matches.",
+  },
+  // Racing Santander: intentionally no style_seed (thin recent top-flight data).
 };
 
 export function isLlPromotedTeam(team: string): boolean {

@@ -9,6 +9,8 @@ import { recomputeAndPersistLeaguePriors } from "@/lib/prediction-log/league-pri
 import { recomputePlSeasonCards } from "@/lib/prediction-log/pl-season-store";
 import { recomputeLlSeasonCards } from "@/lib/prediction-log/ll-season-store";
 import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
+import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
+import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
 import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
 import { scoreMatch, scoreBatch, marketsEnteredCount } from "@/lib/prediction-log/scoring";
 import { matchLeague } from "@/lib/prediction-log/match-league";
@@ -317,6 +319,8 @@ export async function syncPredictionLogResults(
     await recomputePlSeasonCards().catch(() => null);
     await recomputeLlSeasonCards().catch(() => null);
     await recomputeBlSeasonCards().catch(() => null);
+    await recomputeSaSeasonCards().catch(() => null);
+    await recomputeL1SeasonCards().catch(() => null);
   }
 
   return summary;
@@ -397,6 +401,8 @@ export async function replaceMatchResultsFromApi(
   await recomputePlSeasonCards().catch(() => null);
   await recomputeLlSeasonCards().catch(() => null);
   await recomputeBlSeasonCards().catch(() => null);
+  await recomputeSaSeasonCards().catch(() => null);
+  await recomputeL1SeasonCards().catch(() => null);
   return summary;
 }
 
