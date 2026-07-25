@@ -1,16 +1,39 @@
 const DEFAULT_API_BASE = "https://v3.football.api-sports.io";
 
+export const API_KEY_NOT_CONFIGURED_MSG =
+  "APISPORTS_KEY (or API_FOOTBALL_KEY) is not configured";
+
+const PLACEHOLDER_KEYS = new Set([
+  "your_api_key_here",
+  "changeme",
+  "change_me",
+  "xxx",
+]);
+
 export function getApiFootballBaseUrl(): string {
   const raw = (process.env.API_FOOTBALL_BASE_URL ?? "").trim().replace(/\/$/, "");
   return raw || DEFAULT_API_BASE;
 }
 
+/**
+ * Prefer APISPORTS_KEY (brief name); fall back to legacy API_FOOTBALL_KEY.
+ * Never log the key value.
+ */
 export function getApiFootballKey(): string {
-  const key = (process.env.API_FOOTBALL_KEY ?? "").trim();
-  if (!key || key.toLowerCase() === "your_api_key_here") {
-    throw new Error("API_FOOTBALL_KEY is not configured");
+  const key = (
+    process.env.APISPORTS_KEY ??
+    process.env.API_FOOTBALL_KEY ??
+    ""
+  ).trim();
+  if (!key || PLACEHOLDER_KEYS.has(key.toLowerCase())) {
+    throw new Error(API_KEY_NOT_CONFIGURED_MSG);
   }
   return key;
+}
+
+/** True when an error message indicates missing key / config. */
+export function isApiFootballKeyError(msg: string): boolean {
+  return /APISPORTS_KEY|API_FOOTBALL_KEY|not configured/i.test(msg);
 }
 
 export interface ApiFootballResponse<T> {

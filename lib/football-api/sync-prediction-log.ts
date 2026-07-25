@@ -15,7 +15,7 @@ import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
 import { scoreMatch, scoreBatch, marketsEnteredCount } from "@/lib/prediction-log/scoring";
 import { matchLeague } from "@/lib/prediction-log/match-league";
 import type { LogMarketKey, LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
-import { sleep } from "./client";
+import { isApiFootballKeyError, sleep } from "./client";
 import {
   fetchFixtureByIdCached,
   fetchFixtureStatisticsCached,
@@ -238,7 +238,7 @@ export async function syncPredictionLogResults(
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         summary.errors.push(`${batch.batchName}: ${msg}`);
-        if (msg.includes("API_FOOTBALL_KEY") || /rate|limit|quota/i.test(msg)) {
+        if (isApiFootballKeyError(msg) || /rate|limit|quota/i.test(msg)) {
           summary.unavailable = true;
         }
         updatedMatches.push(match);

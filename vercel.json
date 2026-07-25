@@ -7,6 +7,18 @@
     {
       "path": "/api/cron/fill-telegram-results",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/live-daily-sweep",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/live-prematch",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/live-poll",
+      "schedule": "* * * * *"
     }
   ],
   "functions": {
@@ -54,6 +66,21 @@
     },
     "app/api/cron/fill-telegram-results/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/live-daily-sweep/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/live-prematch/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/live-poll/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/live/fixtures/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/live/fixtures/[id]/route.ts": {
+      "maxDuration": 30
     },
     "app/api/fixtures/resolve/route.ts": {
       "maxDuration": 60

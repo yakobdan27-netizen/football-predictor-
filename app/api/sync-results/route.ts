@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isApiFootballKeyError } from "@/lib/football-api/client";
 import {
   replaceMatchResultsFromApi,
   syncPredictionLogResults,
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, ...summary });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to sync results";
-    const status = msg.includes("API_FOOTBALL_KEY") ? 503 : 500;
+    const status = isApiFootballKeyError(msg) ? 503 : 500;
     return NextResponse.json(
       {
         error: msg,

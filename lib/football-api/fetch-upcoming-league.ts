@@ -42,6 +42,8 @@ export interface UpcomingFixturesResult {
   leagueId: number;
   fixtures: UpcomingFixtureRow[];
   fromCache: boolean;
+  /** Set when live fetch failed but stale cache was served. */
+  warning?: string;
 }
 
 function kickoffMs(iso: string): number {
@@ -120,23 +122,87 @@ export async function fetchUpcomingForLeague(opts: {
     }
   }
 
-  // Fetch a wider window then filter/cap — API `next` counts all statuses.
+  try {
+    const rows = await fetchUpcomingFixtureRows(leagueId, season, next, asOf);
+    const selected = selectUpcomingFixtures(rows, next);
+    const fixtures = selected.map((f) =>
+      mapFixtureToUpcomingRow(f, opts.league, leagueId)
+    );
+    await setJsonEx(cacheKey, fixtures, UPCOMING_CACHE_TTL_SECONDS);
+    return {
+      season,
+      league: opts.league,
+      leagueId,
+      fixtures,
+      fromCache: false,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "API unavailable";
+    // Stale cache is better than a hard fail — UI shows a non-blocking banner.
+    const cached = await getJson<UpcomingFixtureRow[]>(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return {
+        season,
+        league: opts.league,
+        leagueId,
+        fixtures: cached,
+        fromCache: true,
+        warning: msg,
+      };
+    }
+    // Clear empty + warning (e.g. Free plan season limit) — do not invent fixtures.
+    return {
+      season,
+      league: opts.league,
+      leagueId,
+      fixtures: [],
+      fromCache: false,
+      warning: msg,
+    };
+  }
+}
+
+function addDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Prefer `next=` (Pro+). Free plan often blocks `next` — fall back to from/to window.
+ */
+async function fetchUpcomingFixtureRows(
+  leagueId: number,
+  season: number,
+  next: number,
+  asOf: string
+): Promise<ApiFootballFixture[]> {
   const fetchNext = Math.min(50, Math.max(next * 3, next));
-  const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
-    league: leagueId,
-    season,
-    next: fetchNext,
-  });
-  const selected = selectUpcomingFixtures(rows ?? [], next);
-  const fixtures = selected.map((f) =>
-    mapFixtureToUpcomingRow(f, opts.league, leagueId)
-  );
-  await setJsonEx(cacheKey, fixtures, UPCOMING_CACHE_TTL_SECONDS);
-  return {
-    season,
-    league: opts.league,
-    leagueId,
-    fixtures,
-    fromCache: false,
-  };
+  try {
+    const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
+      league: leagueId,
+      season,
+      next: fetchNext,
+    });
+    return rows ?? [];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const nextBlocked = /next parameter|do not have access to the Next/i.test(
+      msg
+    );
+    const seasonBlocked = /do not have access to this season/i.test(msg);
+    if (seasonBlocked) throw e;
+    if (!nextBlocked && !/HTTP|plan|Free/i.test(msg)) throw e;
+
+    const from = asOf;
+    const to = addDaysIso(asOf, 60);
+    const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
+      league: leagueId,
+      season,
+      from,
+      to,
+    });
+    return rows ?? [];
+  }
 }

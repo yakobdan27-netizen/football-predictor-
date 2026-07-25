@@ -110,6 +110,9 @@ function TeamSide({
   );
 }
 
+const API_UNAVAILABLE_COPY =
+  "API unavailable — try again or enter batches manually.";
+
 async function fetchLeague(
   league: NextMatchesLeague,
   refresh: boolean
@@ -123,6 +126,7 @@ async function fetchLeague(
   const data = (await res.json()) as {
     ok?: boolean;
     error?: string;
+    warning?: string;
     season?: number;
     fixtures?: UpcomingFixtureRow[];
     fromCache?: boolean;
@@ -130,14 +134,15 @@ async function fetchLeague(
   if (!res.ok) {
     return {
       loading: false,
-      error: data.error ?? "Failed to load fixtures",
+      error: data.warning ?? API_UNAVAILABLE_COPY,
       season: null,
-      fixtures: [],
+      fixtures: data.fixtures ?? [],
+      fromCache: data.fromCache,
     };
   }
   return {
     loading: false,
-    error: null,
+    error: data.warning ? API_UNAVAILABLE_COPY : null,
     season: data.season ?? null,
     fixtures: data.fixtures ?? [],
     fromCache: data.fromCache,
@@ -292,7 +297,10 @@ export function NextMatchesApp() {
       )}
 
       {!state.loading && state.error && (
-        <div className="alert alert-error">{state.error}</div>
+        <div className="alert alert-error" style={{ marginBottom: "0.75rem" }}>
+          {state.error}
+          {state.fixtures.length > 0 ? " Showing cached fixtures." : null}
+        </div>
       )}
 
       {!state.loading && !state.error && state.fixtures.length === 0 && (

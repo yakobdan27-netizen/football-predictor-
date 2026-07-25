@@ -50,5 +50,51 @@ export async function ensureSchema(): Promise<void> {
   await sql`DROP TABLE IF EXISTS user_prediction_lists CASCADE`;
   await sql`DROP TABLE IF EXISTS predictions CASCADE`;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS live_leagues (
+      league_id integer PRIMARY KEY,
+      name text NOT NULL,
+      country text,
+      season integer NOT NULL,
+      logo_url text
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS live_fixtures (
+      fixture_id integer PRIMARY KEY,
+      league_id integer NOT NULL,
+      season integer NOT NULL,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      home_id integer,
+      away_id integer,
+      kickoff_utc timestamptz NOT NULL,
+      venue text,
+      status text NOT NULL,
+      status_minute integer,
+      home_goals integer,
+      away_goals integer,
+      last_synced_utc timestamptz NOT NULL,
+      settled_emitted_at timestamptz
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS live_events (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      minute integer,
+      type text,
+      team text,
+      player text
+    )
+  `;
+
+  await sql`CREATE INDEX IF NOT EXISTS live_fixtures_status_idx ON live_fixtures (status)`;
+  await sql`CREATE INDEX IF NOT EXISTS live_fixtures_kickoff_idx ON live_fixtures (kickoff_utc)`;
+  await sql`CREATE INDEX IF NOT EXISTS live_fixtures_league_season_idx ON live_fixtures (league_id, season)`;
+  await sql`CREATE INDEX IF NOT EXISTS live_events_fixture_idx ON live_events (fixture_id)`;
+
   initialized = true;
 }

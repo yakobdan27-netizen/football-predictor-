@@ -44,6 +44,16 @@ function TeamSelect({
   );
 }
 
+type FootballStatusUi = {
+  ok: boolean;
+  plan?: string;
+  subscriptionActive?: boolean;
+  subscriptionEnd?: string;
+  account?: { firstname?: string; lastname?: string; email?: string };
+  requests?: { current?: number; limitDay?: number; remaining?: number };
+  error?: string;
+};
+
 export function ManualResultsApp() {
   const [league, setLeague] = useState<string>(NEXT_MATCHES_LEAGUES[0]);
   const [homeTeam, setHomeTeam] = useState("");
@@ -59,6 +69,32 @@ export function ManualResultsApp() {
   const [rerunningId, setRerunningId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [apiStatus, setApiStatus] = useState<FootballStatusUi | null>(null);
+  const [apiStatusLoading, setApiStatusLoading] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    setApiStatusLoading(true);
+    try {
+      const res = await fetch("/api/football-status");
+      const data = (await res.json()) as FootballStatusUi;
+      setApiStatus({
+        ok: Boolean(data.ok),
+        plan: data.plan,
+        subscriptionActive: data.subscriptionActive,
+        subscriptionEnd: data.subscriptionEnd,
+        account: data.account,
+        requests: data.requests,
+        error: data.error,
+      });
+    } catch (e) {
+      setApiStatus({
+        ok: false,
+        error: e instanceof Error ? e.message : "Status check failed",
+      });
+    } finally {
+      setApiStatusLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,7 +116,8 @@ export function ManualResultsApp() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadStatus();
+  }, [load, loadStatus]);
 
   async function onLock() {
     await fetch("/api/admin/lock", { method: "POST" });
@@ -222,6 +259,71 @@ export function ManualResultsApp() {
           {error}
         </div>
       )}
+
+      <div className="card" style={{ marginBottom: "1.5rem" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+            marginBottom: "0.5rem",
+          }}
+        >
+          <h2 style={{ fontWeight: 700, margin: 0, fontSize: "1rem" }}>
+            API-Football status
+          </h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={apiStatusLoading}
+            onClick={() => void loadStatus()}
+          >
+            {apiStatusLoading ? "Checking…" : "Refresh"}
+          </button>
+        </div>
+        {apiStatusLoading && !apiStatus ? (
+          <p className="page-sub" style={{ margin: 0 }}>
+            Checking API key…
+          </p>
+        ) : apiStatus?.ok ? (
+          <div style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
+            <p style={{ margin: "0 0 0.35rem", color: "var(--text)" }}>
+              Connected
+              {apiStatus.plan ? ` · ${apiStatus.plan}` : ""}
+              {apiStatus.subscriptionActive === false ? " · inactive" : ""}
+            </p>
+            {apiStatus.requests &&
+              (apiStatus.requests.current != null ||
+                apiStatus.requests.limitDay != null) && (
+                <p style={{ margin: 0 }}>
+                  Requests:{" "}
+                  {apiStatus.requests.current != null
+                    ? apiStatus.requests.current
+                    : "—"}
+                  {" / "}
+                  {apiStatus.requests.limitDay != null
+                    ? apiStatus.requests.limitDay
+                    : "—"}
+                  {apiStatus.requests.remaining != null
+                    ? ` (${apiStatus.requests.remaining} remaining)`
+                    : ""}
+                </p>
+              )}
+            {apiStatus.subscriptionEnd && (
+              <p style={{ margin: "0.35rem 0 0" }}>
+                Subscription end: {apiStatus.subscriptionEnd}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="alert alert-error" style={{ margin: 0 }}>
+            {apiStatus?.error ?? "API status unavailable"}
+            {" — manual fill still works."}
+          </div>
+        )}
+      </div>
 
       <form className="card" onSubmit={onSave} style={{ marginBottom: "1.5rem" }}>
         <h2 style={{ fontWeight: 700, marginBottom: "0.75rem", fontSize: "1rem" }}>

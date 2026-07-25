@@ -3,6 +3,7 @@
  * Run: npx tsx scripts/verify-api-football.ts
  *
  * Loads .env.local / .env if present (never commit keys).
+ * Accepts APISPORTS_KEY or legacy API_FOOTBALL_KEY.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -33,16 +34,58 @@ function loadEnvFile(name: string) {
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
+type StatusAccount = {
+  firstname?: string;
+  lastname?: string;
+  email?: string;
+};
+
+type StatusSubscription = {
+  plan?: string;
+  end?: string;
+  active?: boolean;
+};
+
+type StatusRequests = {
+  current?: number;
+  limit_day?: number;
+};
+
+type StatusPayload = {
+  account?: StatusAccount;
+  subscription?: StatusSubscription;
+  requests?: StatusRequests;
+};
+
 async function main() {
   const { apiFootballGet, getApiFootballKey, getApiFootballBaseUrl } = await import(
     "../lib/football-api/client"
   );
   try {
-    const keyPreview = getApiFootballKey().slice(0, 4) + "…";
+    const key = getApiFootballKey();
+    const source = (process.env.APISPORTS_KEY ?? "").trim()
+      ? "APISPORTS_KEY"
+      : "API_FOOTBALL_KEY";
     console.log("Base URL:", getApiFootballBaseUrl());
-    console.log("Key present:", keyPreview);
-    const status = await apiFootballGet<unknown>("/status");
-    console.log("KEY WORKS. Account:", JSON.stringify(status, null, 2));
+    console.log("Key source:", source);
+    console.log("Key present:", key.slice(0, 4) + "…");
+    const status = (await apiFootballGet<StatusPayload>("/status")) as StatusPayload;
+    const plan = status?.subscription?.plan ?? "(unknown)";
+    const current = status?.requests?.current;
+    const limit = status?.requests?.limit_day;
+    const remaining =
+      typeof current === "number" && typeof limit === "number"
+        ? Math.max(0, limit - current)
+        : null;
+    console.log("KEY WORKS.");
+    console.log("Plan:", plan);
+    console.log(
+      "Requests:",
+      current != null && limit != null
+        ? `${current} / ${limit} (remaining ${remaining})`
+        : JSON.stringify(status?.requests ?? null)
+    );
+    console.log("Raw status:", JSON.stringify(status, null, 2));
   } catch (e) {
     console.error("KEY FAILED:", e instanceof Error ? e.message : e);
     process.exitCode = 1;

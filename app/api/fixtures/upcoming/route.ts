@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isApiFootballKeyError } from "@/lib/football-api/client";
 import {
   DEFAULT_UPCOMING_NEXT,
   NEXT_MATCHES_LEAGUES,
@@ -48,10 +49,20 @@ export async function GET(request: Request) {
       leagueId: result.leagueId,
       fixtures: result.fixtures,
       fromCache: result.fromCache,
+      warning: result.warning,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load upcoming fixtures";
-    const status = /API_FOOTBALL_KEY|not configured/i.test(msg) ? 503 : 502;
-    return NextResponse.json({ error: msg }, { status });
+    const status = isApiFootballKeyError(msg) ? 503 : 502;
+    return NextResponse.json(
+      {
+        ok: false,
+        error: msg,
+        warning:
+          "API unavailable — try again or enter batches manually.",
+        fixtures: [],
+      },
+      { status }
+    );
   }
 }

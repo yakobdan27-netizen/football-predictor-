@@ -93,30 +93,63 @@ function cacheKey(homeId: number, awayId: number, leagueId: number | null): stri
   return `${homeId}:${awayId}:${leagueId ?? "any"}`;
 }
 
+function addDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return isoDate;
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 async function fetchUpcomingForTeam(
   teamId: number,
   leagueId: number | null,
   season: number
 ): Promise<ApiFootballFixture[]> {
-  const query: Record<string, string | number> = {
-    team: teamId,
-    next: 20,
-  };
-  if (leagueId != null) {
-    query.league = leagueId;
-    query.season = season;
-  }
-  try {
-    const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", query);
-    return rows ?? [];
-  } catch {
-    // Fallback without league filter
-    if (leagueId == null) throw new Error("fixtures fetch failed");
-    const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
+  const from = todayIsoDate();
+  const to = addDaysIso(from, 90);
+
+  const tryNext = async (withLeague: boolean) => {
+    const query: Record<string, string | number> = {
       team: teamId,
       next: 20,
-    });
-    return rows ?? [];
+    };
+    if (withLeague && leagueId != null) {
+      query.league = leagueId;
+      query.season = season;
+    }
+    return apiFootballGet<ApiFootballFixture[]>("/fixtures", query);
+  };
+
+  const tryRange = async (withLeague: boolean) => {
+    const query: Record<string, string | number> = {
+      team: teamId,
+      from,
+      to,
+    };
+    if (withLeague && leagueId != null) {
+      query.league = leagueId;
+      query.season = season;
+    }
+    return apiFootballGet<ApiFootballFixture[]>("/fixtures", query);
+  };
+
+  try {
+    return (await tryNext(true)) ?? [];
+  } catch {
+    try {
+      return (await tryRange(true)) ?? [];
+    } catch {
+      if (leagueId == null) return [];
+      try {
+        return (await tryNext(false)) ?? [];
+      } catch {
+        try {
+          return (await tryRange(false)) ?? [];
+        } catch {
+          return [];
+        }
+      }
+    }
   }
 }
 
@@ -124,6 +157,8 @@ async function fetchH2hUpcoming(
   homeId: number,
   awayId: number
 ): Promise<ApiFootballFixture[]> {
+  const from = todayIsoDate();
+  const to = addDaysIso(from, 90);
   try {
     const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures/headtohead", {
       h2h: `${homeId}-${awayId}`,
@@ -131,7 +166,19 @@ async function fetchH2hUpcoming(
     });
     return rows ?? [];
   } catch {
-    return [];
+    try {
+      const rows = await apiFootballGet<ApiFootballFixture[]>(
+        "/fixtures/headtohead",
+        {
+          h2h: `${homeId}-${awayId}`,
+          from,
+          to,
+        }
+      );
+      return rows ?? [];
+    } catch {
+      return [];
+    }
   }
 }
 
