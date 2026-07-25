@@ -101,10 +101,24 @@ export function LiveFixturesApp() {
 
   useEffect(() => {
     if (tab !== "live") return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        // Hobby: no minutely cron — poll API into live_* while Live tab is open
+        await fetch("/api/live/refresh", { method: "POST" });
+      } catch {
+        // ignore — still re-read cached rows
+      }
+      if (!cancelled) await load({ silent: true });
+    };
+    void tick();
     const id = window.setInterval(() => {
-      void load({ silent: true });
+      void tick();
     }, 35_000);
-    return () => window.clearInterval(id);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, [tab, load]);
 
   useEffect(() => {

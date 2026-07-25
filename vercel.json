@@ -14,11 +14,7 @@
     },
     {
       "path": "/api/cron/live-prematch",
-      "schedule": "0 * * * *"
-    },
-    {
-      "path": "/api/cron/live-poll",
-      "schedule": "* * * * *"
+      "schedule": "0 15 * * *"
     }
   ],
   "functions": {
@@ -81,6 +77,9 @@
     },
     "app/api/live/fixtures/[id]/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/live/refresh/route.ts": {
+      "maxDuration": 60
     },
     "app/api/fixtures/resolve/route.ts": {
       "maxDuration": 60
