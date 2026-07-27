@@ -1,8 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LIVE_SYNC_LEAGUES } from "@/lib/live/constants";
-import type { LiveEventDto, LiveFixtureDto, LiveTab } from "@/lib/live/types";
+import type {
+  LiveEventDto,
+  LiveFixtureDto,
+  LiveSyncMetaDto,
+  LiveTab,
+} from "@/lib/live/types";
 
 const TABS: { id: LiveTab; label: string }[] = [
   { id: "live", label: "Live" },
@@ -56,12 +62,16 @@ export function LiveFixturesApp() {
   const [league, setLeague] = useState<string | null>(null);
   const [fixtures, setFixtures] = useState<LiveFixtureDto[]>([]);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
+  const [syncMeta, setSyncMeta] = useState<LiveSyncMetaDto | null>(null);
   const [stale, setStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [detailEvents, setDetailEvents] = useState<LiveEventDto[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [authHint, setAuthHint] = useState(false);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -76,12 +86,14 @@ export function LiveFixturesApp() {
           syncedAt?: string | null;
           stale?: boolean;
           error?: string;
+          syncMeta?: LiveSyncMetaDto | null;
         };
         if (!res.ok && !data.fixtures) {
           throw new Error(data.error ?? "Failed to load");
         }
         setFixtures(data.fixtures ?? []);
-        setSyncedAt(data.syncedAt ?? null);
+        setSyncedAt(data.syncedAt ?? data.syncMeta?.lastSyncAt ?? null);
+        setSyncMeta(data.syncMeta ?? null);
         setStale(Boolean(data.stale) || !res.ok);
         setFetchError(res.ok ? null : data.error ?? "API unavailable");
       } catch (e) {
@@ -94,6 +106,51 @@ export function LiveFixturesApp() {
     },
     [tab, league]
   );
+
+  async function runSyncNow() {
+    setSyncing(true);
+    setToast(null);
+    setAuthHint(false);
+    try {
+      const res = await fetch("/api/sync/run?scope=schedule", {
+        method: "POST",
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        fetched?: number;
+        inserted?: number;
+        updated?: number;
+        skipped?: number;
+        errors?: string[];
+        reason?: string;
+        status?: string;
+        error?: string;
+      };
+      if (res.status === 401) {
+        setAuthHint(true);
+        setToast("Admin unlock required to sync.");
+        return;
+      }
+      if (res.status === 503 && data.error?.includes("ADMIN_SECRET")) {
+        setToast(data.error);
+        return;
+      }
+      const fetched = data.fetched ?? 0;
+      const inserted = data.inserted ?? 0;
+      const updated = data.updated ?? 0;
+      const errN = data.errors?.length ?? 0;
+      setToast(
+        data.reason ??
+          `Sync: fetched ${fetched}, inserted ${inserted}, updated ${updated}` +
+            (errN ? `, errors ${errN}` : "")
+      );
+      await load({ silent: true });
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     void load();
@@ -196,17 +253,55 @@ export function LiveFixturesApp() {
           </p>
         </div>
         <div
-          className="badge"
           style={{
-            background: stale ? "rgba(245,158,11,0.15)" : "var(--surface2)",
-            color: stale ? "var(--warn)" : "var(--muted)",
-            border: `1px solid ${stale ? "var(--warn)" : "var(--border)"}`,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "0.5rem",
+            alignItems: "center",
           }}
         >
-          {stale ? "stale · " : ""}
-          {formatAgo(syncedAt)}
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={syncing}
+            onClick={() => void runSyncNow()}
+          >
+            {syncing ? "Syncing…" : "Sync Now"}
+          </button>
+          <div
+            className="badge"
+            style={{
+              background: stale ? "rgba(245,158,11,0.15)" : "var(--surface2)",
+              color: stale ? "var(--warn)" : "var(--muted)",
+              border: `1px solid ${stale ? "var(--warn)" : "var(--border)"}`,
+            }}
+          >
+            {stale ? "stale · " : ""}
+            {formatAgo(syncMeta?.lastSyncAt ?? syncedAt)}
+          </div>
         </div>
       </div>
+
+      {toast && (
+        <div
+          className={
+            authHint || /fail|invalid|quota|error/i.test(toast)
+              ? "alert alert-error"
+              : "alert"
+          }
+          style={{ marginBottom: "0.75rem" }}
+        >
+          {toast}
+          {authHint && (
+            <>
+              {" "}
+              <Link href="/admin/manual-results" style={{ textDecoration: "underline" }}>
+                Unlock admin
+              </Link>
+            </>
+          )}
+        </div>
+      )}
 
       {fetchError && (
         <div className="alert alert-error" style={{ marginBottom: "0.75rem" }}>
@@ -297,12 +392,11 @@ export function LiveFixturesApp() {
       )}
 
       {!loading && fixtures.length === 0 && (
-        <div className="card">
-          <p style={{ margin: 0, color: "var(--muted)" }}>
-            No fixtures in this view. Sync runs on a schedule (daily / hourly /
-            live poll).
-          </p>
-        </div>
+        <EmptyState
+          syncMeta={syncMeta}
+          syncing={syncing}
+          onSync={() => void runSyncNow()}
+        />
       )}
 
       {tab === "upcoming" && grouped
@@ -466,6 +560,82 @@ export function LiveFixturesApp() {
               )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({
+  syncMeta,
+  syncing,
+  onSync,
+}: {
+  syncMeta: LiveSyncMetaDto | null;
+  syncing: boolean;
+  onSync: () => void;
+}) {
+  const neverSynced = !syncMeta?.lastSyncAt;
+  const failed =
+    syncMeta?.status === "error" ||
+    syncMeta?.status === "quota" ||
+    syncMeta?.status === "auth";
+  const from = syncMeta?.from;
+  const to = syncMeta?.to;
+
+  let title: string;
+  let detail: string | null = null;
+  if (neverSynced) {
+    title = "No sync has run. Tap Sync Now.";
+  } else if (failed) {
+    title = `Last sync failed: ${syncMeta?.reason ?? "unknown error"}.`;
+  } else {
+    title =
+      from && to
+        ? `No matches scheduled between ${from} and ${to}.`
+        : "No matches scheduled in the next 7 days.";
+    detail = syncMeta?.lastSyncAt
+      ? `Last sync: ${new Date(syncMeta.lastSyncAt).toLocaleString()}`
+      : null;
+  }
+
+  return (
+    <div className="card">
+      <p style={{ margin: "0 0 0.75rem", color: "var(--muted)" }}>{title}</p>
+      {detail && (
+        <p
+          style={{
+            margin: "0 0 0.75rem",
+            fontSize: "0.8125rem",
+            color: "var(--muted)",
+          }}
+        >
+          {detail}
+        </p>
+      )}
+      {(neverSynced || failed) && (
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={syncing}
+          onClick={onSync}
+        >
+          {syncing ? "Syncing…" : neverSynced ? "Sync Now" : "Retry"}
+        </button>
+      )}
+      {neverSynced && (
+        <p
+          style={{
+            margin: "0.75rem 0 0",
+            fontSize: "0.75rem",
+            color: "var(--muted)",
+          }}
+        >
+          Requires{" "}
+          <Link href="/admin/manual-results" style={{ textDecoration: "underline" }}>
+            admin unlock
+          </Link>
+          .
+        </p>
       )}
     </div>
   );

@@ -3,7 +3,6 @@ import { neon } from "@neondatabase/serverless";
 let initialized = false;
 
 export async function ensureSchema(): Promise<void> {
-  if (initialized) return;
   const url =
     process.env.DATABASE_URL ??
     process.env.POSTGRES_URL ??
@@ -11,6 +10,22 @@ export async function ensureSchema(): Promise<void> {
   if (!url) return;
 
   const sql = neon(url);
+
+  // Always ensure live_sync_meta exists (added after initial live_* rollout).
+  await sql`
+    CREATE TABLE IF NOT EXISTS live_sync_meta (
+      id integer PRIMARY KEY DEFAULT 1,
+      last_sync_at timestamptz,
+      last_sync_status text,
+      last_sync_reason text,
+      last_from date,
+      last_to date,
+      last_fetched integer,
+      last_upserted integer
+    )
+  `;
+
+  if (initialized) return;
 
   await sql`
     CREATE TABLE IF NOT EXISTS matches (

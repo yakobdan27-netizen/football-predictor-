@@ -1,108 +1,266 @@
-import { sleep } from "@/lib/football-api/client";
+import {
+  API_KEY_NOT_CONFIGURED_MSG,
+  getApiFootballKey,
+  isApiFootballKeyError,
+  sleep,
+} from "@/lib/football-api/client";
 import { LEAGUE_API_IDS, apiSeasonFromDate } from "@/lib/football-api/leagues";
+import { normalizeFootballStatus } from "@/lib/football-api/status";
 import { LIVE_SYNC_LEAGUES } from "./constants";
 import { addDaysIso, todayIsoDate } from "./dates";
 import { apiSportsLiveProvider, type LiveFixturesProvider } from "./provider";
-import { applyApiFixtures, safeApply, type SyncSummary } from "./sync-apply";
+import { applyApiFixtures } from "./sync-apply";
+import {
+  type LiveSyncStatus,
+  writeSyncMeta,
+} from "./store";
+
+export type LeagueSyncRow = {
+  league: string;
+  leagueId: number;
+  fetched: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  error?: string;
+};
+
+export type ScheduleSyncSummary = {
+  ok: boolean;
+  fetched: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  errors: string[];
+  from: string;
+  to: string;
+  season: number;
+  leagues: LeagueSyncRow[];
+  settledEmitted: number;
+  status: LiveSyncStatus;
+  reason: string | null;
+  /** @deprecated use inserted+updated */
+  upserted: number;
+};
 
 /**
- * Daily fixture sweep — full season (or from/to fallback for Free plan).
+ * Rolling 7-day schedule sync for current API season.
+ * Does NOT fall back to prior seasons (avoids invisible 2024 FT dumps).
  */
-export async function runDailySweep(
+export async function syncSchedule(
   provider: LiveFixturesProvider = apiSportsLiveProvider
-): Promise<SyncSummary & { leaguesTried: number }> {
-  const season = apiSeasonFromDate(todayIsoDate());
-  const asOf = todayIsoDate();
-  let upserted = 0;
+): Promise<ScheduleSyncSummary> {
+  const from = todayIsoDate();
+  const to = addDaysIso(from, 7);
+  const season = apiSeasonFromDate(from);
+
+  const emptySummary = (
+    status: LiveSyncStatus,
+    reason: string,
+    errors: string[] = []
+  ): ScheduleSyncSummary => ({
+    ok: false,
+    fetched: 0,
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    upserted: 0,
+    errors: errors.length ? errors : [reason],
+    from,
+    to,
+    season,
+    leagues: [],
+    settledEmitted: 0,
+    status,
+    reason,
+  });
+
+  // --- Preflight key + /status ---
+  try {
+    getApiFootballKey();
+  } catch (e) {
+    const reason =
+      e instanceof Error ? e.message : API_KEY_NOT_CONFIGURED_MSG;
+    const summary = emptySummary("auth", "API key invalid — check env");
+    await writeSyncMeta({
+      status: "auth",
+      reason: summary.reason,
+      from,
+      to,
+      fetched: 0,
+      upserted: 0,
+    });
+    return summary;
+  }
+
+  try {
+    const rawStatus = await providerFetchStatus();
+    const st = normalizeFootballStatus(rawStatus);
+    const current = st.requests?.current;
+    const limit = st.requests?.limitDay;
+    if (
+      current != null &&
+      limit != null &&
+      limit > 0 &&
+      current >= limit
+    ) {
+      const summary = emptySummary("quota", "API quota reached");
+      await writeSyncMeta({
+        status: "quota",
+        reason: summary.reason,
+        from,
+        to,
+        fetched: 0,
+        upserted: 0,
+      });
+      return summary;
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (
+      isApiFootballKeyError(msg) ||
+      /HTTP 401|HTTP 403|invalid|Unauthorized/i.test(msg)
+    ) {
+      const summary = emptySummary("auth", "API key invalid — check env");
+      await writeSyncMeta({
+        status: "auth",
+        reason: summary.reason,
+        from,
+        to,
+        fetched: 0,
+        upserted: 0,
+      });
+      return summary;
+    }
+    // Non-auth status failure: continue sync but note warning
+    console.warn("[live] /status preflight failed:", msg);
+  }
+
+  let fetched = 0;
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
   let settledEmitted = 0;
-  const warnings: string[] = [];
-  let leaguesTried = 0;
+  const errors: string[] = [];
+  const leagues: LeagueSyncRow[] = [];
 
   for (const name of LIVE_SYNC_LEAGUES) {
     const leagueId = LEAGUE_API_IDS[name];
-    leaguesTried += 1;
-    const one = await safeApply(`daily:${name}`, async () => {
-      const raw = await fetchSeasonWithFallbacks(
-        provider,
-        leagueId,
-        season,
-        asOf
+    try {
+      const raw = await provider.fetchDateRange(leagueId, season, from, to);
+      console.log(
+        `[live] schedule ${name} league=${leagueId} season=${season} from=${from} to=${to} results=${raw.length}`
       );
-      let fixtures = raw.fixtures;
-      // Prior-season Free-plan fallback: keep newest ~80 to stay in cron budget
-      if (raw.seasonUsed < season && fixtures.length > 80) {
-        fixtures = [...fixtures]
-          .sort(
-            (a, b) =>
-              Date.parse(b.fixture.date || "") - Date.parse(a.fixture.date || "")
-          )
-          .slice(0, 80);
+      const applied = await applyApiFixtures(raw, season);
+      fetched += applied.fetched;
+      inserted += applied.inserted;
+      updated += applied.updated;
+      skipped += applied.skipped;
+      settledEmitted += applied.settledEmitted;
+      leagues.push({
+        league: name,
+        leagueId,
+        fetched: applied.fetched,
+        inserted: applied.inserted,
+        updated: applied.updated,
+        skipped: applied.skipped,
+      });
+
+      if (applied.fetched > 0 && applied.upserted === 0) {
+        const err = `${name}: fetched ${applied.fetched} but inserted+updated=0 (upsert key?)`;
+        errors.push(err);
+        console.error("[live]", err);
       }
-      return applyApiFixtures(fixtures, raw.seasonUsed);
-    });
-    if (one.ok) {
-      upserted += one.upserted;
-      settledEmitted += one.settledEmitted;
-    } else if (one.error) {
-      warnings.push(`${name}: ${one.error}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[live] schedule ${name} failed:`, msg);
+      errors.push(`${name}: ${msg}`);
+      leagues.push({
+        league: name,
+        leagueId,
+        fetched: 0,
+        inserted: 0,
+        updated: 0,
+        skipped: 0,
+        error: msg,
+      });
     }
-    await sleep(300);
+    await sleep(250);
   }
 
-  return {
-    ok: warnings.length < LIVE_SYNC_LEAGUES.length,
+  const upserted = inserted + updated;
+  let status: LiveSyncStatus;
+  let reason: string | null;
+  let ok: boolean;
+
+  if (errors.length === LIVE_SYNC_LEAGUES.length) {
+    status = /quota|rate|limit/i.test(errors[0] ?? "")
+      ? "quota"
+      : /season|plan|Free|401|403|key/i.test(errors[0] ?? "")
+        ? /401|403|key|not configured/i.test(errors[0] ?? "")
+          ? "auth"
+          : "error"
+        : "error";
+    reason = errors[0] ?? "All league syncs failed";
+    ok = false;
+  } else if (fetched === 0 && errors.length === 0) {
+    status = "empty";
+    reason = `No matches scheduled between ${from} and ${to}`;
+    ok = true;
+  } else if (fetched > 0 && upserted === 0) {
+    status = "error";
+    reason =
+      errors[0] ??
+      "Fetched fixtures but none were written — check fixture_id upsert";
+    ok = false;
+  } else if (errors.length > 0 && upserted === 0) {
+    status = "error";
+    reason = errors[0] ?? "Sync failed";
+    ok = false;
+  } else {
+    status = "ok";
+    reason =
+      errors.length > 0
+        ? `Partial sync: ${errors.slice(0, 2).join(" | ")}`
+        : `Synced ${upserted} fixtures (${from} → ${to})`;
+    ok = true;
+  }
+
+  await writeSyncMeta({
+    status,
+    reason,
+    from,
+    to,
+    fetched,
     upserted,
+  });
+
+  return {
+    ok,
+    fetched,
+    inserted,
+    updated,
+    skipped,
+    upserted,
+    errors,
+    from,
+    to,
+    season,
+    leagues,
     settledEmitted,
-    leaguesTried,
-    warning: warnings.length ? warnings.slice(0, 3).join(" | ") : undefined,
-    error:
-      warnings.length === LIVE_SYNC_LEAGUES.length
-        ? warnings[0]
-        : undefined,
+    status,
+    reason,
   };
 }
 
-/**
- * Prefer current season; on Free-plan season blocks try from/to, then prior season.
- * Never invents fixtures — only returns what the API actually provides.
- */
-async function fetchSeasonWithFallbacks(
-  provider: LiveFixturesProvider,
-  leagueId: number,
-  season: number,
-  asOf: string
-): Promise<{ fixtures: Awaited<ReturnType<LiveFixturesProvider["fetchSeasonFixtures"]>>; seasonUsed: number }> {
-  try {
-    const fixtures = await provider.fetchSeasonFixtures(leagueId, season);
-    return { fixtures, seasonUsed: season };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (!/season|plan|Free/i.test(msg)) throw e;
-  }
+/** Cron alias — same as syncSchedule. */
+export async function runDailySweep(
+  provider: LiveFixturesProvider = apiSportsLiveProvider
+): Promise<ScheduleSyncSummary> {
+  return syncSchedule(provider);
+}
 
-  try {
-    const fixtures = await provider.fetchDateRange(
-      leagueId,
-      season,
-      asOf,
-      addDaysIso(asOf, 60)
-    );
-    if (fixtures.length) return { fixtures, seasonUsed: season };
-  } catch {
-    // continue to prior season
-  }
-
-  // Free plan historically allows ~2022–2024 — walk back a few seasons.
-  for (let s = season - 1; s >= season - 3 && s >= 2022; s--) {
-    try {
-      const fixtures = await provider.fetchSeasonFixtures(leagueId, s);
-      if (fixtures.length) return { fixtures, seasonUsed: s };
-    } catch {
-      // try older
-    }
-  }
-
-  throw new Error(
-    `No accessible season fixtures for league ${leagueId} (tried ${season}…)`
-  );
+async function providerFetchStatus(): Promise<unknown> {
+  const { apiFootballGet } = await import("@/lib/football-api/client");
+  return apiFootballGet<unknown>("/status");
 }

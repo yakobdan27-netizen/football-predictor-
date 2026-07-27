@@ -19,7 +19,7 @@ export async function runLivePoll(
       ok: true,
       upserted: 0,
       settledEmitted: 0,
-      skipped: true,
+      skippedRun: true,
     };
   }
 

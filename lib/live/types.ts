@@ -33,6 +33,16 @@ export interface LiveApiEvent {
 
 export type LiveTab = "live" | "today" | "upcoming" | "finished";
 
+export interface LiveSyncMetaDto {
+  lastSyncAt: string | null;
+  status: "ok" | "empty" | "error" | "quota" | "auth" | null;
+  reason: string | null;
+  from: string | null;
+  to: string | null;
+  fetched: number | null;
+  upserted: number | null;
+}
+
 export interface LiveFixtureDto {
   fixtureId: number;
   leagueId: number;

@@ -158,6 +158,7 @@ function NumCell({
   onChange,
   onCellKeyDown,
   maxLength = 2,
+  title,
 }: {
   value?: number;
   placeholder: string;
@@ -166,6 +167,7 @@ function NumCell({
   onChange: (v: string) => void;
   onCellKeyDown?: (e: React.KeyboardEvent, field: ResultGridField) => void;
   maxLength?: number;
+  title?: string;
 }) {
   return (
     <td className="batch-col-score">
@@ -175,6 +177,7 @@ function NumCell({
         inputMode="numeric"
         maxLength={maxLength}
         placeholder={placeholder}
+        title={title}
         data-result-field={field}
         value={value != null ? String(value) : ""}
         onChange={(e) => onChange(e.target.value)}
@@ -420,6 +423,11 @@ export function BatchResultRow({
               inputRef={refFor("corH")}
               onChange={(v) => onChange(setSideStat(match, "home", "corners", v))}
               onCellKeyDown={onCellKeyDown}
+              title={
+                match.teamStats?.home?.corners == null
+                  ? "stats unavailable (API plan or not synced)"
+                  : undefined
+              }
             />
             <NumCell
               field="corA"
@@ -428,6 +436,11 @@ export function BatchResultRow({
               inputRef={refFor("corA")}
               onChange={(v) => onChange(setSideStat(match, "away", "corners", v))}
               onCellKeyDown={onCellKeyDown}
+              title={
+                match.teamStats?.away?.corners == null
+                  ? "stats unavailable (API plan or not synced)"
+                  : undefined
+              }
             />
             <NumCell
               field="foulH"

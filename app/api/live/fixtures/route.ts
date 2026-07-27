@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { LEAGUE_API_IDS } from "@/lib/football-api/leagues";
-import { queryFixturesForTab } from "@/lib/live/store";
+import { queryFixturesForTab, readSyncMeta } from "@/lib/live/store";
 import type { LiveTab } from "@/lib/live/types";
 
 export const runtime = "nodejs";
@@ -22,24 +22,30 @@ export async function GET(request: Request) {
       leagueId = LEAGUE_API_IDS[leagueName as keyof typeof LEAGUE_API_IDS];
     }
 
-    const result = await queryFixturesForTab({ tab, leagueId });
+    const [result, syncMeta] = await Promise.all([
+      queryFixturesForTab({ tab, leagueId }),
+      readSyncMeta(),
+    ]);
     return NextResponse.json({
       ok: true,
       tab,
       leagueId,
       fixtures: result.fixtures,
-      syncedAt: result.syncedAt,
+      syncedAt: result.syncedAt ?? syncMeta?.lastSyncAt ?? null,
       stale: result.stale,
+      syncMeta,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load live fixtures";
+    const syncMeta = await readSyncMeta().catch(() => null);
     return NextResponse.json(
       {
         ok: false,
         error: msg,
         fixtures: [],
-        syncedAt: null,
+        syncedAt: syncMeta?.lastSyncAt ?? null,
         stale: true,
+        syncMeta,
       },
       { status: 503 }
     );

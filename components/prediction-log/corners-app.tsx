@@ -305,7 +305,11 @@ function PredictionRow({
         <td>{pctProb(p.pOver95)}</td>
         <td>{pctProb(p.pOver105)}</td>
         <td>
-          <strong>{leanLabel(p.lean)}</strong>
+          <strong>
+            {p.lean === "lean_none" && p.unavailableReason
+              ? p.unavailableReason
+              : leanLabel(p.lean)}
+          </strong>
         </td>
         <td>
           <span className="badge" style={confidenceStyle(p.confidence)}>

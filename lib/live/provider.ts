@@ -74,6 +74,7 @@ export interface LiveFixturesProvider {
   fetchSeasonFixtures(leagueId: number, season: number): Promise<LiveApiFixture[]>;
   fetchLiveAll(): Promise<LiveApiFixture[]>;
   fetchByIds(ids: number[]): Promise<LiveApiFixture[]>;
+  fetchById(id: number): Promise<LiveApiFixture | null>;
   fetchByDate(date: string, leagueId?: number): Promise<LiveApiFixture[]>;
   fetchDateRange(
     leagueId: number,
@@ -113,6 +114,11 @@ export const apiSportsLiveProvider: LiveFixturesProvider = {
       if (rows?.length) out.push(...rows);
     }
     return out;
+  },
+
+  async fetchById(id) {
+    const rows = await liveGet<LiveApiFixture[]>("/fixtures", { id });
+    return rows?.[0] ?? null;
   },
 
   async fetchByDate(date, leagueId) {

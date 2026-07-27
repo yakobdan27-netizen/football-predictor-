@@ -42,6 +42,18 @@ export async function GET(request: Request) {
       refresh,
     });
 
+    let warning = result.warning;
+    if (warning && /quota|limit_day|requests/i.test(warning)) {
+      warning = "API quota reached";
+    } else if (warning && isApiFootballKeyError(warning)) {
+      warning = "API key invalid — check env";
+    } else if (
+      warning &&
+      /do not have access to this season|Free plans/i.test(warning)
+    ) {
+      warning = `API unavailable (plan/season): ${warning}`;
+    }
+
     return NextResponse.json({
       ok: true,
       season: result.season,
@@ -49,17 +61,21 @@ export async function GET(request: Request) {
       leagueId: result.leagueId,
       fixtures: result.fixtures,
       fromCache: result.fromCache,
-      warning: result.warning,
+      warning,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load upcoming fixtures";
     const status = isApiFootballKeyError(msg) ? 503 : 502;
+    const warning = isApiFootballKeyError(msg)
+      ? "API key invalid — check env"
+      : /quota|limit/i.test(msg)
+        ? "API quota reached"
+        : "API unavailable — try again or enter batches manually.";
     return NextResponse.json(
       {
         ok: false,
         error: msg,
-        warning:
-          "API unavailable — try again or enter batches manually.",
+        warning,
         fixtures: [],
       },
       { status }

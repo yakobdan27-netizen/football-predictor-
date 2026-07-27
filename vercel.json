@@ -81,6 +81,9 @@
     "app/api/live/refresh/route.ts": {
       "maxDuration": 60
     },
+    "app/api/sync/run/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/fixtures/resolve/route.ts": {
       "maxDuration": 60
     },

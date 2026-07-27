@@ -92,9 +92,23 @@ export const liveEvents = pgTable(
   })
 );
 
+/** Singleton row (id=1) for schedule sync diagnostics on /live. */
+export const liveSyncMeta = pgTable("live_sync_meta", {
+  id: integer("id").primaryKey().default(1),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+  lastSyncStatus: text("last_sync_status"),
+  lastSyncReason: text("last_sync_reason"),
+  lastFrom: date("last_from"),
+  lastTo: date("last_to"),
+  lastFetched: integer("last_fetched"),
+  lastUpserted: integer("last_upserted"),
+});
+
 export type LiveLeague = typeof liveLeagues.$inferSelect;
 export type NewLiveLeague = typeof liveLeagues.$inferInsert;
 export type LiveFixture = typeof liveFixtures.$inferSelect;
 export type NewLiveFixture = typeof liveFixtures.$inferInsert;
 export type LiveEvent = typeof liveEvents.$inferSelect;
 export type NewLiveEvent = typeof liveEvents.$inferInsert;
+export type LiveSyncMeta = typeof liveSyncMeta.$inferSelect;
+export type NewLiveSyncMeta = typeof liveSyncMeta.$inferInsert;

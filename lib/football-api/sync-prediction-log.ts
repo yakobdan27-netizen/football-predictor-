@@ -271,11 +271,53 @@ export async function syncPredictionLogResults(
       const { merged, conflicts } = applyFixtureSync(match, fixture, stats, false);
       if (conflicts.length) summary.conflicts.push(...conflicts);
 
-      if (JSON.stringify(merged) !== JSON.stringify(match)) {
+      let withTiming = merged;
+      const needsTiming =
+        !merged.teamStats?.goalTiming?.timingBuckets &&
+        !merged.teamStats?.goalTiming?.goalInLast10 &&
+        merged.teamStats?.home?.goals != null;
+      if (needsTiming && match.resultSource !== "manual") {
+        try {
+          const {
+            fetchFixtureGoalEvents,
+            goalTimingFromEvents,
+          } = await import("./fixture-events");
+          const { events, planGated, error } = await fetchFixtureGoalEvents(
+            fixture.fixture.id
+          );
+          if (planGated && error) {
+            summary.errors.push(
+              `${batch.batchName}: goal events plan-gated (${error.slice(0, 80)})`
+            );
+          } else if (events.length) {
+            const timing = goalTimingFromEvents(events);
+            if (Object.keys(timing).length) {
+              withTiming = {
+                ...merged,
+                teamStats: {
+                  ...merged.teamStats!,
+                  home: { ...merged.teamStats!.home },
+                  away: { ...merged.teamStats!.away },
+                  goalTiming: {
+                    ...merged.teamStats?.goalTiming,
+                    ...timing,
+                  },
+                },
+              };
+              withTiming = applyTeamStatsSync(withTiming);
+            }
+          }
+          await sleep(100);
+        } catch {
+          // leave timing empty — never invent
+        }
+      }
+
+      if (JSON.stringify(withTiming) !== JSON.stringify(match)) {
         batchChanged = true;
         summary.matchesSynced++;
       }
-      updatedMatches.push(merged);
+      updatedMatches.push(withTiming);
     }
 
     if (!batchChanged) continue;

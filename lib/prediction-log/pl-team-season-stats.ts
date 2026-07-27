@@ -102,6 +102,12 @@ export function fillTeamSeasonCard(
     season?: typeof PL_SEASON_2026_27;
     batches?: PredictionBatch[];
     seed_paused?: boolean;
+    apiStats?: {
+      played: number | null;
+      goalsFor: number | null;
+      goalsAgainst: number | null;
+      planGated?: boolean;
+    } | null;
   }
 ): PlTeamSeasonCard {
   const season = opts?.season ?? PL_SEASON_2026_27;
@@ -177,6 +183,38 @@ export function fillTeamSeasonCard(
     seed_paused: opts?.seed_paused,
   };
 
+  if (live.matches > 0) {
+    card.statsSource = "batch";
+    card.statsUnavailableReason = null;
+  } else if (
+    goals_scored_pg != null ||
+    goals_conceded_pg != null ||
+    corners_won_pg != null
+  ) {
+    card.statsSource = "seed";
+    card.statsUnavailableReason = null;
+  } else if (opts?.apiStats?.goalsFor != null || opts?.apiStats?.goalsAgainst != null) {
+    const played = opts.apiStats.played;
+    if (played != null && played > 0 && opts.apiStats.goalsFor != null) {
+      card.matches_played = played;
+      card.goals_scored_pg =
+        Math.round((opts.apiStats.goalsFor / played) * 100) / 100;
+    }
+    if (played != null && played > 0 && opts.apiStats.goalsAgainst != null) {
+      card.matches_played = card.matches_played ?? played;
+      card.goals_conceded_pg =
+        Math.round((opts.apiStats.goalsAgainst / played) * 100) / 100;
+    }
+    card.statsSource = "api-football";
+    card.statsUnavailableReason = null;
+  } else {
+    card.statsSource = null;
+    card.statsUnavailableReason =
+      opts?.apiStats?.planGated
+        ? "stats unavailable (API plan or not synced)"
+        : "FILL FROM DB — no batch FT yet; /teams/statistics not cached";
+  }
+
   // Fill home/away splits from live if we can count them
   if (live.matches > 0 && opts?.batches?.length) {
     const splits = liveVenueSplits(name, opts.batches, season);
@@ -238,13 +276,23 @@ function liveVenueSplits(
 
 export function buildAllPlSeasonCards(
   batches?: PredictionBatch[],
-  pausedTeams?: Set<string>
+  pausedTeams?: Set<string>,
+  apiStatsByTeam?: Map<
+    string,
+    {
+      played: number | null;
+      goalsFor: number | null;
+      goalsAgainst: number | null;
+      planGated?: boolean;
+    }
+  >
 ): Record<string, PlTeamSeasonCard> {
   const cards: Record<string, PlTeamSeasonCard> = {};
   for (const team of PL_2026_27_PROVISIONAL_TEAMS) {
     cards[team] = fillTeamSeasonCard(team, {
       batches,
       seed_paused: pausedTeams?.has(team),
+      apiStats: apiStatsByTeam?.get(team) ?? null,
     });
   }
   return cards;

@@ -27,6 +27,12 @@ export const KV_KEYS = {
   /** Cached upcoming fixtures for a league+season+next. */
   apiFootballUpcoming: (leagueId: number, season: number, next: number) =>
     `apiFootball:upcoming:v1:${leagueId}:${season}:n${next}`,
+  /** Cached GET /teams/statistics by league+season+team. */
+  apiFootballTeamStatistics: (
+    leagueId: number,
+    season: number,
+    teamId: number
+  ) => `apiFootball:teamStats:v1:${leagueId}:${season}:${teamId}`,
   /** Bulk last-5 scrape progress (failed leagues for retry). */
   livescoreBulkProgress: "livescore:bulk:v1:progress",
   /** Saved reco walk-forward backtest run ids (newest first). */

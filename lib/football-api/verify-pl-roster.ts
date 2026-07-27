@@ -60,13 +60,14 @@ export async function verifyPl2026Roster(): Promise<VerifyPlRosterResult> {
   const provisional = [...PL_2026_27_PROVISIONAL_TEAMS];
 
   let apiNames: string[] = [];
+  let rows: ApiTeamRow[] = [];
   try {
     getApiFootballKey();
-    const rows = await apiFootballGet<ApiTeamRow[]>("/teams", {
+    rows = (await apiFootballGet<ApiTeamRow[]>("/teams", {
       league: 39,
       season: PL_API_SEASON_2026,
-    });
-    apiNames = (rows ?? [])
+    })) ?? [];
+    apiNames = rows
       .map((r) => r.team?.name?.trim())
       .filter((n): n is string => Boolean(n));
   } catch (e) {
@@ -120,9 +121,43 @@ export async function verifyPl2026Roster(): Promise<VerifyPlRosterResult> {
     );
   }
 
+  // Optional /teams/statistics enrichment for matched clubs (capped for quota).
+  const { fetchTeamSeasonStatistics } = await import("./team-statistics");
+  const { sleep } = await import("./client");
+  const idByName = new Map<string, number>();
+  for (const r of rows ?? []) {
+    const n = r.team?.name?.trim();
+    const id = r.team?.id;
+    if (!n || id == null) continue;
+    const hit = matchProvisional(n, provisional);
+    if (hit) idByName.set(hit, id);
+  }
+  const enrichTargets = [...matched].slice(0, 5);
+  const apiStatsByTeam = new Map<
+    string,
+    {
+      played: number | null;
+      goalsFor: number | null;
+      goalsAgainst: number | null;
+      planGated?: boolean;
+    }
+  >();
+  for (const team of enrichTargets) {
+    const tid = idByName.get(team);
+    if (tid == null) continue;
+    const st = await fetchTeamSeasonStatistics(39, PL_API_SEASON_2026, tid);
+    apiStatsByTeam.set(team, {
+      played: st.played,
+      goalsFor: st.goalsFor,
+      goalsAgainst: st.goalsAgainst,
+      planGated: st.planGated,
+    });
+    await sleep(200);
+  }
+
   const paused = new Set(unmatchedProvisional);
   const batches = await loadAllBatches().catch(() => []);
-  const cards = buildAllPlSeasonCards(batches, paused);
+  const cards = buildAllPlSeasonCards(batches, paused, apiStatsByTeam);
 
   const roster_verified =
     unmatchedProvisional.length === 0 &&

@@ -12,7 +12,7 @@ export async function POST() {
   try {
     const summary = await runLivePoll();
     return NextResponse.json(summary, {
-      status: summary.ok || summary.skipped ? 200 : 503,
+      status: summary.ok || summary.skippedRun ? 200 : 503,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Live refresh failed";

@@ -170,7 +170,8 @@ function addDaysIso(isoDate: string, days: number): string {
 }
 
 /**
- * Prefer `next=` (Pro+). Free plan often blocks `next` — fall back to from/to window.
+ * Prefer rolling from/to (+7d) — same window as live schedule sync.
+ * Fall back to `next=` only if from/to fails for non-season reasons.
  */
 async function fetchUpcomingFixtureRows(
   leagueId: number,
@@ -178,25 +179,9 @@ async function fetchUpcomingFixtureRows(
   next: number,
   asOf: string
 ): Promise<ApiFootballFixture[]> {
-  const fetchNext = Math.min(50, Math.max(next * 3, next));
+  const from = asOf;
+  const to = addDaysIso(asOf, 7);
   try {
-    const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
-      league: leagueId,
-      season,
-      next: fetchNext,
-    });
-    return rows ?? [];
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const nextBlocked = /next parameter|do not have access to the Next/i.test(
-      msg
-    );
-    const seasonBlocked = /do not have access to this season/i.test(msg);
-    if (seasonBlocked) throw e;
-    if (!nextBlocked && !/HTTP|plan|Free/i.test(msg)) throw e;
-
-    const from = asOf;
-    const to = addDaysIso(asOf, 60);
     const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
       league: leagueId,
       season,
@@ -204,5 +189,22 @@ async function fetchUpcomingFixtureRows(
       to,
     });
     return rows ?? [];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const seasonBlocked = /do not have access to this season/i.test(msg);
+    if (seasonBlocked) throw e;
+
+    // Secondary: next= (Pro+) when from/to blocked for other plan reasons
+    try {
+      const fetchNext = Math.min(50, Math.max(next * 3, next));
+      const rows = await apiFootballGet<ApiFootballFixture[]>("/fixtures", {
+        league: leagueId,
+        season,
+        next: fetchNext,
+      });
+      return rows ?? [];
+    } catch {
+      throw e;
+    }
   }
 }

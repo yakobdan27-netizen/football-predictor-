@@ -52,6 +52,14 @@ type FootballStatusUi = {
   account?: { firstname?: string; lastname?: string; email?: string };
   requests?: { current?: number; limitDay?: number; remaining?: number };
   error?: string;
+  planCovered?: boolean;
+  leagueConfirm?: {
+    ok: boolean;
+    season: number;
+    planGated?: boolean;
+    reason?: string;
+    leagues?: Array<{ name: string; expectedId: number; ok: boolean; error?: string }>;
+  } | null;
 };
 
 export function ManualResultsApp() {
@@ -85,6 +93,8 @@ export function ManualResultsApp() {
         account: data.account,
         requests: data.requests,
         error: data.error,
+        planCovered: data.planCovered,
+        leagueConfirm: data.leagueConfirm,
       });
     } catch (e) {
       setApiStatus({
@@ -314,6 +324,20 @@ export function ManualResultsApp() {
             {apiStatus.subscriptionEnd && (
               <p style={{ margin: "0.35rem 0 0" }}>
                 Subscription end: {apiStatus.subscriptionEnd}
+              </p>
+            )}
+            {apiStatus.leagueConfirm && (
+              <p style={{ margin: "0.35rem 0 0" }}>
+                Season {apiStatus.leagueConfirm.season} leagues:{" "}
+                {apiStatus.leagueConfirm.ok
+                  ? "confirmed"
+                  : apiStatus.leagueConfirm.planGated
+                    ? "plan-gated / incomplete"
+                    : "partial"}
+                {apiStatus.planCovered === false ? " · coverage limited" : ""}
+                {apiStatus.leagueConfirm.reason
+                  ? ` — ${apiStatus.leagueConfirm.reason}`
+                  : ""}
               </p>
             )}
           </div>

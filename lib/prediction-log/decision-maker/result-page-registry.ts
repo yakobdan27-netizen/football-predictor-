@@ -59,7 +59,36 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
 
 function fromCorners(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   const p = ctx.caches.cornersByMatchId.get(ctx.match.id);
-  if (!p || p.lean === "lean_none") return [];
+  if (!p) {
+    return [
+      {
+        marketKey: "corners_ou",
+        label: "Total corners O/U",
+        prediction: "stats unavailable (API plan or not synced)",
+        confidence: 0,
+        category: "corners",
+        pageId: "corners-analysis",
+        pageLabel: "Corners Analysis",
+        line: 9.5,
+      },
+    ];
+  }
+  if (p.lean === "lean_none") {
+    return [
+      {
+        marketKey: "corners_ou",
+        label: "Total corners O/U",
+        prediction:
+          p.unavailableReason ??
+          "stats unavailable (API plan or not synced)",
+        confidence: Math.round(p.topProbability * 100),
+        category: "corners",
+        pageId: "corners-analysis",
+        pageLabel: "Corners Analysis",
+        line: 9.5,
+      },
+    ];
+  }
   return [
     {
       marketKey: "corners_ou",

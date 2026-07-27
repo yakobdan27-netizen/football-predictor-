@@ -54,6 +54,8 @@ export interface CornersMatchPrediction {
   lean: CornersLean;
   topProbability: number;
   confidence: CornersConfidence;
+  /** When lean_none / thin data — explain instead of blank. */
+  unavailableReason?: string | null;
   detail: {
     homeWon: number;
     homeConceded: number;
@@ -254,6 +256,18 @@ export function predictCornersMatch(params: {
     topProbability = pUnder95;
   }
 
+  const noLiveCorners =
+    home.liveMatches === 0 &&
+    away.liveMatches === 0 &&
+    home.seedOnly &&
+    away.seedOnly;
+  const unavailableReason =
+    lean === "lean_none"
+      ? noLiveCorners
+        ? "stats unavailable (API plan or not synced) — corners O/U lean unclear"
+        : "corners lean unclear from current rates"
+      : null;
+
   return {
     matchId: params.matchId,
     homeTeam: params.homeTeam,
@@ -271,6 +285,7 @@ export function predictCornersMatch(params: {
     lean,
     topProbability,
     confidence: matchConfidence(home, away),
+    unavailableReason,
     detail: {
       homeWon: home.won,
       homeConceded: home.conceded,

@@ -51,6 +51,10 @@ export interface PlTeamSeasonCard {
   data_confidence: number;
   /** True when API roster verify could not confirm this provisional name. */
   seed_paused?: boolean;
+  /** Where goal/rate numerics came from — never invent. */
+  statsSource?: "api-football" | "batch" | "seed" | null;
+  /** When numerics are null, explain why (plan/sync), not a blank. */
+  statsUnavailableReason?: string | null;
 }
 
 export interface PlSeasonRosterStore {
@@ -229,6 +233,9 @@ export function emptyTeamSeasonCard(
     style_seed: styleSeedForTeam(name),
     data_confidence: computeDataConfidence(null, is_promoted),
     seed_paused: opts?.seed_paused,
+    statsSource: null,
+    statsUnavailableReason:
+      "FILL FROM DB — no batch FT yet; /teams/statistics not cached",
   };
 }
 

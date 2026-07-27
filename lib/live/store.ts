@@ -19,6 +19,7 @@ import {
   liveEvents,
   liveFixtures,
   liveLeagues,
+  liveSyncMeta,
   type LiveEvent,
   type LiveFixture,
   type NewLiveEvent,
@@ -28,7 +29,9 @@ import {
 import { LIVE_STATUSES, STALE_MS } from "./constants";
 import { isFinishedStatus } from "./normalize";
 import { emitFixtureSettled } from "./settled-bus";
-import type { LiveFixtureDto, LiveTab } from "./types";
+import type { LiveFixtureDto, LiveSyncMetaDto, LiveTab } from "./types";
+
+export type LiveSyncStatus = "ok" | "empty" | "error" | "quota" | "auth";
 
 export async function upsertLeague(row: NewLiveLeague): Promise<void> {
   const db = await getDb();
@@ -48,9 +51,14 @@ export async function upsertLeague(row: NewLiveLeague): Promise<void> {
 
 export async function upsertFixtures(rows: NewLiveFixture[]): Promise<{
   upserted: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
   settledEmitted: number;
 }> {
-  if (!rows.length) return { upserted: 0, settledEmitted: 0 };
+  if (!rows.length) {
+    return { upserted: 0, inserted: 0, updated: 0, skipped: 0, settledEmitted: 0 };
+  }
   const db = await getDb();
   const ids = rows.map((r) => r.fixtureId);
   const existing = await db
@@ -60,6 +68,9 @@ export async function upsertFixtures(rows: NewLiveFixture[]): Promise<{
   const byId = new Map(existing.map((e) => [e.fixtureId, e]));
 
   let settledEmitted = 0;
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
 
   for (const row of rows) {
     const prev = byId.get(row.fixtureId);
@@ -82,33 +93,45 @@ export async function upsertFixtures(rows: NewLiveFixture[]): Promise<{
 
     const statusMinute = finished ? null : (row.statusMinute ?? null);
 
-    await db
-      .insert(liveFixtures)
-      .values({
-        ...row,
-        homeGoals,
-        awayGoals,
-        statusMinute,
-        settledEmittedAt,
-      })
-      .onConflictDoUpdate({
-        target: liveFixtures.fixtureId,
-        set: {
-          leagueId: row.leagueId,
-          season: row.season,
-          homeTeam: row.homeTeam,
-          awayTeam: row.awayTeam,
-          homeId: row.homeId,
-          awayId: row.awayId,
-          kickoffUtc: row.kickoffUtc,
-          venue: row.venue,
-          status: row.status,
-          statusMinute,
+    try {
+      await db
+        .insert(liveFixtures)
+        .values({
+          ...row,
           homeGoals,
           awayGoals,
-          lastSyncedUtc: row.lastSyncedUtc,
-        },
-      });
+          statusMinute,
+          settledEmittedAt,
+        })
+        .onConflictDoUpdate({
+          target: liveFixtures.fixtureId,
+          set: {
+            leagueId: row.leagueId,
+            season: row.season,
+            homeTeam: row.homeTeam,
+            awayTeam: row.awayTeam,
+            homeId: row.homeId,
+            awayId: row.awayId,
+            kickoffUtc: row.kickoffUtc,
+            venue: row.venue,
+            status: row.status,
+            statusMinute,
+            homeGoals,
+            awayGoals,
+            lastSyncedUtc: row.lastSyncedUtc,
+          },
+        });
+      if (prev) updated += 1;
+      else inserted += 1;
+    } catch (e) {
+      skipped += 1;
+      console.warn(
+        "[live] upsert skipped fixture",
+        row.fixtureId,
+        e instanceof Error ? e.message : e
+      );
+      continue;
+    }
 
     if (finished && !settledEmittedAt) {
       await emitFixtureSettled({
@@ -129,7 +152,72 @@ export async function upsertFixtures(rows: NewLiveFixture[]): Promise<{
     }
   }
 
-  return { upserted: rows.length, settledEmitted };
+  return {
+    upserted: inserted + updated,
+    inserted,
+    updated,
+    skipped,
+    settledEmitted,
+  };
+}
+
+export async function writeSyncMeta(meta: {
+  status: LiveSyncStatus;
+  reason: string | null;
+  from: string | null;
+  to: string | null;
+  fetched: number;
+  upserted: number;
+}): Promise<void> {
+  const db = await getDb();
+  const now = new Date();
+  await db
+    .insert(liveSyncMeta)
+    .values({
+      id: 1,
+      lastSyncAt: now,
+      lastSyncStatus: meta.status,
+      lastSyncReason: meta.reason,
+      lastFrom: meta.from,
+      lastTo: meta.to,
+      lastFetched: meta.fetched,
+      lastUpserted: meta.upserted,
+    })
+    .onConflictDoUpdate({
+      target: liveSyncMeta.id,
+      set: {
+        lastSyncAt: now,
+        lastSyncStatus: meta.status,
+        lastSyncReason: meta.reason,
+        lastFrom: meta.from,
+        lastTo: meta.to,
+        lastFetched: meta.fetched,
+        lastUpserted: meta.upserted,
+      },
+    });
+}
+
+export async function readSyncMeta(): Promise<LiveSyncMetaDto | null> {
+  try {
+    const db = await getDb();
+    const [row] = await db
+      .select()
+      .from(liveSyncMeta)
+      .where(eq(liveSyncMeta.id, 1))
+      .limit(1);
+    if (!row) return null;
+    return {
+      lastSyncAt: row.lastSyncAt?.toISOString() ?? null,
+      status: (row.lastSyncStatus as LiveSyncStatus | null) ?? null,
+      reason: row.lastSyncReason ?? null,
+      from: row.lastFrom ?? null,
+      to: row.lastTo ?? null,
+      fetched: row.lastFetched ?? null,
+      upserted: row.lastUpserted ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function replaceEventsForFixture(

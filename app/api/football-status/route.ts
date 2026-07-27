@@ -26,10 +26,23 @@ export async function GET() {
   try {
     const raw = await apiFootballGet<unknown>("/status");
     const normalized = normalizeFootballStatus(raw);
+    let leagueConfirm: Awaited<
+      ReturnType<typeof import("@/lib/football-api/endpoint-map").confirmLeaguesAndSeason>
+    > | null = null;
+    try {
+      const { confirmLeaguesAndSeason } = await import(
+        "@/lib/football-api/endpoint-map"
+      );
+      leagueConfirm = await confirmLeaguesAndSeason();
+    } catch {
+      leagueConfirm = null;
+    }
     return NextResponse.json({
       ok: true,
       ...normalized,
       status: raw,
+      leagueConfirm,
+      planCovered: leagueConfirm ? !leagueConfirm.planGated : undefined,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Status check failed";
