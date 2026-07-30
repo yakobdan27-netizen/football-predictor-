@@ -365,6 +365,24 @@ export async function syncPredictionLogResults(
     await recomputeL1SeasonCards().catch(() => null);
   }
 
+  // Best-effort: warm 2H-heavy venue half profiles for synced batch teams (never blocks sync).
+  try {
+    const { warmTeamHalfProfiles } = await import(
+      "@/lib/prediction-log/two-h-heavy/fetch-profiles"
+    );
+    const requests: { team: string; league: string; venue: "home" | "away" }[] = [];
+    for (const batch of pendingBatches) {
+      for (const match of batch.matches) {
+        const league = matchLeague(match, batch.league);
+        requests.push({ team: match.homeTeam, league, venue: "home" });
+        requests.push({ team: match.awayTeam, league, venue: "away" });
+      }
+    }
+    await warmTeamHalfProfiles(requests, { maxCalls: 12, delayMs: 300 });
+  } catch {
+    /* offline / quota — ranking falls back to db/prior */
+  }
+
   return summary;
 }
 

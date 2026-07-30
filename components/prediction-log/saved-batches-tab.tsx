@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BatchMatchTable } from "./batch-match-table";
 import { BatchSummaryStrip } from "./batch-summary-strip";
+import { useTwoHHeavyRanking } from "./use-two-h-heavy-ranking";
 import { applyCorrectScoreCalibrationToMatch } from "@/lib/prediction-log/correct-score-learning";
 import { batchScoredPct, marketsEnteredCount, scoreBatch, batchNeedsResults } from "@/lib/prediction-log/scoring";
 import { analyzeAllBatches } from "@/lib/prediction-log/batch-analysis";
@@ -64,6 +65,8 @@ export function SavedBatchesTab({
   const [tierFilter, setTierFilter] = useState<"all" | "safe" | "balanced" | "aggressive">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "PENDING" | "SETTLED">("all");
   const [search, setSearch] = useState("");
+  const [twoHHeavySort, setTwoHHeavySort] = useState(true);
+  const { byId: twoHHeavyByMatch } = useTwoHHeavyRanking(draft, batches);
 
   useEffect(() => {
     if (highlightBatchId && batches.some((b) => b.id === highlightBatchId)) {
@@ -767,6 +770,9 @@ export function SavedBatchesTab({
                     draft.recommended?.mathSnapshot?.betterAlternativeByMatch
                   }
                   onChange={(matches) => setDraft({ ...draft, matches })}
+                  twoHHeavyByMatch={twoHHeavyByMatch}
+                  twoHHeavySort={twoHHeavySort}
+                  onTwoHHeavySortChange={setTwoHHeavySort}
                 />
                 <BatchSummaryStrip mode="result" batch={draft} />
                 <div className="batch-actions" style={{ marginTop: "0.75rem" }}>

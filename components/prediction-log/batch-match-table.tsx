@@ -21,6 +21,10 @@ import type {
 } from "@/lib/prediction-log/types";
 import { matchLeague } from "@/lib/prediction-log/match-league";
 import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
+import {
+  sortByTwoHHeavy,
+  type TwoHHeavyResult,
+} from "@/lib/prediction-log/two-h-heavy";
 
 interface BatchMatchTableProps {
   mode: "entry" | "result";
@@ -36,6 +40,11 @@ interface BatchMatchTableProps {
   onAddMatch?: () => void;
   /** Used when paste needs more rows than currently exist. */
   createEmptyMatch?: () => LogMatch;
+  /** Advisory 2H-heavy scores keyed by match id (result mode). */
+  twoHHeavyByMatch?: Record<string, TwoHHeavyResult>;
+  /** When true, display rows sorted by p_2h_gt_1h (does not mutate stored order). */
+  twoHHeavySort?: boolean;
+  onTwoHHeavySortChange?: (enabled: boolean) => void;
 }
 
 /** Focusable entry cells: Home → Away → Market → Odds (League has its own select). */
@@ -57,18 +66,33 @@ export function BatchMatchTable({
   onChange,
   onAddMatch,
   createEmptyMatch,
+  twoHHeavyByMatch,
+  twoHHeavySort = false,
+  onTwoHHeavySortChange,
 }: BatchMatchTableProps) {
-  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [showFullStats, setShowFullStats] = useState(false);
   const resultFields = useMemo(
     () => resultEditableFields(showFullStats),
     [showFullStats]
   );
   const colCount = mode === "entry" ? ENTRY_COLS : resultFields.length;
-  const rowKeys = matches.map((m) => m.id).join("|");
+  const showTwoH = mode === "result" && !!twoHHeavyByMatch;
+
+  const displayMatches = useMemo(() => {
+    if (!showTwoH || !twoHHeavySort || !twoHHeavyByMatch) return matches;
+    return sortByTwoHHeavy(matches, twoHHeavyByMatch);
+  }, [matches, showTwoH, twoHHeavySort, twoHHeavyByMatch]);
+
+  const topFiveIds = useMemo(() => {
+    if (!showTwoH || !twoHHeavySort || !twoHHeavyByMatch) return new Set<string>();
+    return new Set(displayMatches.slice(0, 5).map((m) => m.id));
+  }, [displayMatches, showTwoH, twoHHeavySort, twoHHeavyByMatch]);
+
+  const rowKeys = displayMatches.map((m) => m.id).join("|");
 
   const cellRefs = useMemo(() => {
-    return matches.map(() =>
+    return displayMatches.map(() =>
       Array.from({ length: colCount }, () => ({
         current: null as HTMLInputElement | HTMLSelectElement | HTMLButtonElement | null,
       }))
@@ -89,10 +113,10 @@ export function BatchMatchTable({
       if (e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
         if (col < ENTRY_COLS - 1) focusCell(row, col + 1);
-        else if (row < matches.length - 1) focusCell(row + 1, 0);
+        else if (row < displayMatches.length - 1) focusCell(row + 1, 0);
         else if (onAddMatch) {
           onAddMatch();
-          setTimeout(() => focusCell(matches.length, 0), 0);
+          setTimeout(() => focusCell(displayMatches.length, 0), 0);
         }
         return;
       }
@@ -102,13 +126,13 @@ export function BatchMatchTable({
         else if (row > 0) focusCell(row - 1, ENTRY_COLS - 1);
         return;
       }
-      if (e.key === "Enter" && col === ENTRY_COLS - 1 && row === matches.length - 1) {
+      if (e.key === "Enter" && col === ENTRY_COLS - 1 && row === displayMatches.length - 1) {
         e.preventDefault();
         onAddMatch?.();
-        setTimeout(() => focusCell(matches.length, 0), 0);
+        setTimeout(() => focusCell(displayMatches.length, 0), 0);
       }
     },
-    [focusCell, matches.length, onAddMatch]
+    [focusCell, displayMatches.length, onAddMatch]
   );
 
   const handleResultKeyDown = useCallback(
@@ -120,7 +144,7 @@ export function BatchMatchTable({
       if (e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
         if (col < lastCol) focusCell(row, col + 1);
-        else if (row < matches.length - 1) focusCell(row + 1, 0);
+        else if (row < displayMatches.length - 1) focusCell(row + 1, 0);
         return;
       }
       if (e.key === "Tab" && e.shiftKey) {
@@ -131,13 +155,13 @@ export function BatchMatchTable({
       }
       if (e.key === "Enter") {
         e.preventDefault();
-        if (row < matches.length - 1) focusCell(row + 1, col);
+        if (row < displayMatches.length - 1) focusCell(row + 1, col);
         return;
       }
       if (e.key === "ArrowRight") {
         e.preventDefault();
         if (col < lastCol) focusCell(row, col + 1);
-        else if (row < matches.length - 1) focusCell(row + 1, 0);
+        else if (row < displayMatches.length - 1) focusCell(row + 1, 0);
         return;
       }
       if (e.key === "ArrowLeft") {
@@ -148,7 +172,7 @@ export function BatchMatchTable({
       }
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        if (row < matches.length - 1) focusCell(row + 1, col);
+        if (row < displayMatches.length - 1) focusCell(row + 1, col);
         return;
       }
       if (e.key === "ArrowUp") {
@@ -156,7 +180,7 @@ export function BatchMatchTable({
         if (row > 0) focusCell(row - 1, col);
       }
     },
-    [focusCell, matches.length, resultFields]
+    [focusCell, displayMatches.length, resultFields]
   );
 
   function withAltGrade(match: LogMatch): LogMatch {
@@ -165,13 +189,14 @@ export function BatchMatchTable({
     return gradeMatchFromFacts(match, { betterAlternative: alt });
   }
 
-  function updateMatch(i: number, match: LogMatch) {
-    onChange(matches.map((m, idx) => (idx === i ? withAltGrade(match) : m)));
+  /** Always patch by id so sorted display never rewrites stored order. */
+  function updateMatchById(id: string, match: LogMatch) {
+    onChange(matches.map((m) => (m.id === id ? withAltGrade(match) : m)));
   }
 
-  function deleteMatch(i: number) {
+  function deleteMatchById(id: string) {
     if (matches.length <= 1) return;
-    onChange(matches.filter((_, idx) => idx !== i));
+    onChange(matches.filter((m) => m.id !== id));
   }
 
   function handlePaste(e: React.ClipboardEvent) {
@@ -219,9 +244,12 @@ export function BatchMatchTable({
 
     const next = [...matches];
     for (let i = 0; i < patches.length; i++) {
-      const idx = rowIndex + i;
-      if (idx >= next.length) break;
-      next[idx] = withAltGrade(applyResultPastePatch(next[idx]!, patches[i]!));
+      const displayIdx = rowIndex + i;
+      if (displayIdx >= displayMatches.length) break;
+      const id = displayMatches[displayIdx]!.id;
+      const srcIdx = next.findIndex((m) => m.id === id);
+      if (srcIdx < 0) break;
+      next[srcIdx] = withAltGrade(applyResultPastePatch(next[srcIdx]!, patches[i]!));
     }
     onChange(next);
   }
@@ -240,6 +268,16 @@ export function BatchMatchTable({
             />
             Show full stats
           </label>
+          {showTwoH && onTwoHHeavySortChange ? (
+            <label className="batch-full-stats-toggle" title="Sort by P(2H>1H) — display only">
+              <input
+                type="checkbox"
+                checked={twoHHeavySort}
+                onChange={(e) => onTwoHHeavySortChange(e.target.checked)}
+              />
+              2H-heavy rank
+            </label>
+          ) : null}
         </div>
       ) : null}
       <table className={`batch-table${mode === "result" ? " batch-table-result" : ""}`}>
@@ -268,6 +306,11 @@ export function BatchMatchTable({
                     Score
                   </th>
                   <th colSpan={2} />
+                  {showTwoH ? (
+                    <th colSpan={5} className="batch-group-label">
+                      2H-heavy
+                    </th>
+                  ) : null}
                   <th className="batch-group-label">Stake</th>
                   <th className="batch-group-label" title="Closing odds">
                     Close
@@ -317,6 +360,15 @@ export function BatchMatchTable({
                 <th>Score (H–A)</th>
                 <th>Outcome</th>
                 <th aria-label="Result mark" />
+                {showTwoH ? (
+                  <>
+                    <th title="P(2H total goals > 1H)">P(2H&gt;1H)</th>
+                    <th title="Confidence (tiebreak)">Conf</th>
+                    <th title="Expected 1H goals">E[1H]</th>
+                    <th title="Expected 2H goals">E[2H]</th>
+                    <th title="Data source">Src</th>
+                  </>
+                ) : null}
                 {showFullStats ? (
                   <>
                     <th>Stake</th>
@@ -351,7 +403,7 @@ export function BatchMatchTable({
           )}
         </thead>
         <tbody>
-          {matches.map((match, i) =>
+          {displayMatches.map((match, i) =>
             mode === "entry" ? (
               <BatchEntryRow
                 key={match.id}
@@ -367,8 +419,8 @@ export function BatchMatchTable({
                 awayRef={cellRefs[i]![1] as React.RefObject<HTMLInputElement | null>}
                 marketRef={cellRefs[i]![2] as React.RefObject<HTMLSelectElement | null>}
                 oddsRef={cellRefs[i]![3] as React.RefObject<HTMLInputElement | null>}
-                onChange={(m) => updateMatch(i, m)}
-                onDelete={() => deleteMatch(i)}
+                onChange={(m) => updateMatchById(match.id, m)}
+                onDelete={() => deleteMatchById(match.id)}
                 onCellKeyDown={(e, col) => handleEntryKeyDown(e, i, col)}
               />
             ) : (
@@ -378,12 +430,17 @@ export function BatchMatchTable({
                 match={match}
                 league={matchLeague(match, defaultLeague)}
                 showFullStats={showFullStats}
-                expanded={expandedRow === i}
-                onToggleExpand={() => setExpandedRow(expandedRow === i ? null : i)}
+                expanded={expandedRow === match.id}
+                onToggleExpand={() =>
+                  setExpandedRow(expandedRow === match.id ? null : match.id)
+                }
                 cellRefs={cellRefs[i]! as FocusableRef[]}
                 fields={resultFields}
-                onChange={(m) => updateMatch(i, m)}
+                onChange={(m) => updateMatchById(match.id, m)}
                 onCellKeyDown={(e, field) => handleResultKeyDown(e, i, field)}
+                twoHHeavy={twoHHeavyByMatch?.[match.id] ?? null}
+                showTwoHHeavy={showTwoH}
+                twoHHeavyTop={topFiveIds.has(match.id)}
               />
             )
           )}

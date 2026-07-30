@@ -198,6 +198,16 @@ interface BatchResultRowProps {
   fields: ResultGridField[];
   onChange: (match: LogMatch) => void;
   onCellKeyDown?: (e: React.KeyboardEvent, field: ResultGridField) => void;
+  /** Advisory 2H-heavy ranking (display-only). */
+  twoHHeavy?: import("@/lib/prediction-log/two-h-heavy").TwoHHeavyResult | null;
+  /** Show 2H columns even while a row score is loading. */
+  showTwoHHeavy?: boolean;
+  /** Top-5 green highlight when 2H-heavy sort is on. */
+  twoHHeavyTop?: boolean;
+}
+
+function pctShort(p: number): string {
+  return `${Math.round(p * 100)}%`;
 }
 
 export function BatchResultRow({
@@ -211,16 +221,23 @@ export function BatchResultRow({
   fields,
   onChange,
   onCellKeyDown,
+  twoHHeavy = null,
+  showTwoHHeavy = false,
+  twoHHeavyTop = false,
 }: BatchResultRowProps) {
   const result = primaryLegResult(match);
-  const rowClass =
+  const rowClass = [
     result === "correct"
       ? "batch-row-correct"
       : result === "wrong"
         ? "batch-row-wrong"
         : result === "void"
           ? "batch-row-void"
-          : "";
+          : "",
+    twoHHeavyTop ? "batch-row-2h-top" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const completeness = resultCompleteness(match);
   const early = match.teamStats?.goalTiming?.goalInFirst10 === true;
   const earlyNo = match.teamStats?.goalTiming?.goalInFirst10 === false;
@@ -232,7 +249,8 @@ export function BatchResultRow({
     return i >= 0 ? cellRefs[i] : undefined;
   };
 
-  const colSpan = showFullStats ? 34 : 9;
+  const twoHCols = showTwoHHeavy || twoHHeavy ? 5 : 0;
+  const colSpan = (showFullStats ? 34 : 9) + twoHCols;
 
   return (
     <>
@@ -263,10 +281,20 @@ export function BatchResultRow({
           <span className="batch-ellipsis">{leagueShortLabel(league) || league || "—"}</span>
         </td>
         <td className="batch-col-frozen batch-col-team batch-col-home" title={match.homeTeam}>
-          <span className="batch-ellipsis">{match.homeTeam || "—"}</span>
+          <span className="batch-ellipsis">
+            {match.homeTeam || "—"}
+            {twoHHeavy?.homeProfile.formation ? (
+              <span className="batch-formation-tag"> {twoHHeavy.homeProfile.formation}</span>
+            ) : null}
+          </span>
         </td>
         <td className="batch-col-frozen batch-col-team batch-col-away" title={match.awayTeam}>
-          <span className="batch-ellipsis">{match.awayTeam || "—"}</span>
+          <span className="batch-ellipsis">
+            {match.awayTeam || "—"}
+            {twoHHeavy?.awayProfile.formation ? (
+              <span className="batch-formation-tag"> {twoHHeavy.awayProfile.formation}</span>
+            ) : null}
+          </span>
         </td>
         <td className="batch-col-market" title={matchLegLabel(match)}>
           <span className="batch-ellipsis">{marketDisplay(match)}</span>
@@ -321,6 +349,45 @@ export function BatchResultRow({
           <GradeBadge result={result} />
         </td>
         <td className="batch-col-actions">{outcomeMark(result)}</td>
+        {showTwoHHeavy || twoHHeavy ? (
+          twoHHeavy ? (
+            <>
+              <td
+                className="batch-col-2h-p"
+                title={`P(2H>1H)=${twoHHeavy.p_2h_gt_1h.toFixed(3)} · P(==)=${twoHHeavy.p_2h_eq_1h.toFixed(3)} · P(<)=${twoHHeavy.p_2h_lt_1h.toFixed(3)}`}
+              >
+                {pctShort(twoHHeavy.p_2h_gt_1h)}
+                {twoHHeavy.thinData ? (
+                  <span className="batch-2h-thin" title="Thin data: fewer than 8 matches for a side">
+                    ⚠
+                  </span>
+                ) : null}
+              </td>
+              <td className="batch-col-2h-conf" title={`Confidence ${twoHHeavy.confidence.toFixed(3)}`}>
+                {pctShort(twoHHeavy.confidence)}
+              </td>
+              <td className="batch-col-2h-exp" title="Expected 1H goals">
+                {twoHHeavy.expected_1h.toFixed(2)}
+              </td>
+              <td className="batch-col-2h-exp" title="Expected 2H goals">
+                {twoHHeavy.expected_2h.toFixed(2)}
+              </td>
+              <td className="batch-col-2h-src">
+                <span className={`batch-2h-source batch-2h-source-${twoHHeavy.data_source}`}>
+                  {twoHHeavy.data_source}
+                </span>
+              </td>
+            </>
+          ) : (
+            <>
+              <td className="batch-col-2h-p">—</td>
+              <td className="batch-col-2h-conf">—</td>
+              <td className="batch-col-2h-exp">—</td>
+              <td className="batch-col-2h-exp">—</td>
+              <td className="batch-col-2h-src">—</td>
+            </>
+          )
+        ) : null}
 
         {showFullStats ? (
           <>

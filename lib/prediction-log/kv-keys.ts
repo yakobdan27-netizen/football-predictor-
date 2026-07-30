@@ -70,4 +70,10 @@ export const KV_KEYS = {
   /** Failed admin unlock attempts per IP + minute bucket. */
   adminUnlockRateLimit: (ip: string, minuteBucket: string) =>
     `admin:unlockRl:v1:${ip}:${minuteBucket}`,
+  /** Cached venue half-goal profile from API-Football (scored/conceded by half). */
+  teamHalfProfile: (leagueId: number, teamId: number, venue: "home" | "away") =>
+    `teamHalfProfile:v1:${leagueId}:${teamId}:${venue}`,
+  /** Name-keyed alias for read-only lookups without resolving team ids via AF. */
+  teamHalfProfileByName: (leagueId: number, teamNameKey: string, venue: "home" | "away") =>
+    `teamHalfProfile:byName:v1:${leagueId}:${teamNameKey}:${venue}`,
 } as const;
