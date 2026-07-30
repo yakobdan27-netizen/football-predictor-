@@ -43,6 +43,12 @@ export interface LiveSyncMetaDto {
   upserted: number | null;
 }
 
+export interface LiveSourceConflictDto {
+  field: string;
+  apiFootball: unknown;
+  beSoccer: unknown;
+}
+
 export interface LiveFixtureDto {
   fixtureId: number;
   leagueId: number;
@@ -57,9 +63,53 @@ export interface LiveFixtureDto {
   statusMinute: number | null;
   homeGoals: number | null;
   awayGoals: number | null;
+  besoccerMatchId?: string | null;
+  homeCorners?: number | null;
+  awayCorners?: number | null;
+  homeShots?: number | null;
+  awayShots?: number | null;
+  homePossession?: number | null;
+  awayPossession?: number | null;
+  sourceConflicts?: LiveSourceConflictDto[];
   lastSyncedUtc: string;
   leagueName?: string | null;
   leagueLogoUrl?: string | null;
+}
+
+/** Optional Stats API enrichments applied after API-Football normalize. */
+export interface LiveBeSoccerEnrichment {
+  /** Stats API match id (`mt_…`); column still named besoccer_match_id. */
+  besoccerMatchId: string | null;
+  homeCorners: number | null;
+  awayCorners: number | null;
+  homeShots: number | null;
+  awayShots: number | null;
+  homePossession: number | null;
+  awayPossession: number | null;
+  homeShotsOnTarget: number | null;
+  awayShotsOnTarget: number | null;
+  homeXg: number | null;
+  awayXg: number | null;
+  homeBigChances: number | null;
+  awayBigChances: number | null;
+  homeGkSaves: number | null;
+  awayGkSaves: number | null;
+  homeFouls: number | null;
+  awayFouls: number | null;
+  homeYellowCards: number | null;
+  awayYellowCards: number | null;
+  homeRedCards: number | null;
+  awayRedCards: number | null;
+  homePasses: number | null;
+  awayPasses: number | null;
+  homeAccuratePasses: number | null;
+  awayAccuratePasses: number | null;
+  homeTackles: number | null;
+  awayTackles: number | null;
+  homeFreeKicks: number | null;
+  awayFreeKicks: number | null;
+  rawJson: string | null;
+  sourceConflicts: LiveSourceConflictDto[];
 }
 
 export interface LiveEventDto {

@@ -6,6 +6,7 @@ import { LIVE_SYNC_LEAGUES } from "@/lib/live/constants";
 import type {
   LiveEventDto,
   LiveFixtureDto,
+  LiveSourceConflictDto,
   LiveSyncMetaDto,
   LiveTab,
 } from "@/lib/live/types";
@@ -57,6 +58,34 @@ function scoreLine(f: LiveFixtureDto): string {
   return `${dash(f.homeGoals)} – ${dash(f.awayGoals)}`;
 }
 
+function hasScoreConflict(conflicts?: LiveSourceConflictDto[]): boolean {
+  if (!conflicts?.length) return false;
+  return conflicts.some(
+    (c) => c.field === "homeGoals" || c.field === "awayGoals"
+  );
+}
+
+function formatConflictHint(conflicts?: LiveSourceConflictDto[]): string {
+  if (!conflicts?.length) return "";
+  return conflicts
+    .map(
+      (c) =>
+        `${c.field}: API-Football ${String(c.apiFootball)} vs Stats API ${String(c.beSoccer)}`
+    )
+    .join(" · ");
+}
+
+function hasAnyStats(f: LiveFixtureDto): boolean {
+  return (
+    f.homeCorners != null ||
+    f.awayCorners != null ||
+    f.homeShots != null ||
+    f.awayShots != null ||
+    f.homePossession != null ||
+    f.awayPossession != null
+  );
+}
+
 export function LiveFixturesApp() {
   const [tab, setTab] = useState<LiveTab>("live");
   const [league, setLeague] = useState<string | null>(null);
@@ -72,6 +101,9 @@ export function LiveFixturesApp() {
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [authHint, setAuthHint] = useState(false);
+
+  const [detailFixtureOverride, setDetailFixtureOverride] =
+    useState<LiveFixtureDto | null>(null);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -156,31 +188,12 @@ export function LiveFixturesApp() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (tab !== "live") return;
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        // Hobby: no minutely cron — poll API into live_* while Live tab is open
-        await fetch("/api/live/refresh", { method: "POST" });
-      } catch {
-        // ignore — still re-read cached rows
-      }
-      if (!cancelled) await load({ silent: true });
-    };
-    void tick();
-    const id = window.setInterval(() => {
-      void tick();
-    }, 35_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [tab, load]);
+  // Auto live-poll (35s) removed — use /live/refresh for manual runs.
 
   useEffect(() => {
     if (detailId == null) {
       setDetailEvents(null);
+      setDetailFixtureOverride(null);
       return;
     }
     let cancelled = false;
@@ -188,10 +201,19 @@ export function LiveFixturesApp() {
     void (async () => {
       try {
         const res = await fetch(`/api/live/fixtures/${detailId}`);
-        const data = (await res.json()) as { events?: LiveEventDto[] };
-        if (!cancelled) setDetailEvents(data.events ?? []);
+        const data = (await res.json()) as {
+          events?: LiveEventDto[];
+          fixture?: LiveFixtureDto;
+        };
+        if (!cancelled) {
+          setDetailEvents(data.events ?? []);
+          if (data.fixture) setDetailFixtureOverride(data.fixture);
+        }
       } catch {
-        if (!cancelled) setDetailEvents([]);
+        if (!cancelled) {
+          setDetailEvents([]);
+          setDetailFixtureOverride(null);
+        }
       } finally {
         if (!cancelled) setDetailLoading(false);
       }
@@ -217,7 +239,10 @@ export function LiveFixturesApp() {
     return [...map.entries()];
   }, [fixtures, tab]);
 
-  const detailFixture = fixtures.find((f) => f.fixtureId === detailId) ?? null;
+  const detailFixture =
+    detailFixtureOverride ??
+    fixtures.find((f) => f.fixtureId === detailId) ??
+    null;
 
   return (
     <div>
@@ -249,7 +274,11 @@ export function LiveFixturesApp() {
         <div>
           <h1 className="page-title">Live &amp; Fixtures</h1>
           <p className="page-sub" style={{ marginBottom: 0 }}>
-            Read-only mirror of API-Football — not linked to Prediction Log.
+            Live mirror of API-Football, enriched with The Stats API match stats when
+            configured — not linked to Prediction Log.{" "}
+            <Link href="/live/refresh" style={{ textDecoration: "underline" }}>
+              Manual refresh
+            </Link>
           </p>
         </div>
         <div
@@ -260,6 +289,9 @@ export function LiveFixturesApp() {
             alignItems: "center",
           }}
         >
+          <Link href="/live/refresh" className="btn btn-secondary">
+            Refresh scores
+          </Link>
           <button
             type="button"
             className="btn btn-primary"
@@ -493,6 +525,19 @@ export function LiveFixturesApp() {
                   {detailFixture.statusMinute != null
                     ? ` · ${detailFixture.statusMinute}'`
                     : ""}
+                  {hasScoreConflict(detailFixture.sourceConflicts) && (
+                    <span
+                      title={formatConflictHint(detailFixture.sourceConflicts)}
+                      style={{
+                        marginLeft: "0.5rem",
+                        color: "var(--warn)",
+                        fontWeight: 600,
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      score mismatch
+                    </span>
+                  )}
                 </p>
                 <p
                   style={{
@@ -505,6 +550,52 @@ export function LiveFixturesApp() {
                   {formatLocalKickoff(detailFixture.kickoffUtc).date}{" "}
                   {formatLocalKickoff(detailFixture.kickoffUtc).time}
                 </p>
+                {hasAnyStats(detailFixture) && (
+                  <div
+                    style={{
+                      marginBottom: "0.75rem",
+                      fontSize: "0.8125rem",
+                      display: "grid",
+                      gap: "0.25rem",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700 }}>Match stats</div>
+                    {(detailFixture.homeCorners != null ||
+                      detailFixture.awayCorners != null) && (
+                      <div>
+                        Corners: {dash(detailFixture.homeCorners)} –{" "}
+                        {dash(detailFixture.awayCorners)}
+                      </div>
+                    )}
+                    {(detailFixture.homeShots != null ||
+                      detailFixture.awayShots != null) && (
+                      <div>
+                        Shots: {dash(detailFixture.homeShots)} –{" "}
+                        {dash(detailFixture.awayShots)}
+                      </div>
+                    )}
+                    {(detailFixture.homePossession != null ||
+                      detailFixture.awayPossession != null) && (
+                      <div>
+                        Possession: {dash(detailFixture.homePossession)}% –{" "}
+                        {dash(detailFixture.awayPossession)}%
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!!detailFixture.sourceConflicts?.length && (
+                  <p
+                    style={{
+                      margin: "0 0 0.75rem",
+                      fontSize: "0.75rem",
+                      color: "var(--warn)",
+                    }}
+                    title={formatConflictHint(detailFixture.sourceConflicts)}
+                  >
+                    Source mismatch:{" "}
+                    {formatConflictHint(detailFixture.sourceConflicts)}
+                  </p>
+                )}
               </>
             )}
             <h3
@@ -720,6 +811,21 @@ function FixtureRow({
           }}
         >
           {scoreLine(fixture)}
+          {hasScoreConflict(fixture.sourceConflicts) && (
+            <span
+              title={formatConflictHint(fixture.sourceConflicts)}
+              aria-label="Score source mismatch"
+              style={{
+                display: "inline-block",
+                marginLeft: "0.25rem",
+                width: "0.4rem",
+                height: "0.4rem",
+                borderRadius: "999px",
+                background: "var(--warn)",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
         </span>
         <span
           style={{

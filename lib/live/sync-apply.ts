@@ -13,14 +13,20 @@ import {
   replaceEventsForFixture,
   upsertFixtures,
   upsertLeague,
+  upsertMatchStats,
 } from "./store";
-import type { LiveApiFixture } from "./types";
+import type { LiveApiFixture, LiveBeSoccerEnrichment } from "./types";
 import { sleep } from "@/lib/football-api/client";
+import type { NewMatchStats } from "@/lib/db/schema";
 
 export async function applyApiFixtures(
   raw: LiveApiFixture[],
   seasonFallback: number,
-  opts?: { hydrateEventsOnFt?: boolean; provider?: LiveFixturesProvider }
+  opts?: {
+    hydrateEventsOnFt?: boolean;
+    provider?: LiveFixturesProvider;
+    beSoccerEnrichments?: Map<number, LiveBeSoccerEnrichment>;
+  }
 ): Promise<{
   fetched: number;
   upserted: number;
@@ -28,6 +34,7 @@ export async function applyApiFixtures(
   updated: number;
   skipped: number;
   settledEmitted: number;
+  matchStatsUpserted: number;
   leagues: number;
   normalizeDropped: number;
   eventsHydrated: number;
@@ -37,11 +44,13 @@ export async function applyApiFixtures(
   const fixtures = [];
   const provider = opts?.provider ?? apiSportsLiveProvider;
   const hydrateEvents = opts?.hydrateEventsOnFt !== false;
+  const enrichments = opts?.beSoccerEnrichments;
 
   for (const row of raw) {
     const league = normalizeLeague(row, seasonFallback);
     if (league) leaguesSeen.set(league.leagueId, league);
-    const fx = normalizeFixture(row, syncedAt);
+    const enrich = enrichments?.get(row.fixture?.id) ?? null;
+    const fx = normalizeFixture(row, syncedAt, enrich);
     if (fx) fixtures.push(fx);
   }
 
@@ -50,6 +59,77 @@ export async function applyApiFixtures(
   }
 
   const result = await upsertFixtures(fixtures);
+
+  // Also write canonical stats rows when enrichment is present.
+  const statsRows: NewMatchStats[] = [];
+  const now = syncedAt;
+  for (const fx of fixtures) {
+    const enrich = enrichments?.get(fx.fixtureId) ?? null;
+    if (!enrich) continue;
+    const hasStats =
+      enrich.besoccerMatchId != null ||
+      enrich.homeCorners != null ||
+      enrich.homeShots != null ||
+      enrich.homePossession != null ||
+      enrich.homeXg != null ||
+      enrich.homeShotsOnTarget != null ||
+      enrich.rawJson != null ||
+      (enrich.sourceConflicts?.length ?? 0) > 0;
+    if (!hasStats) continue;
+    statsRows.push({
+      fixtureId: fx.fixtureId,
+      statsApiMatchId: enrich.besoccerMatchId ?? null,
+      leagueId: fx.leagueId,
+      season: fx.season,
+      homeTeam: fx.homeTeam,
+      awayTeam: fx.awayTeam,
+      kickoffUtc: fx.kickoffUtc,
+      status: fx.status,
+      homeGoals: fx.homeGoals ?? null,
+      awayGoals: fx.awayGoals ?? null,
+      homeCorners: enrich.homeCorners ?? null,
+      awayCorners: enrich.awayCorners ?? null,
+      homeShots: enrich.homeShots ?? null,
+      awayShots: enrich.awayShots ?? null,
+      homePossession: enrich.homePossession ?? null,
+      awayPossession: enrich.awayPossession ?? null,
+      homeShotsOnTarget: enrich.homeShotsOnTarget ?? null,
+      awayShotsOnTarget: enrich.awayShotsOnTarget ?? null,
+      homeXg: enrich.homeXg ?? null,
+      awayXg: enrich.awayXg ?? null,
+      homeBigChances: enrich.homeBigChances ?? null,
+      awayBigChances: enrich.awayBigChances ?? null,
+      homeGkSaves: enrich.homeGkSaves ?? null,
+      awayGkSaves: enrich.awayGkSaves ?? null,
+      homeFouls: enrich.homeFouls ?? null,
+      awayFouls: enrich.awayFouls ?? null,
+      homeYellowCards: enrich.homeYellowCards ?? null,
+      awayYellowCards: enrich.awayYellowCards ?? null,
+      homeRedCards: enrich.homeRedCards ?? null,
+      awayRedCards: enrich.awayRedCards ?? null,
+      homePasses: enrich.homePasses ?? null,
+      awayPasses: enrich.awayPasses ?? null,
+      homeAccuratePasses: enrich.homeAccuratePasses ?? null,
+      awayAccuratePasses: enrich.awayAccuratePasses ?? null,
+      homeTackles: enrich.homeTackles ?? null,
+      awayTackles: enrich.awayTackles ?? null,
+      homeFreeKicks: enrich.homeFreeKicks ?? null,
+      awayFreeKicks: enrich.awayFreeKicks ?? null,
+      rawJson: enrich.rawJson ?? null,
+      sourceConflicts:
+        enrich.sourceConflicts?.length
+          ? JSON.stringify(enrich.sourceConflicts)
+          : null,
+      provider: "thestatsapi",
+      fetchedAt: now,
+      updatedAt: now,
+    });
+  }
+  let matchStatsUpserted = 0;
+  if (statsRows.length) {
+    const statsResult = await upsertMatchStats(statsRows);
+    matchStatsUpserted = statsResult.upserted;
+  }
 
   let eventsHydrated = 0;
   if (hydrateEvents) {
@@ -80,6 +160,7 @@ export async function applyApiFixtures(
     updated: result.updated,
     skipped: result.skipped,
     settledEmitted: result.settledEmitted,
+    matchStatsUpserted,
     leagues: leaguesSeen.size,
     normalizeDropped: raw.length - fixtures.length,
     eventsHydrated,

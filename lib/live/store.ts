@@ -20,16 +20,42 @@ import {
   liveFixtures,
   liveLeagues,
   liveSyncMeta,
+  matchStats,
   type LiveEvent,
   type LiveFixture,
+  type MatchStats,
   type NewLiveEvent,
   type NewLiveFixture,
   type NewLiveLeague,
+  type NewMatchStats,
 } from "@/lib/db/schema";
-import { LIVE_STATUSES, STALE_MS } from "./constants";
+import { LIVE_LEAGUE_IDS, LIVE_STATUSES, STALE_MS } from "./constants";
 import { isFinishedStatus } from "./normalize";
 import { emitFixtureSettled } from "./settled-bus";
-import type { LiveFixtureDto, LiveSyncMetaDto, LiveTab } from "./types";
+import type {
+  LiveFixtureDto,
+  LiveSourceConflictDto,
+  LiveSyncMetaDto,
+  LiveTab,
+} from "./types";
+
+function parseSourceConflicts(
+  raw: string | null | undefined
+): LiveSourceConflictDto[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (c): c is LiveSourceConflictDto =>
+        !!c &&
+        typeof c === "object" &&
+        typeof (c as LiveSourceConflictDto).field === "string"
+    );
+  } catch {
+    return [];
+  }
+}
 
 export type LiveSyncStatus = "ok" | "empty" | "error" | "quota" | "auth";
 
@@ -118,6 +144,16 @@ export async function upsertFixtures(rows: NewLiveFixture[]): Promise<{
             statusMinute,
             homeGoals,
             awayGoals,
+            besoccerMatchId:
+              row.besoccerMatchId ?? prev?.besoccerMatchId ?? null,
+            homeCorners: row.homeCorners ?? prev?.homeCorners ?? null,
+            awayCorners: row.awayCorners ?? prev?.awayCorners ?? null,
+            homeShots: row.homeShots ?? prev?.homeShots ?? null,
+            awayShots: row.awayShots ?? prev?.awayShots ?? null,
+            homePossession: row.homePossession ?? prev?.homePossession ?? null,
+            awayPossession: row.awayPossession ?? prev?.awayPossession ?? null,
+            sourceConflicts:
+              row.sourceConflicts ?? prev?.sourceConflicts ?? null,
             lastSyncedUtc: row.lastSyncedUtc,
           },
         });
@@ -159,6 +195,118 @@ export async function upsertFixtures(rows: NewLiveFixture[]): Promise<{
     skipped,
     settledEmitted,
   };
+}
+
+/** Upsert canonical match statistics into `match_stats`. */
+export async function upsertMatchStats(
+  rows: NewMatchStats[]
+): Promise<{ upserted: number; inserted: number; updated: number; skipped: number }> {
+  if (!rows.length) {
+    return { upserted: 0, inserted: 0, updated: 0, skipped: 0 };
+  }
+  const db = await getDb();
+  const ids = rows.map((r) => r.fixtureId);
+  const existing = await db
+    .select()
+    .from(matchStats)
+    .where(inArray(matchStats.fixtureId, ids));
+  const byId = new Map(existing.map((e) => [e.fixtureId, e]));
+
+  let inserted = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    const prev = byId.get(row.fixtureId);
+    try {
+      await db
+        .insert(matchStats)
+        .values(row)
+        .onConflictDoUpdate({
+          target: matchStats.fixtureId,
+          set: {
+            statsApiMatchId:
+              row.statsApiMatchId ?? prev?.statsApiMatchId ?? null,
+            leagueId: row.leagueId ?? prev?.leagueId ?? null,
+            season: row.season ?? prev?.season ?? null,
+            homeTeam: row.homeTeam,
+            awayTeam: row.awayTeam,
+            kickoffUtc: row.kickoffUtc ?? prev?.kickoffUtc ?? null,
+            status: row.status ?? prev?.status ?? null,
+            homeGoals: row.homeGoals ?? prev?.homeGoals ?? null,
+            awayGoals: row.awayGoals ?? prev?.awayGoals ?? null,
+            homeCorners: row.homeCorners ?? prev?.homeCorners ?? null,
+            awayCorners: row.awayCorners ?? prev?.awayCorners ?? null,
+            homeShots: row.homeShots ?? prev?.homeShots ?? null,
+            awayShots: row.awayShots ?? prev?.awayShots ?? null,
+            homePossession: row.homePossession ?? prev?.homePossession ?? null,
+            awayPossession: row.awayPossession ?? prev?.awayPossession ?? null,
+            homeShotsOnTarget:
+              row.homeShotsOnTarget ?? prev?.homeShotsOnTarget ?? null,
+            awayShotsOnTarget:
+              row.awayShotsOnTarget ?? prev?.awayShotsOnTarget ?? null,
+            homeXg: row.homeXg ?? prev?.homeXg ?? null,
+            awayXg: row.awayXg ?? prev?.awayXg ?? null,
+            homeBigChances: row.homeBigChances ?? prev?.homeBigChances ?? null,
+            awayBigChances: row.awayBigChances ?? prev?.awayBigChances ?? null,
+            homeGkSaves: row.homeGkSaves ?? prev?.homeGkSaves ?? null,
+            awayGkSaves: row.awayGkSaves ?? prev?.awayGkSaves ?? null,
+            homeFouls: row.homeFouls ?? prev?.homeFouls ?? null,
+            awayFouls: row.awayFouls ?? prev?.awayFouls ?? null,
+            homeYellowCards:
+              row.homeYellowCards ?? prev?.homeYellowCards ?? null,
+            awayYellowCards:
+              row.awayYellowCards ?? prev?.awayYellowCards ?? null,
+            homeRedCards: row.homeRedCards ?? prev?.homeRedCards ?? null,
+            awayRedCards: row.awayRedCards ?? prev?.awayRedCards ?? null,
+            homePasses: row.homePasses ?? prev?.homePasses ?? null,
+            awayPasses: row.awayPasses ?? prev?.awayPasses ?? null,
+            homeAccuratePasses:
+              row.homeAccuratePasses ?? prev?.homeAccuratePasses ?? null,
+            awayAccuratePasses:
+              row.awayAccuratePasses ?? prev?.awayAccuratePasses ?? null,
+            homeTackles: row.homeTackles ?? prev?.homeTackles ?? null,
+            awayTackles: row.awayTackles ?? prev?.awayTackles ?? null,
+            homeFreeKicks: row.homeFreeKicks ?? prev?.homeFreeKicks ?? null,
+            awayFreeKicks: row.awayFreeKicks ?? prev?.awayFreeKicks ?? null,
+            rawJson: row.rawJson ?? prev?.rawJson ?? null,
+            sourceConflicts:
+              row.sourceConflicts ?? prev?.sourceConflicts ?? null,
+            provider: row.provider,
+            fetchedAt: row.fetchedAt,
+            updatedAt: row.updatedAt,
+          },
+        });
+      if (prev) updated += 1;
+      else inserted += 1;
+    } catch (e) {
+      skipped += 1;
+      console.warn(
+        "[match-stats] upsert skipped",
+        row.fixtureId,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
+  return {
+    upserted: inserted + updated,
+    inserted,
+    updated,
+    skipped,
+  };
+}
+
+export async function getMatchStatsByFixtureId(
+  fixtureId: number
+): Promise<MatchStats | null> {
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(matchStats)
+    .where(eq(matchStats.fixtureId, fixtureId))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 export async function writeSyncMeta(meta: {
@@ -355,6 +503,14 @@ export async function queryFixturesForTab(opts: {
     statusMinute: r.fixture.statusMinute,
     homeGoals: r.fixture.homeGoals,
     awayGoals: r.fixture.awayGoals,
+    besoccerMatchId: r.fixture.besoccerMatchId ?? null,
+    homeCorners: r.fixture.homeCorners ?? null,
+    awayCorners: r.fixture.awayCorners ?? null,
+    homeShots: r.fixture.homeShots ?? null,
+    awayShots: r.fixture.awayShots ?? null,
+    homePossession: r.fixture.homePossession ?? null,
+    awayPossession: r.fixture.awayPossession ?? null,
+    sourceConflicts: parseSourceConflicts(r.fixture.sourceConflicts),
     lastSyncedUtc: r.fixture.lastSyncedUtc.toISOString(),
     leagueName: r.leagueName,
     leagueLogoUrl: r.leagueLogoUrl,
@@ -393,4 +549,46 @@ export async function listFixturesKickoffBetween(
     .where(
       and(gte(liveFixtures.kickoffUtc, from), lt(liveFixtures.kickoffUtc, to))
     );
+}
+
+/**
+ * Sample-day DB lookup: tracked-league live_fixtures for a UTC calendar day,
+ * left-joined with match_stats.
+ */
+export async function listSampleDayFromDb(dateIso: string): Promise<
+  Array<{
+    fixture: LiveFixture;
+    leagueName: string | null;
+    stats: MatchStats | null;
+  }>
+> {
+  const db = await getDb();
+  const from = new Date(`${dateIso}T00:00:00.000Z`);
+  const to = new Date(`${dateIso}T23:59:59.999Z`);
+  // end exclusive for kickoff range
+  const toExclusive = new Date(to.getTime() + 1);
+
+  const rows = await db
+    .select({
+      fixture: liveFixtures,
+      leagueName: liveLeagues.name,
+      stats: matchStats,
+    })
+    .from(liveFixtures)
+    .leftJoin(liveLeagues, eq(liveFixtures.leagueId, liveLeagues.leagueId))
+    .leftJoin(matchStats, eq(liveFixtures.fixtureId, matchStats.fixtureId))
+    .where(
+      and(
+        gte(liveFixtures.kickoffUtc, from),
+        lt(liveFixtures.kickoffUtc, toExclusive),
+        inArray(liveFixtures.leagueId, [...LIVE_LEAGUE_IDS])
+      )
+    )
+    .orderBy(asc(liveFixtures.kickoffUtc));
+
+  return rows.map((r) => ({
+    fixture: r.fixture,
+    leagueName: r.leagueName,
+    stats: r.stats?.fixtureId != null ? r.stats : null,
+  }));
 }

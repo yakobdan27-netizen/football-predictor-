@@ -13,6 +13,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/stats-backfill",
+      "schedule": "0 4 * * *"
+    },
+    {
       "path": "/api/cron/live-prematch",
       "schedule": "0 15 * * *"
     }
@@ -65,6 +69,12 @@
     },
     "app/api/cron/live-daily-sweep/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/stats-backfill/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/stats-backfill/status/route.ts": {
+      "maxDuration": 30
     },
     "app/api/cron/live-prematch/route.ts": {
       "maxDuration": 60

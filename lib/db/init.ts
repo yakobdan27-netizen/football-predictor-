@@ -25,6 +25,109 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
+  // Always ensure match_stats exists (canonical Stats API persistence).
+  await sql`
+    CREATE TABLE IF NOT EXISTS match_stats (
+      fixture_id integer PRIMARY KEY,
+      stats_api_match_id text,
+      league_id integer,
+      season integer,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      kickoff_utc timestamptz,
+      status text,
+      home_goals integer,
+      away_goals integer,
+      home_corners integer,
+      away_corners integer,
+      home_shots integer,
+      away_shots integer,
+      home_possession integer,
+      away_possession integer,
+      source_conflicts text,
+      provider text NOT NULL DEFAULT 'thestatsapi',
+      fetched_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  // Expanded overview stats (nullable — additive / safe for other backends)
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_shots_on_target integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_shots_on_target integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_xg real`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_xg real`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_big_chances integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_big_chances integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_gk_saves integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_gk_saves integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_fouls integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_fouls integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_yellow_cards integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_yellow_cards integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_red_cards integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_red_cards integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_passes integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_passes integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_accurate_passes integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_accurate_passes integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_tackles integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_tackles integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_free_kicks integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_free_kicks integer`;
+  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS raw_json text`;
+  await sql`CREATE INDEX IF NOT EXISTS match_stats_league_season_idx ON match_stats (league_id, season)`;
+  await sql`CREATE INDEX IF NOT EXISTS match_stats_kickoff_idx ON match_stats (kickoff_utc)`;
+  await sql`CREATE INDEX IF NOT EXISTS match_stats_stats_api_id_idx ON match_stats (stats_api_match_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS stats_backfill_meta (
+      id integer PRIMARY KEY DEFAULT 1,
+      phase text NOT NULL DEFAULT 'inventory',
+      cell_index integer NOT NULL DEFAULT 0,
+      league_id integer,
+      season integer,
+      last_error text,
+      last_summary text,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS team_season_stats (
+      team_name text NOT NULL,
+      league_id integer NOT NULL,
+      season integer NOT NULL,
+      af_team_id integer,
+      matches integer NOT NULL DEFAULT 0,
+      home_matches integer NOT NULL DEFAULT 0,
+      away_matches integer NOT NULL DEFAULT 0,
+      avg_goals_for real,
+      avg_goals_against real,
+      avg_xg_for real,
+      avg_xg_against real,
+      avg_shots_for real,
+      avg_shots_against real,
+      avg_shots_on_target_for real,
+      avg_shots_on_target_against real,
+      avg_corners_for real,
+      avg_corners_against real,
+      avg_possession real,
+      avg_fouls_for real,
+      avg_yellow_cards_for real,
+      avg_red_cards_for real,
+      avg_passes_for real,
+      avg_tackles_for real,
+      home_avg_goals_for real,
+      home_avg_corners_for real,
+      home_avg_shots_on_target_for real,
+      away_avg_goals_for real,
+      away_avg_corners_for real,
+      away_avg_shots_on_target_for real,
+      updated_at timestamptz NOT NULL,
+      PRIMARY KEY (team_name, league_id, season)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS team_season_stats_league_season_idx ON team_season_stats (league_id, season)`;
+
   if (initialized) return;
 
   await sql`
@@ -110,6 +213,25 @@ export async function ensureSchema(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS live_fixtures_kickoff_idx ON live_fixtures (kickoff_utc)`;
   await sql`CREATE INDEX IF NOT EXISTS live_fixtures_league_season_idx ON live_fixtures (league_id, season)`;
   await sql`CREATE INDEX IF NOT EXISTS live_events_fixture_idx ON live_events (fixture_id)`;
+
+  // Secondary provider match id (The Stats API `mt_…`; was BeSoccer numeric id)
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS besoccer_match_id text`;
+  // If an older integer column exists, widen to text (safe no-op when already text)
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE live_fixtures
+        ALTER COLUMN besoccer_match_id TYPE text
+        USING besoccer_match_id::text;
+    EXCEPTION WHEN others THEN NULL;
+    END $$
+  `;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_corners integer`;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_corners integer`;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_shots integer`;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_shots integer`;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_possession integer`;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_possession integer`;
+  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS source_conflicts text`;
 
   initialized = true;
 }

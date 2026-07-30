@@ -1,17 +1,74 @@
 import { NextResponse } from "next/server";
-import { normalizeEvents } from "@/lib/live/normalize";
+import {
+  fetchStatsApiMatch,
+  isStatsApiConfigured,
+} from "@/lib/stats-api";
+import { getDb } from "@/lib/db";
+import { liveLeagues } from "@/lib/db/schema";
+import { enrichFixturesWithBeSoccer } from "@/lib/live/enrich-besoccer";
+import { mergeLiveSources } from "@/lib/live/merge-besoccer";
+import { normalizeEvents, normalizeFixture } from "@/lib/live/normalize";
 import { apiSportsLiveProvider } from "@/lib/live/provider";
 import {
   getEventsForFixture,
   getFixtureById,
   replaceEventsForFixture,
+  upsertFixtures,
 } from "@/lib/live/store";
-import { liveLeagues } from "@/lib/db/schema";
-import { getDb } from "@/lib/db";
+import type { LiveFixtureDto, LiveSourceConflictDto } from "@/lib/live/types";
 import { eq } from "drizzle-orm";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+
+function parseConflicts(raw: string | null | undefined): LiveSourceConflictDto[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (c): c is LiveSourceConflictDto =>
+        !!c &&
+        typeof c === "object" &&
+        typeof (c as LiveSourceConflictDto).field === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
+function toDto(
+  fixture: NonNullable<Awaited<ReturnType<typeof getFixtureById>>>,
+  leagueName: string | null,
+  leagueLogoUrl: string | null
+): LiveFixtureDto {
+  return {
+    fixtureId: fixture.fixtureId,
+    leagueId: fixture.leagueId,
+    season: fixture.season,
+    homeTeam: fixture.homeTeam,
+    awayTeam: fixture.awayTeam,
+    homeId: fixture.homeId,
+    awayId: fixture.awayId,
+    kickoffUtc: fixture.kickoffUtc.toISOString(),
+    venue: fixture.venue,
+    status: fixture.status,
+    statusMinute: fixture.statusMinute,
+    homeGoals: fixture.homeGoals,
+    awayGoals: fixture.awayGoals,
+    besoccerMatchId: fixture.besoccerMatchId ?? null,
+    homeCorners: fixture.homeCorners ?? null,
+    awayCorners: fixture.awayCorners ?? null,
+    homeShots: fixture.homeShots ?? null,
+    awayShots: fixture.awayShots ?? null,
+    homePossession: fixture.homePossession ?? null,
+    awayPossession: fixture.awayPossession ?? null,
+    sourceConflicts: parseConflicts(fixture.sourceConflicts),
+    lastSyncedUtc: fixture.lastSyncedUtc.toISOString(),
+    leagueName,
+    leagueLogoUrl,
+  };
+}
 
 export async function GET(
   _request: Request,
@@ -24,9 +81,57 @@ export async function GET(
       return NextResponse.json({ error: "Invalid fixture id" }, { status: 400 });
     }
 
-    const fixture = await getFixtureById(fixtureId);
+    let fixture = await getFixtureById(fixtureId);
     if (!fixture) {
       return NextResponse.json({ error: "Fixture not found" }, { status: 404 });
+    }
+
+    if (isStatsApiConfigured() && fixture.besoccerMatchId != null) {
+      try {
+        const af = await apiSportsLiveProvider.fetchById(fixtureId);
+        const secondary = await fetchStatsApiMatch(fixture.besoccerMatchId);
+        if (af) {
+          const merged = mergeLiveSources(
+            af,
+            secondary,
+            fixture.besoccerMatchId
+          );
+          const row = normalizeFixture(
+            merged.fixture,
+            new Date(),
+            merged.enrichment
+          );
+          if (row) {
+            await upsertFixtures([row]);
+            fixture = (await getFixtureById(fixtureId)) ?? fixture;
+          }
+        }
+      } catch {
+        // Keep cached row
+      }
+    } else if (isStatsApiConfigured() && fixture.besoccerMatchId == null) {
+      try {
+        const af = await apiSportsLiveProvider.fetchById(fixtureId);
+        if (af) {
+          const { fixtures, enrichments } = await enrichFixturesWithBeSoccer([
+            af,
+          ]);
+          const mergedFx = fixtures[0];
+          if (mergedFx) {
+            const row = normalizeFixture(
+              mergedFx,
+              new Date(),
+              enrichments.get(fixtureId) ?? null
+            );
+            if (row) {
+              await upsertFixtures([row]);
+              fixture = (await getFixtureById(fixtureId)) ?? fixture;
+            }
+          }
+        }
+      } catch {
+        // Keep cached
+      }
     }
 
     let events = await getEventsForFixture(fixtureId);
@@ -39,7 +144,7 @@ export async function GET(
           events = await getEventsForFixture(fixtureId);
         }
       } catch {
-        // Keep empty events — show — in UI
+        // Keep empty events
       }
     }
 
@@ -52,24 +157,7 @@ export async function GET(
 
     return NextResponse.json({
       ok: true,
-      fixture: {
-        fixtureId: fixture.fixtureId,
-        leagueId: fixture.leagueId,
-        season: fixture.season,
-        homeTeam: fixture.homeTeam,
-        awayTeam: fixture.awayTeam,
-        homeId: fixture.homeId,
-        awayId: fixture.awayId,
-        kickoffUtc: fixture.kickoffUtc.toISOString(),
-        venue: fixture.venue,
-        status: fixture.status,
-        statusMinute: fixture.statusMinute,
-        homeGoals: fixture.homeGoals,
-        awayGoals: fixture.awayGoals,
-        lastSyncedUtc: fixture.lastSyncedUtc.toISOString(),
-        leagueName: league?.name ?? null,
-        leagueLogoUrl: league?.logoUrl ?? null,
-      },
+      fixture: toDto(fixture, league?.name ?? null, league?.logoUrl ?? null),
       events: events.map((e) => ({
         id: e.id,
         fixtureId: e.fixtureId,

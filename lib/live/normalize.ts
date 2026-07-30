@@ -1,6 +1,6 @@
 import type { NewLiveEvent, NewLiveFixture, NewLiveLeague } from "@/lib/db/schema";
 import { LIVE_STATUSES } from "./constants";
-import type { LiveApiEvent, LiveApiFixture } from "./types";
+import type { LiveApiEvent, LiveApiFixture, LiveBeSoccerEnrichment } from "./types";
 
 function asIntOrNull(v: unknown): number | null {
   if (v == null) return null;
@@ -35,7 +35,8 @@ export function normalizeLeague(
 
 export function normalizeFixture(
   fixture: LiveApiFixture,
-  syncedAt: Date
+  syncedAt: Date,
+  enrich?: LiveBeSoccerEnrichment | null
 ): NewLiveFixture | null {
   const fixtureId = fixture.fixture?.id;
   if (fixtureId == null || !Number.isFinite(fixtureId)) return null;
@@ -69,6 +70,17 @@ export function normalizeFixture(
     statusMinute: finished ? null : inPlay ? elapsed : null,
     homeGoals: asIntOrNull(fixture.goals?.home),
     awayGoals: asIntOrNull(fixture.goals?.away),
+    besoccerMatchId: enrich?.besoccerMatchId ?? null,
+    homeCorners: enrich?.homeCorners ?? null,
+    awayCorners: enrich?.awayCorners ?? null,
+    homeShots: enrich?.homeShots ?? null,
+    awayShots: enrich?.awayShots ?? null,
+    homePossession: enrich?.homePossession ?? null,
+    awayPossession: enrich?.awayPossession ?? null,
+    sourceConflicts:
+      enrich?.sourceConflicts && enrich.sourceConflicts.length
+        ? JSON.stringify(enrich.sourceConflicts)
+        : null,
     lastSyncedUtc: syncedAt,
     settledEmittedAt: undefined,
   };

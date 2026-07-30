@@ -4,6 +4,8 @@ This application is primarily **manual**. Predictions and odds are entered by yo
 
 Optional **API-Football** (api-sports.io, direct — not RapidAPI) auto-fills finished FT/HT scores and corners on the Prediction Log Result Filling tab. The key stays server-side only.
 
+Optional **The Stats API** (`STATS_API_KEY`) enriches Live via per-match `GET /football/matches/{id}/stats` (no bulk endpoint), merged with API-Football. Stats are stored in the dedicated **`match_stats`** table (keyed by API-Football `fixture_id`), with a denormalized copy on `live_fixtures` for the Live UI. Manual refresh on `/live/refresh` samples **one day** inside the free-plan window **2022-08-01 → 2024-12-31** (AF seasons 2022–2024): pick a date, preview available matches, then fetch stats.
+
 All intelligence comes from your own data:
 
 - **Prediction Log** — enter batches, predictions, odds, and results (Vercel KV)
@@ -25,6 +27,8 @@ All intelligence comes from your own data:
 Predictions are entered manually. Prediction Log batches and club histories are stored in **Vercel KV** (Upstash Redis) when `KV_REST_API_URL` and `KV_REST_API_TOKEN` are set; locally, an in-memory fallback is used. UI preferences (recommendation settings, lucky numbers) remain in the browser. Backtest needs the database with uploaded or seeded match data.
 
 **Optional results Auto-Fill:** set `API_FOOTBALL_KEY` (api-sports.io direct key) and optionally `API_FOOTBALL_BASE_URL` (default `https://v3.football.api-sports.io`). On Prediction Log → Saved Batches, **Auto-Fill Results** fetches finished fixtures (FT/HT/corners) via the server. Verify with `npx tsx scripts/verify-api-football.ts` or `GET /api/football-status`. Predictions and odds remain manual; only empty result cells are filled (manual values are kept unless you tap Replace).
+
+**Optional Live Stats API enrich:** set `STATS_API_KEY` to merge The Stats API match stats into `/live` alongside API-Football. Verify with `GET /api/besoccer-status` (legacy path; probes The Stats API).
 
 ## Deploy on Vercel (frontend + API + Neon Postgres)
 
@@ -59,6 +63,9 @@ Tables are created automatically on first API request (`ensureSchema` in `lib/db
 | `KV_REST_API_TOKEN` | For production KV | Auto-set by Vercel KV / Upstash Redis integration |
 | `API_FOOTBALL_KEY` | Optional | api-sports.io direct key for Result Filling Auto-Fill (server-only; header `x-apisports-key`) |
 | `API_FOOTBALL_BASE_URL` | Optional | Default `https://v3.football.api-sports.io` |
+| `APISPORTS_KEY` | Optional | Preferred alias for API-Football key (checked before `API_FOOTBALL_KEY`) |
+| `STATS_API_KEY` | Optional | The Stats API Bearer key for Live match-stats merge (`/football/matches/{id}/stats`) |
+| `STATS_API_BASE_URL` | Optional | Default `https://api.thestatsapi.com/api` |
 | `TELEGRAM_BOT_TOKEN` | Optional | BotFather token for external Telegram access |
 | `TELEGRAM_WEBHOOK_SECRET` | Optional | Secret token verified on `POST /api/telegram/webhook` |
 | `INTERNAL_API_KEY` | Optional | Shared secret for `/api/internal/*` (header `x-internal-api-key`) |

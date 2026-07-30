@@ -165,6 +165,59 @@ export function loadClubCornersRates(
   };
 }
 
+/**
+ * Same as loadClubCornersRates, but blends in `team_season_stats` DB priors
+ * when static seed is thin/missing (recommendation cold-start).
+ */
+export async function loadClubCornersRatesAsync(
+  club: string,
+  league: string,
+  batches: PredictionBatch[],
+  opts?: { beforeDate?: string; season?: string | null }
+): Promise<ClubCornersRates> {
+  const base = loadClubCornersRates(club, league, batches, opts);
+  if (base.nMatches >= 5 && !base.seedOnly) return base;
+
+  try {
+    const { lookupDbCornersBaseline } = await import("./team-season-stats");
+    const seasons = opts?.season
+      ? [opts.season]
+      : ["2025/26", "2024/25", "2023/24", "2022/23", "2021/22"];
+    for (const season of seasons) {
+      const dbRow = await lookupDbCornersBaseline(club, league, season);
+      if (!dbRow || dbRow.matches <= 0) continue;
+      const live = collectLiveCorners(batches, club, league, opts);
+      const won =
+        live.n > 0
+          ? blendSeedAndLive(dbRow.avgCornersWon, dbRow.matches, live.won, live.n)
+          : dbRow.avgCornersWon;
+      const conceded =
+        live.n > 0
+          ? blendSeedAndLive(
+              dbRow.avgCornersConceded,
+              dbRow.matches,
+              live.conceded,
+              live.n
+            )
+          : dbRow.avgCornersConceded;
+      return {
+        clubName: standardizeTeamName(club),
+        league,
+        won,
+        conceded,
+        nMatches: live.n > 0 ? live.n + dbRow.matches : dbRow.matches,
+        seasonCount: 1,
+        seedOnly: live.n === 0,
+        sourceNote: `db team_season_stats ${season}${live.n > 0 ? ` · live n=${live.n}` : ""}`,
+        liveMatches: live.n,
+      };
+    }
+  } catch {
+    // DB unavailable — keep static path
+  }
+  return base;
+}
+
 function poissonCdfAtOrBelow(k: number, lambda: number): number {
   let sum = 0;
   const max = Math.min(POISSON_GRID_MAX, Math.max(0, Math.floor(k)));

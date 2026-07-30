@@ -121,6 +121,23 @@ export function lookupClubCornersBaseline(
   return list[list.length - 1] ?? null;
 }
 
+/**
+ * Prefer Postgres `team_season_stats` when the overnight backfill has data;
+ * fall back to static JSON seed.
+ */
+export async function lookupClubCornersBaselinePreferDb(
+  clubName: string,
+  league: string,
+  season?: string | null
+): Promise<CornersBaselineRow | null> {
+  if (season) {
+    const { lookupDbCornersBaseline } = await import("./team-season-stats");
+    const fromDb = await lookupDbCornersBaseline(clubName, league, season);
+    if (fromDb) return fromDb;
+  }
+  return lookupClubCornersBaseline(clubName, league, season);
+}
+
 /** Recency-weighted mean across seasons (2025/26 weight 5 … 2021/22 weight 1). */
 export function lookupClubCornersRecencyBlend(
   clubName: string,
