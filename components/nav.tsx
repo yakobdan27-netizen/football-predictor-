@@ -8,6 +8,7 @@ const links = [
   { href: "/prediction-log", label: "Log", icon: "📝", desktopLabel: "Prediction Log" },
   { href: "/next-matches", label: "Next", icon: "📅", desktopLabel: "Next Matches" },
   { href: "/live", label: "Live", icon: "🔴", desktopLabel: "Live & Fixtures" },
+  { href: "/bets", label: "Bets", icon: "🎟️", desktopLabel: "Bets Coupon" },
   { href: "/teams", label: "Teams", icon: "🏆", desktopLabel: "Teams" },
   { href: "/leagues", label: "League", icon: "🌍", desktopLabel: "Leagues" },
   { href: "/ai-learner", label: "AI", icon: "🧠", desktopLabel: "AI Learner" },

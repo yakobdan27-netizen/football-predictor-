@@ -7,15 +7,30 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ clubId: string }> }
 ) {
+  // #region agent log
+  const _t0 = Date.now();
+  // #endregion
   try {
     const { clubId } = await params;
+    // #region agent log
+    fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'915201'},body:JSON.stringify({sessionId:'915201',hypothesisId:'D',location:'app/api/clubs/[clubId]/route.ts:GET',message:'club detail entry',data:{clubId},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const record = await loadClubRecord(clubId);
     if (!record) {
+      // #region agent log
+      fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'915201'},body:JSON.stringify({sessionId:'915201',hypothesisId:'D',location:'app/api/clubs/[clubId]/route.ts:GET',message:'club detail 404',data:{clubId,ms:Date.now()-_t0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'915201'},body:JSON.stringify({sessionId:'915201',hypothesisId:'D',location:'app/api/clubs/[clubId]/route.ts:GET',message:'club detail ok',data:{clubId,ms:Date.now()-_t0},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return NextResponse.json({ club: record });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load club";
+    // #region agent log
+    fetch('http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'915201'},body:JSON.stringify({sessionId:'915201',hypothesisId:'D',location:'app/api/clubs/[clubId]/route.ts:GET',message:'club detail error',data:{ms:Date.now()-_t0,err:msg.slice(0,160)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

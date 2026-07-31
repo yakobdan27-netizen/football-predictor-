@@ -82,6 +82,18 @@
     "app/api/cron/live-poll/route.ts": {
       "maxDuration": 60
     },
+    "app/api/bets/feed/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/bets/odds/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/bets/slips/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/bets/settle/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/live/fixtures/route.ts": {
       "maxDuration": 30
     },

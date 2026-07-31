@@ -259,3 +259,91 @@ export const teamSeasonStats = pgTable(
 
 export type TeamSeasonStats = typeof teamSeasonStats.$inferSelect;
 export type NewTeamSeasonStats = typeof teamSeasonStats.$inferInsert;
+
+/** Isolated bet-tracking tables — never written by Prediction Log. */
+export const betEvents = pgTable(
+  "bet_events",
+  {
+    id: serial("id").primaryKey(),
+    apiFixtureId: integer("api_fixture_id").notNull().unique(),
+    leagueId: integer("league_id").notNull(),
+    home: text("home").notNull(),
+    away: text("away").notNull(),
+    kickoffUtc: timestamp("kickoff_utc", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("NS"),
+    minute: integer("minute"),
+    homeScore: integer("home_score"),
+    awayScore: integer("away_score"),
+    feedType: text("feed_type").notNull().default("PRE"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    kickoffIdx: index("bet_events_kickoff_idx").on(t.kickoffUtc),
+    statusIdx: index("bet_events_status_idx").on(t.status),
+    feedIdx: index("bet_events_feed_idx").on(t.feedType),
+  })
+);
+
+export const betMarkets = pgTable(
+  "bet_markets",
+  {
+    id: serial("id").primaryKey(),
+    betEventId: integer("bet_event_id").notNull(),
+    marketType: text("market_type").notNull(),
+    selectionLabel: text("selection_label").notNull(),
+    odd: real("odd"),
+    isAvailable: integer("is_available").notNull().default(1),
+    source: text("source").notNull().default("MANUAL"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    eventIdx: index("bet_markets_event_idx").on(t.betEventId),
+    marketIdx: index("bet_markets_type_idx").on(t.betEventId, t.marketType, t.selectionLabel),
+  })
+);
+
+export const betSlips = pgTable(
+  "bet_slips",
+  {
+    id: serial("id").primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    slipType: text("slip_type").notNull().default("SINGLE"),
+    stake: real("stake").notNull(),
+    totalOdd: real("total_odd").notNull(),
+    potentialReturn: real("potential_return").notNull(),
+    status: text("status").notNull().default("OPEN"),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    note: text("note"),
+  },
+  (t) => ({
+    statusIdx: index("bet_slips_status_idx").on(t.status),
+    createdIdx: index("bet_slips_created_idx").on(t.createdAt),
+  })
+);
+
+export const betSelections = pgTable(
+  "bet_selections",
+  {
+    id: serial("id").primaryKey(),
+    betSlipId: integer("bet_slip_id").notNull(),
+    betEventId: integer("bet_event_id").notNull(),
+    marketId: integer("market_id").notNull(),
+    chosenLabel: text("chosen_label").notNull(),
+    chosenOdd: real("chosen_odd").notNull(),
+    result: text("result").notNull().default("PENDING"),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => ({
+    slipIdx: index("bet_selections_slip_idx").on(t.betSlipId),
+    eventIdx: index("bet_selections_event_idx").on(t.betEventId),
+  })
+);
+
+export type BetEvent = typeof betEvents.$inferSelect;
+export type NewBetEvent = typeof betEvents.$inferInsert;
+export type BetMarket = typeof betMarkets.$inferSelect;
+export type NewBetMarket = typeof betMarkets.$inferInsert;
+export type BetSlip = typeof betSlips.$inferSelect;
+export type NewBetSlip = typeof betSlips.$inferInsert;
+export type BetSelection = typeof betSelections.$inferSelect;
+export type NewBetSelection = typeof betSelections.$inferInsert;

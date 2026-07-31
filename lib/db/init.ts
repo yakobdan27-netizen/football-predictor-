@@ -128,6 +128,72 @@ export async function ensureSchema(): Promise<void> {
   `;
   await sql`CREATE INDEX IF NOT EXISTS team_season_stats_league_season_idx ON team_season_stats (league_id, season)`;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS bet_events (
+      id serial PRIMARY KEY,
+      api_fixture_id integer NOT NULL UNIQUE,
+      league_id integer NOT NULL,
+      home text NOT NULL,
+      away text NOT NULL,
+      kickoff_utc timestamptz NOT NULL,
+      status text NOT NULL DEFAULT 'NS',
+      minute integer,
+      home_score integer,
+      away_score integer,
+      feed_type text NOT NULL DEFAULT 'PRE',
+      last_synced_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS bet_events_kickoff_idx ON bet_events (kickoff_utc)`;
+  await sql`CREATE INDEX IF NOT EXISTS bet_events_status_idx ON bet_events (status)`;
+  await sql`CREATE INDEX IF NOT EXISTS bet_events_feed_idx ON bet_events (feed_type)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS bet_markets (
+      id serial PRIMARY KEY,
+      bet_event_id integer NOT NULL,
+      market_type text NOT NULL,
+      selection_label text NOT NULL,
+      odd real,
+      is_available integer NOT NULL DEFAULT 1,
+      source text NOT NULL DEFAULT 'MANUAL',
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS bet_markets_event_idx ON bet_markets (bet_event_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS bet_markets_type_idx ON bet_markets (bet_event_id, market_type, selection_label)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS bet_slips (
+      id serial PRIMARY KEY,
+      created_at timestamptz NOT NULL,
+      slip_type text NOT NULL DEFAULT 'SINGLE',
+      stake real NOT NULL,
+      total_odd real NOT NULL,
+      potential_return real NOT NULL,
+      status text NOT NULL DEFAULT 'OPEN',
+      settled_at timestamptz,
+      note text
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS bet_slips_status_idx ON bet_slips (status)`;
+  await sql`CREATE INDEX IF NOT EXISTS bet_slips_created_idx ON bet_slips (created_at)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS bet_selections (
+      id serial PRIMARY KEY,
+      bet_slip_id integer NOT NULL,
+      bet_event_id integer NOT NULL,
+      market_id integer NOT NULL,
+      chosen_label text NOT NULL,
+      chosen_odd real NOT NULL,
+      result text NOT NULL DEFAULT 'PENDING',
+      settled_at timestamptz
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS bet_selections_slip_idx ON bet_selections (bet_slip_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS bet_selections_event_idx ON bet_selections (bet_event_id)`;
+
   if (initialized) return;
 
   await sql`
