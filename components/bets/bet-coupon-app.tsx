@@ -120,6 +120,11 @@ export function BetCouponApp() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quota, setQuota] = useState<string>("");
+  const [planBanner, setPlanBanner] = useState<{
+    plan: string;
+    upgradeUrl: string;
+    recommendedPlan: string;
+  } | null>(null);
   const [picks, setPicks] = useState<SlipPick[]>([]);
   const [mode, setMode] = useState<SlipMode>("SINGLE");
   const [multiStake, setMultiStake] = useState(10);
@@ -137,14 +142,30 @@ export function BetCouponApp() {
         remaining?: number | null;
         limitDay?: number | null;
         current?: number | null;
+        plan?: string;
+        isFree?: boolean;
+        needsUpgrade?: boolean;
+        upgradeUrl?: string;
+        recommendedPlan?: string;
         error?: string;
       };
       if (data.remaining != null && data.limitDay != null) {
-        setQuota(`AF ${data.remaining}/${data.limitDay} left`);
+        const planLabel = data.plan ? ` · ${data.plan}` : "";
+        setQuota(`AF ${data.remaining}/${data.limitDay} left${planLabel}`);
       } else if (data.error) {
         setQuota(data.error.slice(0, 40));
       } else {
         setQuota("AF status n/a");
+      }
+      if (data.needsUpgrade || data.isFree) {
+        setPlanBanner({
+          plan: data.plan ?? "Free",
+          upgradeUrl:
+            data.upgradeUrl ?? "https://www.api-football.com/pricing",
+          recommendedPlan: data.recommendedPlan ?? "Pro",
+        });
+      } else {
+        setPlanBanner(null);
       }
     } catch {
       setQuota("AF status n/a");
@@ -409,6 +430,32 @@ export function BetCouponApp() {
         >
           {TRACKING_BANNER}
         </div>
+
+        {planBanner && (
+          <div
+            className="alert"
+            style={{
+              background: "var(--surface2)",
+              border: "1px solid var(--border)",
+              fontSize: "0.8125rem",
+              marginBottom: "0.75rem",
+            }}
+          >
+            API-Football plan is <strong>{planBanner.plan}</strong>. Odds and
+            current seasons need{" "}
+            <strong>{planBanner.recommendedPlan}</strong> ($19/mo, 7,500
+            req/day).{" "}
+            <a
+              href={planBanner.upgradeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ textDecoration: "underline" }}
+            >
+              Pay on api-football.com
+            </a>{" "}
+            (PayPal or card), then refresh this page.
+          </div>
+        )}
 
         <div
           style={{

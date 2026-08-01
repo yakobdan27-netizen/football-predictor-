@@ -22,6 +22,10 @@ export {
   SAMPLE_DATE_MIN,
   SAMPLE_DATE_MAX,
   SAMPLE_DATE_DEFAULT,
+  FREE_SAMPLE_DATE_MIN,
+  FREE_SAMPLE_DATE_MAX,
+  PAID_SAMPLE_DATE_MIN,
+  resolveSampleWindow,
   isSampleDateAllowed,
 } from "./sample-window";
 

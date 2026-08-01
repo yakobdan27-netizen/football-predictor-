@@ -7,6 +7,7 @@ import {
 } from "@/lib/stats-api";
 import { apiSeasonFromDate } from "@/lib/football-api/leagues";
 import { sleep } from "@/lib/football-api/client";
+import { getApiFootballPlanInfo } from "@/lib/football-api/plan";
 import { LIVE_LEAGUE_IDS } from "./constants";
 import {
   enrichFixturesWithBeSoccer,
@@ -25,8 +26,9 @@ import {
 import { todayIsoDate } from "./dates";
 import {
   assertSampleDate,
-  SAMPLE_DATE_MAX,
-  SAMPLE_DATE_MIN,
+  FREE_SAMPLE_DATE_MIN,
+  resolveSampleWindow,
+  type SampleWindowBounds,
 } from "./sample-window";
 import type { SampleDayMatch, SampleDayPreview } from "./sample-day-types";
 import { emptyLiveBeSoccerEnrichment } from "./empty-enrichment";
@@ -143,15 +145,21 @@ function dbRowToSampleDayMatch(row: {
   };
 }
 
+async function currentSampleWindow(): Promise<SampleWindowBounds> {
+  const plan = await getApiFootballPlanInfo();
+  return resolveSampleWindow(plan.isFree);
+}
+
 /**
  * Pull tracked-league fixtures for one calendar day (API-Football only).
- * Restricted to the free-plan sample window (2022–2024).
+ * Date range follows the active AF plan (free: 2022–2024; paid: wider).
  */
 export async function fetchSampleDayFixtures(
   dateRaw: string,
   provider: LiveFixturesProvider = apiSportsLiveProvider
 ): Promise<{ date: string; season: number; fixtures: LiveApiFixture[] }> {
-  const date = assertSampleDate(dateRaw);
+  const window = await currentSampleWindow();
+  const date = assertSampleDate(dateRaw, window);
   const season = apiSeasonFromDate(date);
   const leagueSet = new Set(LIVE_LEAGUE_IDS);
   const byId = new Map<number, LiveApiFixture>();
@@ -197,7 +205,8 @@ export async function previewSampleDay(
   const forceApi = opts?.forceApi === true;
 
   try {
-    const date = assertSampleDate(dateRaw);
+    const window = await currentSampleWindow();
+    const date = assertSampleDate(dateRaw, window);
     const season = apiSeasonFromDate(date);
 
     if (!forceApi) {
@@ -252,7 +261,7 @@ export async function previewSampleDay(
       forced: forceApi,
       warning:
         matches.length === 0
-          ? `No tracked-league fixtures on ${date} (season ${season}). Pick another day in ${SAMPLE_DATE_MIN}–${SAMPLE_DATE_MAX}.`
+          ? `No tracked-league fixtures on ${date} (season ${season}). Pick another day in ${window.min}–${window.max}.`
           : forceApi
             ? `Forced API refresh — saved ${matches.length} fixture(s) to the database.`
             : `No local fixtures for ${date} — fetched from API and saved to the database.`,
@@ -262,7 +271,7 @@ export async function previewSampleDay(
     return {
       ok: false,
       date: dateRaw,
-      season: apiSeasonFromDate(dateRaw || SAMPLE_DATE_MIN),
+      season: apiSeasonFromDate(dateRaw || FREE_SAMPLE_DATE_MIN),
       matchCount: 0,
       matches: [],
       source: forceApi ? "api" : "database",
@@ -361,23 +370,27 @@ export async function runManualLiveRefresh(
     ? "STATS_API_KEY is set (per-match /stats only — no bulk endpoint)"
     : "STATS_API_KEY not set — API-Football only";
 
+  const window = await currentSampleWindow();
+
   if (mode !== "sample-day") {
     steps[1]!.status = "error";
-    steps[1]!.detail = `Mode "${mode}" disabled — use sample-day with a 2022–2024 date`;
+    steps[1]!.detail = `Mode "${mode}" disabled — use sample-day with a date in ${window.min}–${window.max}`;
     return {
       ok: false,
       ...base(),
-      error: `Only sample-day is supported (date ${SAMPLE_DATE_MIN}–${SAMPLE_DATE_MAX})`,
+      error: `Only sample-day is supported (date ${window.min}–${window.max})`,
       finishedAt: new Date().toISOString(),
     };
   }
 
   try {
     steps[1]!.status = "running";
-    const date = assertSampleDate(opts?.date ?? "");
+    const date = assertSampleDate(opts?.date ?? "", window);
     const season = apiSeasonFromDate(date);
     steps[1]!.status = "done";
-    steps[1]!.detail = `Sample day ${date} (AF season ${season}, free-plan window ${SAMPLE_DATE_MIN}–${SAMPLE_DATE_MAX})`;
+    steps[1]!.detail = `Sample day ${date} (AF season ${season}, ${
+      window.isFree ? "free-plan" : "paid-plan"
+    } window ${window.min}–${window.max})`;
 
     steps[2]!.status = "running";
     const { fixtures: raw } = await fetchSampleDayFixtures(date, provider);

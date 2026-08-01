@@ -105,6 +105,31 @@ function groupByLeague(events: BetFeedEvent[]): BetFeedLeagueGroup[] {
   );
 }
 
+const PREFETCH_ODDS_MAX = 8;
+
+async function softPrefetchOdds(events: BetFeedEvent[]): Promise<BetFeedEvent[]> {
+  const { fetchAndCacheOddsForFixture } = await import("./odds-fetch");
+  const out: BetFeedEvent[] = [];
+  let fetched = 0;
+  for (const e of events) {
+    const needsOdds =
+      !e.markets.some((m) => m.source === "API" && m.odd != null) &&
+      fetched < PREFETCH_ODDS_MAX;
+    if (needsOdds) {
+      try {
+        const result = await fetchAndCacheOddsForFixture(e.apiFixtureId);
+        fetched += 1;
+        out.push({ ...e, markets: result.markets });
+        continue;
+      } catch {
+        // Manual skeleton already present — never block feed
+      }
+    }
+    out.push(e);
+  }
+  return out;
+}
+
 export async function buildBetFeed(
   tab: "pre" | "live"
 ): Promise<{ groups: BetFeedLeagueGroup[]; count: number }> {
@@ -131,5 +156,6 @@ export async function buildBetFeed(
   for (const f of pre) {
     events.push(await toFeedEvent(f, "PRE"));
   }
-  return { groups: groupByLeague(events), count: events.length };
+  const withOdds = await softPrefetchOdds(events);
+  return { groups: groupByLeague(withOdds), count: withOdds.length };
 }

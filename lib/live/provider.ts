@@ -1,74 +1,9 @@
 /**
  * Live fixtures provider — wraps API-Football behind a narrow interface.
- * Isolation: only talks to api-sports; storage is handled by store.ts.
+ * Isolation: only talks to api-sports via lib/apiClient; storage is store.ts.
  */
-import {
-  getApiFootballBaseUrl,
-  getApiFootballKey,
-  type ApiFootballResponse,
-} from "@/lib/football-api/client";
-import {
-  backoffOn429,
-  noteRateLimitHeaders,
-  waitIfRateLimited,
-} from "./rate-limit";
+import { apiFootballGet } from "@/lib/apiClient";
 import type { LiveApiEvent, LiveApiFixture } from "./types";
-
-async function liveGet<T>(
-  path: string,
-  params: Record<string, string | number> = {}
-): Promise<T> {
-  await waitIfRateLimited();
-  const key = getApiFootballKey();
-  const base = getApiFootballBaseUrl();
-  const url = new URL(path.startsWith("http") ? path : `${base}${path}`);
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.append(k, String(v));
-  }
-
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      const res = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-          "x-apisports-key": key,
-          Accept: "application/json",
-        },
-        cache: "no-store",
-      });
-      noteRateLimitHeaders(res.headers);
-      if (res.status === 429) {
-        await backoffOn429(attempt);
-        continue;
-      }
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const payload = (await res.json()) as ApiFootballResponse<T>;
-      if (payload.errors) {
-        const msg =
-          typeof payload.errors === "object" && !Array.isArray(payload.errors)
-            ? JSON.stringify(payload.errors)
-            : String(payload.errors);
-        if (msg && msg !== "{}" && msg !== "[]") {
-          throw new Error(`API errors: ${msg}`);
-        }
-      }
-      return payload.response;
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      if (attempt < 3 && /HTTP 429|rate/i.test(lastError.message)) {
-        await backoffOn429(attempt);
-        continue;
-      }
-      if (attempt < 2) {
-        await new Promise((r) => setTimeout(r, 2 ** attempt * 500));
-      }
-    }
-  }
-  throw new Error(`Live API failed for ${path}: ${lastError?.message}`);
-}
 
 export interface LiveFixturesProvider {
   fetchSeasonFixtures(leagueId: number, season: number): Promise<LiveApiFixture[]>;
@@ -83,11 +18,13 @@ export interface LiveFixturesProvider {
     to: string
   ): Promise<LiveApiFixture[]>;
   fetchEvents(fixtureId: number): Promise<LiveApiEvent[]>;
+  fetchLineups(fixtureId: number): Promise<unknown[]>;
+  fetchStatistics(fixtureId: number): Promise<unknown[]>;
 }
 
 export const apiSportsLiveProvider: LiveFixturesProvider = {
   async fetchSeasonFixtures(leagueId, season) {
-    const rows = await liveGet<LiveApiFixture[]>("/fixtures", {
+    const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", {
       league: leagueId,
       season,
     });
@@ -95,20 +32,21 @@ export const apiSportsLiveProvider: LiveFixturesProvider = {
   },
 
   async fetchLiveAll() {
-    const rows = await liveGet<LiveApiFixture[]>("/fixtures", { live: "all" });
+    const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", {
+      live: "all",
+    });
     return rows ?? [];
   },
 
   async fetchByIds(ids) {
     if (!ids.length) return [];
-    // API allows up to 20 ids separated by -
     const chunks: number[][] = [];
     for (let i = 0; i < ids.length; i += 20) {
       chunks.push(ids.slice(i, i + 20));
     }
     const out: LiveApiFixture[] = [];
     for (const chunk of chunks) {
-      const rows = await liveGet<LiveApiFixture[]>("/fixtures", {
+      const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", {
         ids: chunk.join("-"),
       });
       if (rows?.length) out.push(...rows);
@@ -117,19 +55,19 @@ export const apiSportsLiveProvider: LiveFixturesProvider = {
   },
 
   async fetchById(id) {
-    const rows = await liveGet<LiveApiFixture[]>("/fixtures", { id });
+    const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", { id });
     return rows?.[0] ?? null;
   },
 
   async fetchByDate(date, leagueId) {
     const params: Record<string, string | number> = { date };
     if (leagueId != null) params.league = leagueId;
-    const rows = await liveGet<LiveApiFixture[]>("/fixtures", params);
+    const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", params);
     return rows ?? [];
   },
 
   async fetchDateRange(leagueId, season, from, to) {
-    const rows = await liveGet<LiveApiFixture[]>("/fixtures", {
+    const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", {
       league: leagueId,
       season,
       from,
@@ -139,7 +77,21 @@ export const apiSportsLiveProvider: LiveFixturesProvider = {
   },
 
   async fetchEvents(fixtureId) {
-    const rows = await liveGet<LiveApiEvent[]>("/fixtures/events", {
+    const rows = await apiFootballGet<LiveApiEvent[]>("/fixtures/events", {
+      fixture: fixtureId,
+    });
+    return rows ?? [];
+  },
+
+  async fetchLineups(fixtureId) {
+    const rows = await apiFootballGet<unknown[]>("/fixtures/lineups", {
+      fixture: fixtureId,
+    });
+    return rows ?? [];
+  },
+
+  async fetchStatistics(fixtureId) {
+    const rows = await apiFootballGet<unknown[]>("/fixtures/statistics", {
       fixture: fixtureId,
     });
     return rows ?? [];

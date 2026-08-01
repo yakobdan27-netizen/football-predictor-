@@ -1,7 +1,9 @@
-import { sleep } from "@/lib/football-api/client";
-
 let backoffUntilMs = 0;
 let lastRemaining: number | null = null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 export function getLastQuotaRemaining(): number | null {
   return lastRemaining;

@@ -198,22 +198,30 @@ export function profileToLeaguePrior(league: League): LeaguePriorRecord {
     league.matchesLogged,
     traitSample(p, "over_2_5_rate"),
     traitSample(p, "btts_rate"),
-    traitSample(p, "corners_per_match_avg"),
-    seed?.sample_size ?? 0
+    traitSample(p, "corners_per_match_avg")
   );
+
+  /** Seeds only for cold-start (<8 real matches). */
+  const useSeed = sample < LEAGUE_PRIOR_FULL_SAMPLE;
 
   let source: LeaguePriorSource = league.dataSource ?? "blended";
   if (anyManual(p)) source = "manual";
+  else if (!useSeed) source = "live";
+  else if (over == null && btts == null) source = "seed";
 
   return {
     leagueId: league.leagueId,
     leagueName: league.leagueName,
     season: league.season,
-    over25_rate: over ?? seed?.over25_rate ?? null,
-    btts_rate: btts ?? seed?.btts_rate ?? null,
-    avg_total_corners: corners ?? seed?.avg_total_corners ?? null,
-    home_goal_factor: deriveHomeGoalFactor(homeAdv, seed?.home_goal_factor ?? null),
-    late_goal_share: late ?? seed?.late_goal_share ?? null,
+    over25_rate: over ?? (useSeed ? seed?.over25_rate ?? null : null),
+    btts_rate: btts ?? (useSeed ? seed?.btts_rate ?? null : null),
+    avg_total_corners:
+      corners ?? (useSeed ? seed?.avg_total_corners ?? null : null),
+    home_goal_factor: deriveHomeGoalFactor(
+      homeAdv,
+      useSeed ? seed?.home_goal_factor ?? null : null
+    ),
+    late_goal_share: late ?? (useSeed ? seed?.late_goal_share ?? null : null),
     sample_size: sample,
     source,
     updatedAt: league.lastUpdated || new Date().toISOString(),

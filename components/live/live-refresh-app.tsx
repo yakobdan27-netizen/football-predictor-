@@ -10,9 +10,9 @@ import type {
 import type { SampleDayMatch, SampleDayPreview } from "@/lib/live/sample-day-types";
 import {
   SAMPLE_DATE_DEFAULT,
-  SAMPLE_DATE_MAX,
-  SAMPLE_DATE_MIN,
   isSampleDateAllowed,
+  resolveSampleWindow,
+  type SampleWindowBounds,
 } from "@/lib/live/sample-window";
 
 type MatchStatsResponse = {
@@ -150,6 +150,10 @@ export function LiveRefreshApp() {
   const [result, setResult] = useState<ManualRefreshSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [besoccerStatus, setBesoccerStatus] = useState<StatusProbe | null>(null);
+  const [sampleWindow, setSampleWindow] = useState<SampleWindowBounds>(() =>
+    resolveSampleWindow(true)
+  );
+  const [afPlan, setAfPlan] = useState<string | null>(null);
   const [statsDialogMatch, setStatsDialogMatch] = useState<SampleDayMatch | null>(
     null
   );
@@ -159,8 +163,10 @@ export function LiveRefreshApp() {
   );
   const [statsError, setStatsError] = useState<string | null>(null);
 
-  const dateValid = isSampleDateAllowed(sampleDate);
+  const dateValid = isSampleDateAllowed(sampleDate, sampleWindow);
   const busy = previewing || fetching;
+  const SAMPLE_DATE_MIN = sampleWindow.min;
+  const SAMPLE_DATE_MAX = sampleWindow.max;
 
   const loadStatus = useCallback(async () => {
     try {
@@ -174,6 +180,26 @@ export function LiveRefreshApp() {
         error: e instanceof Error ? e.message : "Status check failed",
       });
     }
+    try {
+      const afRes = await fetch("/api/bets/status");
+      const af = (await afRes.json()) as {
+        plan?: string;
+        isFree?: boolean;
+        limitDay?: number | null;
+      };
+      if (af.plan) setAfPlan(af.plan);
+      const isFree =
+        typeof af.isFree === "boolean"
+          ? af.isFree
+          : af.plan
+            ? /^free$/i.test(af.plan)
+            : af.limitDay != null
+              ? af.limitDay <= 100
+              : true;
+      setSampleWindow(resolveSampleWindow(isFree));
+    } catch {
+      /* keep free window until status known */
+    }
   }, []);
 
   useEffect(() => {
@@ -182,8 +208,8 @@ export function LiveRefreshApp() {
 
   const loadMatches = useCallback(
     async (date: string, forceApi: boolean) => {
-      if (!isSampleDateAllowed(date)) {
-        setError(`Pick a date between ${SAMPLE_DATE_MIN} and ${SAMPLE_DATE_MAX}`);
+      if (!isSampleDateAllowed(date, sampleWindow)) {
+        setError(`Pick a date between ${sampleWindow.min} and ${sampleWindow.max}`);
         return;
       }
       setPreviewing(true);
@@ -194,7 +220,12 @@ export function LiveRefreshApp() {
         const qs = new URLSearchParams({ date });
         if (forceApi) qs.set("force", "1");
         const res = await fetch(`/api/live/refresh/preview?${qs.toString()}`);
-        const data = (await res.json()) as SampleDayPreview;
+        const data = (await res.json()) as SampleDayPreview & {
+          sampleWindow?: SampleWindowBounds;
+          plan?: string;
+        };
+        if (data.sampleWindow) setSampleWindow(data.sampleWindow);
+        if (data.plan) setAfPlan(data.plan);
         setPreview(data);
         if (!res.ok || !data.ok) {
           setError(data.error ?? "Preview failed");
@@ -205,14 +236,16 @@ export function LiveRefreshApp() {
         setPreviewing(false);
       }
     },
-    []
+    [sampleWindow]
   );
 
   // Selecting a calendar/input date loads DB-first (API only if empty).
   useEffect(() => {
-    if (!isSampleDateAllowed(sampleDate)) return;
+    if (!isSampleDateAllowed(sampleDate, sampleWindow)) return;
     void loadMatches(sampleDate, false);
-  }, [sampleDate, loadMatches]);
+    // Only re-load when the chosen date changes (not when plan window updates).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sampleWindow used as gate only
+  }, [sampleDate]);
 
   const calendarCells = useMemo(() => {
     const { year, monthIndex } = calCursor;
@@ -241,7 +274,7 @@ export function LiveRefreshApp() {
   }
 
   function pickDate(iso: string) {
-    if (!isSampleDateAllowed(iso)) return;
+    if (!isSampleDateAllowed(iso, sampleWindow)) return;
     setSampleDate(iso);
     setResult(null);
     setError(null);
@@ -251,7 +284,7 @@ export function LiveRefreshApp() {
     setSampleDate(value);
     setResult(null);
     setError(null);
-    if (isSampleDateAllowed(value)) {
+    if (isSampleDateAllowed(value, sampleWindow)) {
       setCalCursor(parseYm(value));
     }
   }
@@ -357,9 +390,12 @@ export function LiveRefreshApp() {
           </p>
           <h1 className="page-title">Live Refresh</h1>
           <p className="page-sub" style={{ marginBottom: 0 }}>
-            Pick a day in the free-plan window ({SAMPLE_DATE_MIN} →{" "}
-            {SAMPLE_DATE_MAX}). Matches load from the database first; API is used
-            only when that day is empty (or you Force API fetch).
+            Pick a day in the{" "}
+            {sampleWindow.isFree ? "free-plan" : "paid-plan"} window (
+            {SAMPLE_DATE_MIN} → {SAMPLE_DATE_MAX}
+            {afPlan ? ` · AF ${afPlan}` : ""}). Matches load from the database
+            first; API is used only when that day is empty (or you Force API
+            fetch).
           </p>
         </div>
       </div>
@@ -456,7 +492,7 @@ export function LiveRefreshApp() {
                 if (!cell.iso) {
                   return <span key={`b-${i}`} />;
                 }
-                const allowed = isSampleDateAllowed(cell.iso);
+                const allowed = isSampleDateAllowed(cell.iso, sampleWindow);
                 const selected = cell.iso === sampleDate;
                 return (
                   <button

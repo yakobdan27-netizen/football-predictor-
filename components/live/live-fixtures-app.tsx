@@ -188,7 +188,27 @@ export function LiveFixturesApp() {
     void load();
   }, [load]);
 
-  // Auto live-poll (35s) removed — use /live/refresh for manual runs.
+  // Client-side 60s live poll while Live tab has in-play matches.
+  // (Vercel Hobby cannot schedule sub-daily crons; route stays available.)
+  useEffect(() => {
+    if (tab !== "live") return;
+    const inPlay = fixtures.some((f) => {
+      const s = (f.status ?? "").toUpperCase();
+      return ["1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"].includes(s);
+    });
+    if (!inPlay) return;
+    const id = window.setInterval(() => {
+      void (async () => {
+        try {
+          await fetch("/api/cron/live-poll", { method: "POST" });
+          await load({ silent: true });
+        } catch {
+          /* soft-fail */
+        }
+      })();
+    }, 60_000);
+    return () => window.clearInterval(id);
+  }, [tab, fixtures, load]);
 
   useEffect(() => {
     if (detailId == null) {

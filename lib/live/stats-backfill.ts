@@ -36,7 +36,7 @@ import type { LiveApiFixture, LiveBeSoccerEnrichment } from "./types";
 import { getFixtureById } from "./store";
 import type { LiveFixture } from "@/lib/db/schema";
 
-/** Rebuild AF-shaped payload from DB — free plans block `/fixtures?ids=`. */
+/** Rebuild AF-shaped payload from DB when `/fixtures?ids=` is unavailable. */
 function liveFixtureToApiShape(
   row: LiveFixture,
   leagueName: string
@@ -400,10 +400,31 @@ export async function runStatsBackfillChunk(): Promise<StatsBackfillChunkSummary
     const idMap = mapStatsApiIds(identities, dayMatches);
     console.log(`[stats-backfill] mapped ${idMap.size}/${missing.length} fixture ids`);
 
-    // Free AF plans reject `/fixtures?ids=` — synthesize from live_fixtures.
-    const byId = new Map(
-      missing.map((m) => [m.fixtureId, liveFixtureToApiShape(m, cell.leagueName)])
-    );
+    // Prefer live `/fixtures?ids=` on paid plans; free plans reject it — synthesize.
+    const { getApiFootballPlanInfo } = await import("@/lib/football-api/plan");
+    const plan = await getApiFootballPlanInfo();
+    const byId = new Map<number, LiveApiFixture>();
+    if (!plan.isFree) {
+      try {
+        const afRows = await apiSportsLiveProvider.fetchByIds(
+          missing.map((m) => m.fixtureId)
+        );
+        for (const row of afRows) {
+          const id = row.fixture?.id;
+          if (id != null) byId.set(id, row);
+        }
+      } catch (e) {
+        console.warn(
+          "[stats-backfill] /fixtures?ids= failed — using DB synthesize",
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+    for (const m of missing) {
+      if (!byId.has(m.fixtureId)) {
+        byId.set(m.fixtureId, liveFixtureToApiShape(m, cell.leagueName));
+      }
+    }
 
     let fetched = 0;
     let truncated = false;

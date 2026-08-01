@@ -30,14 +30,22 @@ export const ENDPOINT_MAP = {
   events: {
     path: "/fixtures/events",
     params: "fixture=",
-    stores: "live_events / goal timing",
-    planNote: "May require paid plan",
+    stores: "live_events / goal timing / half settlement",
   },
   statistics: {
     path: "/fixtures/statistics",
     params: "fixture=",
-    stores: "corners, shots → Prediction Log teamStats",
-    planNote: "May require paid plan",
+    stores: "corners, shots → match_stats / Decision Maker",
+  },
+  lineups: {
+    path: "/fixtures/lineups",
+    params: "fixture=",
+    stores: "optional formation (FORMATION_ADJUST stays 1.0 until quality)",
+  },
+  odds: {
+    path: "/odds",
+    params: "fixture, bookmaker=8 (Bet365)",
+    stores: "bet_markets / Decision Maker odds",
   },
   teams: {
     path: "/teams",
@@ -47,7 +55,7 @@ export const ENDPOINT_MAP = {
   teamStatistics: {
     path: "/teams/statistics",
     params: "league, season, team",
-    stores: "optional season GF/GA enrichment",
+    stores: "split-half intensities / league priors",
   },
   leagues: {
     path: "/leagues",

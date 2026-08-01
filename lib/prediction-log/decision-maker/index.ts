@@ -46,3 +46,8 @@ export {
   formatUserMarketEvalLine,
   USER_MARKET_EVAL_MAX_COMMENT,
 } from "./user-market-evaluation";
+export {
+  fetchDmAfEnrichment,
+  type DmAfEnrichment,
+  type DmAfOddsMarket,
+} from "./af-enrich";

@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
+import { getApiFootballPlanInfo } from "@/lib/football-api/plan";
 import { previewSampleDay } from "@/lib/live/sync-live";
-import { isSampleDateAllowed } from "@/lib/live/sample-window";
+import {
+  isSampleDateAllowed,
+  resolveSampleWindow,
+} from "@/lib/live/sample-window";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -16,7 +20,10 @@ export async function GET(request: Request) {
   const forceRaw = (url.searchParams.get("force") ?? "").toLowerCase();
   const forceApi = forceRaw === "1" || forceRaw === "true" || forceRaw === "yes";
 
-  if (!isSampleDateAllowed(date)) {
+  const plan = await getApiFootballPlanInfo();
+  const window = resolveSampleWindow(plan.isFree);
+
+  if (!isSampleDateAllowed(date, window)) {
     return NextResponse.json(
       {
         ok: false,
@@ -24,14 +31,27 @@ export async function GET(request: Request) {
         season: 0,
         matchCount: 0,
         matches: [],
-        error: "Pick a date between 2022-08-01 and 2024-12-31 (AF seasons 2022–2024)",
+        error: `Pick a date between ${window.min} and ${window.max}${
+          window.isFree
+            ? " (AF free-plan seasons 2022–2024 — upgrade to Pro for more)"
+            : ""
+        }`,
+        sampleWindow: window,
+        plan: plan.plan,
       },
       { status: 400 }
     );
   }
 
   const preview = await previewSampleDay(date, { forceApi });
-  return NextResponse.json(preview, {
-    status: preview.ok ? 200 : 503,
-  });
+  return NextResponse.json(
+    {
+      ...preview,
+      sampleWindow: window,
+      plan: plan.plan,
+    },
+    {
+      status: preview.ok ? 200 : 503,
+    }
+  );
 }

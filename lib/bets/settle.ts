@@ -1,12 +1,14 @@
 /**
  * Settle open bet selections when a fixture finishes (FT).
- * Reads results from live_* only.
+ * Reads results from live_* only; may hydrate events via apiClient into live_events.
  */
 import {
   getEventsForFixture,
   getFixtureById,
+  replaceEventsForFixture,
 } from "@/lib/live/store";
-import { isFinishedStatus } from "@/lib/live/normalize";
+import { isFinishedStatus, normalizeEvents } from "@/lib/live/normalize";
+import { apiSportsLiveProvider } from "@/lib/live/provider";
 import { evaluate, type FinalMatchState } from "./evaluate";
 import {
   getSelectionsForSlip,
@@ -75,7 +77,19 @@ export async function settleBetsForFixture(
   const pending = await listPendingSelectionsForApiFixture(apiFixtureId);
   if (!pending.length) return { settledSelections: 0, settledSlips: 0 };
 
-  const events = await getEventsForFixture(apiFixtureId).catch(() => []);
+  let events = await getEventsForFixture(apiFixtureId).catch(() => []);
+  if (!events.length) {
+    try {
+      const raw = await apiSportsLiveProvider.fetchEvents(apiFixtureId);
+      const normalized = normalizeEvents(apiFixtureId, raw);
+      if (normalized.length) {
+        await replaceEventsForFixture(apiFixtureId, normalized);
+        events = await getEventsForFixture(apiFixtureId).catch(() => []);
+      }
+    } catch {
+      // Soft-fail — half markets may VOID if still no events
+    }
+  }
   const half = halfGoalsFromEvents(events, live.homeTeam, live.awayTeam);
   const finalState: FinalMatchState = {
     homeGoals: live.homeGoals,

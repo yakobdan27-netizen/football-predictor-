@@ -1,23 +1,33 @@
 import { NextResponse } from "next/server";
+import { getApiFootballPlanInfo } from "@/lib/football-api/plan";
 import { runManualLiveRefresh } from "@/lib/live/sync-live";
-import { isSampleDateAllowed } from "@/lib/live/sample-window";
+import {
+  isSampleDateAllowed,
+  resolveSampleWindow,
+} from "@/lib/live/sample-window";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 
 /**
  * Manual live + Stats API refresh for one sample day.
- * Query: ?date=YYYY-MM-DD (required, 2022–2024) & optional mode=sample-day
+ * Query: ?date=YYYY-MM-DD (required; window follows AF plan) & optional mode=sample-day
  */
 export async function POST(request: Request) {
   try {
     const url = new URL(request.url);
     const date = url.searchParams.get("date") ?? "";
-    if (!isSampleDateAllowed(date)) {
+    const plan = await getApiFootballPlanInfo();
+    const window = resolveSampleWindow(plan.isFree);
+    if (!isSampleDateAllowed(date, window)) {
       return NextResponse.json(
         {
           ok: false,
-          error: "Pick a date between 2022-08-01 and 2024-12-31 (AF seasons 2022–2024)",
+          error: `Pick a date between ${window.min} and ${window.max}${
+            window.isFree
+              ? " (AF free-plan seasons 2022–2024 — upgrade to Pro for more)"
+              : ""
+          }`,
           upserted: 0,
           settledEmitted: 0,
           mode: "sample-day",
@@ -32,6 +42,8 @@ export async function POST(request: Request) {
           fixtures: [],
           startedAt: new Date().toISOString(),
           finishedAt: new Date().toISOString(),
+          sampleWindow: window,
+          plan: plan.plan,
         },
         { status: 400 }
       );
@@ -41,9 +53,16 @@ export async function POST(request: Request) {
       mode: "sample-day",
       date,
     });
-    return NextResponse.json(summary, {
-      status: summary.ok || summary.skippedRun ? 200 : 503,
-    });
+    return NextResponse.json(
+      {
+        ...summary,
+        sampleWindow: window,
+        plan: plan.plan,
+      },
+      {
+        status: summary.ok || summary.skippedRun ? 200 : 503,
+      }
+    );
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Live refresh failed";
     return NextResponse.json(

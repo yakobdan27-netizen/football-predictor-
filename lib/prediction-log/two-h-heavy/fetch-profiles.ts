@@ -1,6 +1,8 @@
 /**
  * Fetch + cache venue half profiles from API-Football.
- * Uses score.halftime + FT (not events). Never called from page render.
+ * Primary: score.halftime + FT from /fixtures (paid plan).
+ * Seeds/DB only when n < MIN_MATCHES at resolve time.
+ * Never called from page render.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
 import { getJson, setJsonEx } from "@/lib/prediction-log/kv";

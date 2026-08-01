@@ -235,6 +235,35 @@ export async function syncSchedule(
     upserted,
   });
 
+  // Soft-warm 2H-heavy profiles so Ladder/DM see AF half data (never fails sync).
+  if (ok && upserted > 0) {
+    try {
+      const { queryFixturesForTab } = await import("./store");
+      const { warmTeamHalfProfiles } = await import(
+        "@/lib/prediction-log/two-h-heavy/fetch-profiles"
+      );
+      const { fixtures } = await queryFixturesForTab({
+        tab: "upcoming",
+        now: new Date(),
+      });
+      const requests: {
+        team: string;
+        league: string;
+        venue: "home" | "away";
+      }[] = [];
+      for (const f of fixtures.slice(0, 10)) {
+        const league = f.leagueName ?? "Premier League";
+        requests.push({ team: f.homeTeam, league, venue: "home" });
+        requests.push({ team: f.awayTeam, league, venue: "away" });
+      }
+      if (requests.length) {
+        await warmTeamHalfProfiles(requests, { maxCalls: 12 });
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   return {
     ok,
     fetched,
