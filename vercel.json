@@ -100,6 +100,9 @@
     "app/api/live/fixtures/[id]/route.ts": {
       "maxDuration": 30
     },
+    "app/api/live/poll/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/live/refresh/route.ts": {
       "maxDuration": 60
     },

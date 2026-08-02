@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { requireAdminRequest } from "@/lib/admin/auth";
 import { syncSchedule } from "@/lib/live/sync-daily";
 
 export const maxDuration = 60;
@@ -7,12 +6,9 @@ export const runtime = "nodejs";
 
 /**
  * POST /api/sync/run?scope=schedule
- * Admin-gated manual schedule sync (same path as daily cron).
+ * Public Live schedule sync (same work as cron daily sweep). No admin unlock.
  */
 export async function POST(request: Request) {
-  const denied = await requireAdminRequest(request);
-  if (denied) return denied;
-
   const url = new URL(request.url);
   const scope = (url.searchParams.get("scope") ?? "schedule").toLowerCase();
   if (scope !== "schedule") {

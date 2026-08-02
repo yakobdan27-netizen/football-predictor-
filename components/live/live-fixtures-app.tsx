@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { LIVE_SYNC_LEAGUES } from "@/lib/live/constants";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LIVE_SYNC_LEAGUES, STALE_MS } from "@/lib/live/constants";
 import type {
   LiveEventDto,
   LiveFixtureDto,
@@ -100,13 +100,13 @@ export function LiveFixturesApp() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [authHint, setAuthHint] = useState(false);
+  const autoSyncAttempted = useRef(false);
 
   const [detailFixtureOverride, setDetailFixtureOverride] =
     useState<LiveFixtureDto | null>(null);
 
   const load = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean }): Promise<LiveSyncMetaDto | null> => {
       if (!opts?.silent) setLoading(true);
       try {
         const q = new URLSearchParams({ tab });
@@ -128,10 +128,12 @@ export function LiveFixturesApp() {
         setSyncMeta(data.syncMeta ?? null);
         setStale(Boolean(data.stale) || !res.ok);
         setFetchError(res.ok ? null : data.error ?? "API unavailable");
+        return data.syncMeta ?? null;
       } catch (e) {
         setFetchError(e instanceof Error ? e.message : "Failed to load");
         setStale(true);
         // Keep previous fixtures — no crash
+        return null;
       } finally {
         if (!opts?.silent) setLoading(false);
       }
@@ -139,57 +141,73 @@ export function LiveFixturesApp() {
     [tab, league]
   );
 
-  async function runSyncNow() {
-    setSyncing(true);
-    setToast(null);
-    setAuthHint(false);
-    try {
-      const res = await fetch("/api/sync/run?scope=schedule", {
-        method: "POST",
-      });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        fetched?: number;
-        inserted?: number;
-        updated?: number;
-        skipped?: number;
-        errors?: string[];
-        reason?: string;
-        status?: string;
-        error?: string;
-      };
-      if (res.status === 401) {
-        setAuthHint(true);
-        setToast("Admin unlock required to sync.");
-        return;
+  const runSyncNow = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      setSyncing(true);
+      if (!opts?.silent) setToast(null);
+      try {
+        const res = await fetch("/api/sync/run?scope=schedule", {
+          method: "POST",
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          fetched?: number;
+          inserted?: number;
+          updated?: number;
+          skipped?: number;
+          errors?: string[];
+          reason?: string;
+          status?: string;
+          error?: string;
+        };
+        if (!res.ok && data.error) {
+          if (!opts?.silent) setToast(data.error);
+          return;
+        }
+        const fetched = data.fetched ?? 0;
+        const inserted = data.inserted ?? 0;
+        const updated = data.updated ?? 0;
+        const errN = data.errors?.length ?? 0;
+        if (!opts?.silent) {
+          setToast(
+            data.reason ??
+              `Sync: fetched ${fetched}, inserted ${inserted}, updated ${updated}` +
+                (errN ? `, errors ${errN}` : "")
+          );
+        }
+        await load({ silent: true });
+      } catch (e) {
+        if (!opts?.silent) {
+          setToast(e instanceof Error ? e.message : "Sync failed");
+        }
+      } finally {
+        setSyncing(false);
       }
-      if (res.status === 503 && data.error?.includes("ADMIN_SECRET")) {
-        setToast(data.error);
-        return;
-      }
-      const fetched = data.fetched ?? 0;
-      const inserted = data.inserted ?? 0;
-      const updated = data.updated ?? 0;
-      const errN = data.errors?.length ?? 0;
-      setToast(
-        data.reason ??
-          `Sync: fetched ${fetched}, inserted ${inserted}, updated ${updated}` +
-            (errN ? `, errors ${errN}` : "")
-      );
-      await load({ silent: true });
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : "Sync failed");
-    } finally {
-      setSyncing(false);
-    }
-  }
+    },
+    [load]
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  // Auto schedule sync once per visit when never synced, failed, or stale.
+  useEffect(() => {
+    if (autoSyncAttempted.current || loading || syncing) return;
+    const last = syncMeta?.lastSyncAt ? Date.parse(syncMeta.lastSyncAt) : NaN;
+    const ageMs = Number.isFinite(last) ? Date.now() - last : Number.POSITIVE_INFINITY;
+    const needsSync =
+      !syncMeta?.lastSyncAt ||
+      syncMeta.status === "error" ||
+      syncMeta.status === "auth" ||
+      ageMs > STALE_MS.schedule ||
+      stale;
+    if (!needsSync) return;
+    autoSyncAttempted.current = true;
+    void runSyncNow({ silent: true });
+  }, [loading, syncing, syncMeta, stale, runSyncNow]);
+
   // Client-side 60s live poll while Live tab has in-play matches.
-  // (Vercel Hobby cannot schedule sub-daily crons; route stays available.)
   useEffect(() => {
     if (tab !== "live") return;
     const inPlay = fixtures.some((f) => {
@@ -200,7 +218,7 @@ export function LiveFixturesApp() {
     const id = window.setInterval(() => {
       void (async () => {
         try {
-          await fetch("/api/cron/live-poll", { method: "POST" });
+          await fetch("/api/live/poll", { method: "POST" });
           await load({ silent: true });
         } catch {
           /* soft-fail */
@@ -337,21 +355,13 @@ export function LiveFixturesApp() {
       {toast && (
         <div
           className={
-            authHint || /fail|invalid|quota|error/i.test(toast)
+            /fail|invalid|quota|error/i.test(toast)
               ? "alert alert-error"
               : "alert"
           }
           style={{ marginBottom: "0.75rem" }}
         >
           {toast}
-          {authHint && (
-            <>
-              {" "}
-              <Link href="/admin/manual-results" style={{ textDecoration: "underline" }}>
-                Unlock admin
-              </Link>
-            </>
-          )}
         </div>
       )}
 
@@ -741,11 +751,7 @@ function EmptyState({
             color: "var(--muted)",
           }}
         >
-          Requires{" "}
-          <Link href="/admin/manual-results" style={{ textDecoration: "underline" }}>
-            admin unlock
-          </Link>
-          .
+          Syncing from API-Football automatically…
         </p>
       )}
     </div>

@@ -141,36 +141,85 @@ export async function syncSchedule(
   let updated = 0;
   let skipped = 0;
   let settledEmitted = 0;
+  let usedNextFallback = false;
   const errors: string[] = [];
   const leagues: LeagueSyncRow[] = [];
+
+  async function applyRows(
+    name: string,
+    leagueId: number,
+    raw: Awaited<ReturnType<LiveFixturesProvider["fetchDateRange"]>>,
+    seasonForApply: number
+  ): Promise<void> {
+    const applied = await applyApiFixtures(raw, seasonForApply);
+    fetched += applied.fetched;
+    inserted += applied.inserted;
+    updated += applied.updated;
+    skipped += applied.skipped;
+    settledEmitted += applied.settledEmitted;
+    leagues.push({
+      league: name,
+      leagueId,
+      fetched: applied.fetched,
+      inserted: applied.inserted,
+      updated: applied.updated,
+      skipped: applied.skipped,
+    });
+    if (applied.fetched > 0 && applied.upserted === 0) {
+      const err = `${name}: fetched ${applied.fetched} but inserted+updated=0 (upsert key?)`;
+      errors.push(err);
+      console.error("[live]", err);
+    }
+  }
 
   for (const name of LIVE_SYNC_LEAGUES) {
     const leagueId = LEAGUE_API_IDS[name];
     try {
-      const raw = await provider.fetchDateRange(leagueId, season, from, to);
+      let raw = await provider.fetchDateRange(leagueId, season, from, to);
       console.log(
         `[live] schedule ${name} league=${leagueId} season=${season} from=${from} to=${to} results=${raw.length}`
       );
-      const applied = await applyApiFixtures(raw, season);
-      fetched += applied.fetched;
-      inserted += applied.inserted;
-      updated += applied.updated;
-      skipped += applied.skipped;
-      settledEmitted += applied.settledEmitted;
-      leagues.push({
-        league: name,
-        leagueId,
-        fetched: applied.fetched,
-        inserted: applied.inserted,
-        updated: applied.updated,
-        skipped: applied.skipped,
-      });
 
-      if (applied.fetched > 0 && applied.upserted === 0) {
-        const err = `${name}: fetched ${applied.fetched} but inserted+updated=0 (upsert key?)`;
-        errors.push(err);
-        console.error("[live]", err);
+      // Early-season / empty window: fall back to next= upcoming fixtures.
+      if (raw.length === 0) {
+        try {
+          raw = await provider.fetchNext(leagueId, season, 15);
+          if (raw.length) {
+            usedNextFallback = true;
+            console.log(
+              `[live] schedule ${name} next=15 season=${season} results=${raw.length}`
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `[live] next= fallback season=${season} ${name}:`,
+            e instanceof Error ? e.message : e
+          );
+        }
       }
+
+      // Still empty on 2026: try remaining 2025/26 upcoming once.
+      if (raw.length === 0 && season >= 2026) {
+        try {
+          raw = await provider.fetchNext(leagueId, 2025, 15);
+          if (raw.length) {
+            usedNextFallback = true;
+            console.log(
+              `[live] schedule ${name} next=15 season=2025 results=${raw.length}`
+            );
+            await applyRows(name, leagueId, raw, 2025);
+            await sleep(250);
+            continue;
+          }
+        } catch (e) {
+          console.warn(
+            `[live] next= fallback season=2025 ${name}:`,
+            e instanceof Error ? e.message : e
+          );
+        }
+      }
+
+      await applyRows(name, leagueId, raw, season);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[live] schedule ${name} failed:`, msg);
@@ -205,7 +254,7 @@ export async function syncSchedule(
     ok = false;
   } else if (fetched === 0 && errors.length === 0) {
     status = "empty";
-    reason = `No matches scheduled between ${from} and ${to}`;
+    reason = `No matches scheduled between ${from} and ${to} (next= also empty)`;
     ok = true;
   } else if (fetched > 0 && upserted === 0) {
     status = "error";
@@ -222,7 +271,9 @@ export async function syncSchedule(
     reason =
       errors.length > 0
         ? `Partial sync: ${errors.slice(0, 2).join(" | ")}`
-        : `Synced ${upserted} fixtures (${from} → ${to})`;
+        : usedNextFallback
+          ? `Synced ${upserted} fixtures via next= upcoming (7d window sparse)`
+          : `Synced ${upserted} fixtures (${from} → ${to})`;
     ok = true;
   }
 

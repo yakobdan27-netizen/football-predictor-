@@ -17,6 +17,12 @@ export interface LiveFixturesProvider {
     from: string,
     to: string
   ): Promise<LiveApiFixture[]>;
+  /** Next N upcoming fixtures for a league/season (AF `next=`). */
+  fetchNext(
+    leagueId: number,
+    season: number,
+    next?: number
+  ): Promise<LiveApiFixture[]>;
   fetchEvents(fixtureId: number): Promise<LiveApiEvent[]>;
   fetchLineups(fixtureId: number): Promise<unknown[]>;
   fetchStatistics(fixtureId: number): Promise<unknown[]>;
@@ -72,6 +78,15 @@ export const apiSportsLiveProvider: LiveFixturesProvider = {
       season,
       from,
       to,
+    });
+    return rows ?? [];
+  },
+
+  async fetchNext(leagueId, season, next = 15) {
+    const rows = await apiFootballGet<LiveApiFixture[]>("/fixtures", {
+      league: leagueId,
+      season,
+      next,
     });
     return rows ?? [];
   },
