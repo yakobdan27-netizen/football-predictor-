@@ -48,6 +48,9 @@ const batch: PredictionBatch = {
   assert.ok(result.p_2h_gt_1h > 0);
   assert.ok(["db", "prior"].includes(result.data_source));
   assert.ok(result.thinData); // seed-only n=0
+  assert.ok(result.insufficientData);
+  assert.equal(result.confidence, 0);
+  assert.equal(result.partlyFromApi, false);
   const sum = result.p_2h_gt_1h + result.p_2h_eq_1h + result.p_2h_lt_1h;
   assert.ok(Math.abs(sum - 1) < 1e-4, `sum=${sum}`);
 }

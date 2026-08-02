@@ -3,6 +3,8 @@ import { neon } from "@neondatabase/serverless";
 let initialized = false;
 
 export async function ensureSchema(): Promise<void> {
+  if (initialized) return;
+
   const url =
     process.env.DATABASE_URL ??
     process.env.POSTGRES_URL ??
@@ -11,7 +13,7 @@ export async function ensureSchema(): Promise<void> {
 
   const sql = neon(url);
 
-  // Always ensure live_sync_meta exists (added after initial live_* rollout).
+  // live_sync_meta (added after initial live_* rollout).
   await sql`
     CREATE TABLE IF NOT EXISTS live_sync_meta (
       id integer PRIMARY KEY DEFAULT 1,
@@ -25,7 +27,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  // Always ensure match_stats exists (canonical Stats API persistence).
+  // match_stats (canonical Stats API persistence).
   await sql`
     CREATE TABLE IF NOT EXISTS match_stats (
       fixture_id integer PRIMARY KEY,
@@ -194,7 +196,114 @@ export async function ensureSchema(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS bet_selections_slip_idx ON bet_selections (bet_slip_id)`;
   await sql`CREATE INDEX IF NOT EXISTS bet_selections_event_idx ON bet_selections (bet_event_id)`;
 
-  if (initialized) return;
+  // Historical AF seed tables (isolated from live_*/bet_*/match_stats)
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_fixtures (
+      fixture_id integer PRIMARY KEY,
+      league_id integer NOT NULL,
+      season integer NOT NULL,
+      round text,
+      date_utc timestamptz NOT NULL,
+      home_id integer,
+      away_id integer,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      venue text,
+      ht_home integer,
+      ht_away integer,
+      ft_home integer,
+      ft_away integer,
+      status text NOT NULL,
+      data_completeness text NOT NULL DEFAULT 'core-only',
+      imported_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_league_season_idx ON hist_fixtures (league_id, season)`;
+  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_date_idx ON hist_fixtures (date_utc)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_goals (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer,
+      minute integer,
+      extra_minute integer,
+      half text NOT NULL,
+      player text,
+      type text
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS hist_goals_fixture_idx ON hist_goals (fixture_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_stats (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer NOT NULL,
+      shots integer,
+      sot integer,
+      possession integer,
+      corners integer,
+      yellow integer,
+      red integer,
+      fouls integer,
+      offsides integer
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS hist_stats_fixture_team_idx ON hist_stats (fixture_id, team_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_lineups (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer NOT NULL,
+      formation text
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS hist_lineups_fixture_team_idx ON hist_lineups (fixture_id, team_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_teams (
+      team_id integer PRIMARY KEY,
+      name text NOT NULL,
+      logo text,
+      country text,
+      first_seen_season integer
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_jobs (
+      league_id integer NOT NULL,
+      season integer NOT NULL,
+      league_name text NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      cursor_fixture_id integer,
+      fixtures_total integer NOT NULL DEFAULT 0,
+      fixtures_imported integer NOT NULL DEFAULT 0,
+      goals_imported integer NOT NULL DEFAULT 0,
+      stats_imported integer NOT NULL DEFAULT 0,
+      skip_reason text,
+      started_at timestamptz,
+      finished_at timestamptz,
+      updated_at timestamptz NOT NULL,
+      PRIMARY KEY (league_id, season)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS hist_jobs_status_idx ON hist_jobs (status)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_meta (
+      id integer PRIMARY KEY DEFAULT 1,
+      plan text,
+      limit_day integer,
+      remaining integer,
+      last_run_at timestamptz,
+      last_summary text,
+      beta_2h_json text,
+      updated_at timestamptz NOT NULL
+    )
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS matches (

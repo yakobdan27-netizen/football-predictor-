@@ -364,6 +364,10 @@ export interface RecommendedPick extends MarketPrediction {
   judgment: string;
   accepted: boolean;
   original?: MarketPrediction;
+  /** Used API-filled half/club cache for this pick. */
+  partlyFromApi?: boolean;
+  /** Honest gap: not enough stored data after optional API fill. */
+  insufficientData?: boolean;
   /** Short explanation of how system confidence was derived. */
   confidenceBreakdown?: string;
   /** AI Learner label when learner recommendations are enabled. */
@@ -399,6 +403,8 @@ export interface RecommendedMatch {
   homeTeam: string;
   awayTeam: string;
   predictions: Partial<Record<LogMarketKey, RecommendedPick>>;
+  partlyFromApi?: boolean;
+  insufficientData?: boolean;
 }
 
 export type MatchJudgmentLabel = "strong_keep" | "keep_caution" | "skip";

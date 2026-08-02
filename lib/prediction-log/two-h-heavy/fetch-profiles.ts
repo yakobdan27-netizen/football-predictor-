@@ -16,6 +16,7 @@ import {
   resolveApiTeamId,
   teamNameKey,
 } from "@/lib/football-api/team-id-map";
+import { MIN_MATCHES } from "./config";
 import type { CachedTeamHalfProfile, VenueSide } from "./types";
 
 const PROFILE_TTL_SECONDS = 18 * 60 * 60;
@@ -170,6 +171,7 @@ export async function refreshTeamHalfProfile(opts: {
       ...avgs,
       formation: null,
       updatedAt: new Date().toISOString(),
+      source: "api",
     };
     await saveCachedTeamHalfProfile(profile);
     return profile;
@@ -253,4 +255,65 @@ export async function warmTeamHalfProfiles(
     if (delayMs > 0) await sleep(delayMs);
   }
   return { refreshed, failed };
+}
+
+function profileSufficient(
+  profile: CachedTeamHalfProfile | undefined
+): boolean {
+  return !!profile && profile.n_matches >= MIN_MATCHES;
+}
+
+/**
+ * On-demand gap fill: for each request still thin after hist+KV, fetch AF
+ * for that team|venue only. Tags KV rows source=api. Never overwrites richer cache.
+ */
+export async function fillProfileGapsOnDemand(
+  requests: TeamVenueRequest[],
+  current: {
+    profiles: Record<string, CachedTeamHalfProfile>;
+    histProfiles: Record<string, CachedTeamHalfProfile>;
+  },
+  opts?: { maxCalls?: number; delayMs?: number }
+): Promise<{
+  profiles: Record<string, CachedTeamHalfProfile>;
+  filled: number;
+  failed: number;
+}> {
+  const maxCalls = opts?.maxCalls ?? 12;
+  const delayMs = opts?.delayMs ?? 300;
+  const profiles = { ...current.profiles };
+  let filled = 0;
+  let failed = 0;
+  let calls = 0;
+  const seen = new Set<string>();
+
+  for (const req of requests) {
+    const key = clientProfileKey(req.team, req.venue);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    if (
+      profileSufficient(current.histProfiles[key]) ||
+      profileSufficient(profiles[key])
+    ) {
+      continue;
+    }
+
+    if (calls >= maxCalls) break;
+    calls += 1;
+    const hit = await refreshTeamHalfProfile({
+      teamName: req.team,
+      league: req.league,
+      venue: req.venue,
+    });
+    if (hit) {
+      profiles[key] = hit;
+      filled += 1;
+    } else {
+      failed += 1;
+    }
+    if (delayMs > 0) await sleep(delayMs);
+  }
+
+  return { profiles, filled, failed };
 }

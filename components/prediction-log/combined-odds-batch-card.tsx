@@ -128,6 +128,11 @@ export function CombinedOddsBatchCard({
               Stat page
             </div>
           )}
+          {accumulator.partlyFromApi && (
+            <div style={{ fontSize: "0.8125rem", color: "var(--accent)" }}>
+              partly from API
+            </div>
+          )}
         </div>
       </div>
     </div>

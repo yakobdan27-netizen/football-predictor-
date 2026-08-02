@@ -8,6 +8,7 @@ export {
   FORMATION_ADJUST,
   leagueTotalFor,
 } from "./config";
+export { beta2hFor } from "@/lib/hist/recompute-betas";
 export {
   computeHalfMus,
   poissonHalfProbs,

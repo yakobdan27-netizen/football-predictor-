@@ -27,6 +27,8 @@ function fakeResult(
     confidence: conf,
     data_source: "db",
     thinData: conf < 0.5,
+    partlyFromApi: false,
+    insufficientData: conf < 0.5,
     homeProfile: {
       team: home,
       venue: "home",

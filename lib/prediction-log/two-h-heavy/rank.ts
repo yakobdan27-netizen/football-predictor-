@@ -21,9 +21,9 @@ export function sortByTwoHHeavy<T extends { id: string }>(
 }
 
 export function worstSource(
-  a: "api" | "db" | "prior",
-  b: "api" | "db" | "prior"
-): "api" | "db" | "prior" {
-  const rank = { prior: 0, db: 1, api: 2 } as const;
+  a: "hist" | "api" | "db" | "prior",
+  b: "hist" | "api" | "db" | "prior"
+): "hist" | "api" | "db" | "prior" {
+  const rank = { prior: 0, db: 1, api: 2, hist: 3 } as const;
   return rank[a] <= rank[b] ? a : b;
 }

@@ -12,6 +12,8 @@ export type {
 } from "./constants";
 export { buildBetFeed } from "./feed";
 export type { BetFeedEvent, BetFeedLeagueGroup } from "./feed";
+export { loadBetGames } from "./load-games";
+export type { LoadBetGamesResult } from "./load-games";
 export { fetchAndCacheOddsForFixture } from "./odds-fetch";
 export { evaluate } from "./evaluate";
 export { provisionalStatus } from "./provisional";

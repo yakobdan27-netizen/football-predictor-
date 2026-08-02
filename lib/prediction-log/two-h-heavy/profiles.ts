@@ -1,8 +1,13 @@
 /**
- * Resolve per-team half intensities: api → db (live HT / seeds) → league prior.
+ * Resolve per-team half intensities:
+ * manual batch HT (N≥8) → hist (N≥8) → AF KV → seeds → league prior.
  * Never invents numbers; provenance on each profile.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  isMatchHalfDataGap,
+  partlyFromApiSources,
+} from "../data-gap";
 import { lookupClubConcededRecencyBlend } from "../conceded-half-baselines";
 import {
   lookupClubScoringRecencyBlend,
@@ -127,7 +132,8 @@ function priorProfile(
 function fromCachedApi(
   team: string,
   venue: VenueSide,
-  cached: CachedTeamHalfProfile
+  cached: CachedTeamHalfProfile,
+  source: TeamHalfSource = "api"
 ): TeamHalfProfile {
   return {
     team: standardizeTeamName(team),
@@ -138,7 +144,7 @@ function fromCachedApi(
     conc_2h: cached.conc_2h,
     n_matches: cached.n_matches,
     last_match_date: cached.last_match_date,
-    source: "api",
+    source,
     formation: cached.formation ?? null,
   };
 }
@@ -215,6 +221,8 @@ function fromDbSeeds(
 
 export interface ResolveProfileOpts {
   beforeDate?: string;
+  /** Preloaded hist_* profiles keyed by `${teamKey}|${venue}` (prefer when N≥8). */
+  histByKey?: Record<string, CachedTeamHalfProfile>;
   /** Preloaded API cache keyed by `${teamKey}|${venue}`. */
   apiByKey?: Record<string, CachedTeamHalfProfile>;
 }
@@ -227,15 +235,29 @@ export function resolveTeamHalfProfile(
   opts?: ResolveProfileOpts
 ): TeamHalfProfile {
   const key = `${teamKey(team)}|${venue}`;
-  const cached = opts?.apiByKey?.[key];
-  if (cached && cached.n_matches > 0) {
-    return fromCachedApi(team, venue, cached);
-  }
 
+  // Manual batch HT samples win when sample size is sufficient.
   const samples = collectVenueSamples(batches, team, venue, {
     beforeDate: opts?.beforeDate,
     league,
   });
+  if (samples.length >= MIN_MATCHES) {
+    const fromManual = fromDbSeeds(team, venue, league, samples);
+    if (fromManual && fromManual.n_matches >= MIN_MATCHES) return fromManual;
+  }
+
+  const hist = opts?.histByKey?.[key];
+  if (hist && hist.n_matches >= MIN_MATCHES) {
+    return fromCachedApi(team, venue, hist, "hist");
+  }
+
+  const cached = opts?.apiByKey?.[key];
+  if (cached && cached.n_matches > 0) {
+    const src: TeamHalfSource =
+      cached.source === "hist" ? "hist" : "api";
+    return fromCachedApi(team, venue, cached, src);
+  }
+
   const db = fromDbSeeds(team, venue, league, samples);
   if (db) return db;
 
@@ -257,6 +279,7 @@ export function predictTwoHHeavy(params: {
   batchLeague: string;
   batches: PredictionBatch[];
   beforeDate?: string;
+  histByKey?: Record<string, CachedTeamHalfProfile>;
   apiByKey?: Record<string, CachedTeamHalfProfile>;
   live?: LiveMatchContext | null;
   nowMs?: number;
@@ -265,10 +288,12 @@ export function predictTwoHHeavy(params: {
   const league = matchLeague(match, batchLeague);
   const homeProfile = resolveTeamHalfProfile(match.homeTeam, "home", league, batches, {
     beforeDate: params.beforeDate,
+    histByKey: params.histByKey,
     apiByKey: params.apiByKey,
   });
   const awayProfile = resolveTeamHalfProfile(match.awayTeam, "away", league, batches, {
     beforeDate: params.beforeDate,
+    histByKey: params.histByKey,
     apiByKey: params.apiByKey,
   });
 
@@ -302,14 +327,23 @@ export function predictTwoHHeavy(params: {
     data_source = "live";
   }
 
-  const confidence = computeConfidence(
-    probs.p_2h_gt_1h,
-    homeProfile.n_matches,
-    awayProfile.n_matches,
-    homeProfile.last_match_date,
-    awayProfile.last_match_date,
-    params.nowMs
+  const thinData = isThinData(homeProfile.n_matches, awayProfile.n_matches);
+  const insufficientData = isMatchHalfDataGap(homeProfile, awayProfile);
+  const partlyFromApi = partlyFromApiSources(
+    homeProfile.source,
+    awayProfile.source
   );
+
+  const confidence = insufficientData
+    ? 0
+    : computeConfidence(
+        probs.p_2h_gt_1h,
+        homeProfile.n_matches,
+        awayProfile.n_matches,
+        homeProfile.last_match_date,
+        awayProfile.last_match_date,
+        params.nowMs
+      );
 
   return {
     matchId: match.id,
@@ -319,7 +353,9 @@ export function predictTwoHHeavy(params: {
     ...probs,
     confidence,
     data_source,
-    thinData: isThinData(homeProfile.n_matches, awayProfile.n_matches),
+    thinData,
+    partlyFromApi,
+    insufficientData,
     homeProfile,
     awayProfile,
     live,
@@ -330,6 +366,7 @@ export function predictBatchTwoHHeavy(
   batch: PredictionBatch,
   allBatches: PredictionBatch[],
   opts?: {
+    histByKey?: Record<string, CachedTeamHalfProfile>;
     apiByKey?: Record<string, CachedTeamHalfProfile>;
     liveByMatchId?: Record<string, LiveMatchContext>;
     nowMs?: number;
@@ -341,6 +378,7 @@ export function predictBatchTwoHHeavy(
       batchLeague: batch.league,
       batches: allBatches,
       beforeDate: batch.date,
+      histByKey: opts?.histByKey,
       apiByKey: opts?.apiByKey,
       live: opts?.liveByMatchId?.[match.id] ?? null,
       nowMs: opts?.nowMs,

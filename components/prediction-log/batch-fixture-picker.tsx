@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   NEXT_MATCHES_LEAGUES,
   type NextMatchesLeague,
@@ -33,6 +33,10 @@ interface BatchFixturePickerProps {
   onLeagueChange?: (league: NextMatchesLeague) => void;
 }
 
+/**
+ * On-demand upcoming fixtures from API-Football.
+ * Identity + kickoff only — never results. Manual rows stay available.
+ */
 export function BatchFixturePicker({
   matches,
   comboSettings,
@@ -41,38 +45,64 @@ export function BatchFixturePicker({
 }: BatchFixturePickerProps) {
   const [league, setLeague] = useState<NextMatchesLeague>("Premier League");
   const [fixtures, setFixtures] = useState<UpcomingFixtureRow[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [apiUnavailable, setApiUnavailable] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const load = useCallback(async (leagueName: NextMatchesLeague, refresh: boolean) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const q = new URLSearchParams({
-        league: leagueName,
-        next: "15",
-        ...(refresh ? { refresh: "1" } : {}),
-      });
-      const res = await fetch(`/api/fixtures/upcoming?${q}`);
-      const data = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        fixtures?: UpcomingFixtureRow[];
-      };
-      if (!res.ok) throw new Error(data.error ?? "Failed to load fixtures");
-      setFixtures(data.fixtures ?? []);
-    } catch (e) {
-      setFixtures([]);
-      setError(e instanceof Error ? e.message : "Failed to load fixtures");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (leagueName: NextMatchesLeague, refresh: boolean) => {
+      setLoading(true);
+      setError(null);
+      setApiUnavailable(false);
+      setMsg(null);
+      setSelectedIds(new Set());
+      try {
+        const q = new URLSearchParams({
+          league: leagueName,
+          next: "15",
+          ...(refresh ? { refresh: "1" } : {}),
+        });
+        const res = await fetch(`/api/fixtures/upcoming?${q}`);
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          warning?: string;
+          fixtures?: UpcomingFixtureRow[];
+        };
+        if (!res.ok || data.ok === false) {
+          const err = data.error ?? data.warning ?? "Failed to load fixtures";
+          if (/unavailable|quota|key|plan|APISPORTS|configured/i.test(err)) {
+            setApiUnavailable(true);
+          }
+          throw new Error(err);
+        }
+        if (data.warning && /unavailable|quota|key|plan/i.test(data.warning)) {
+          setApiUnavailable(true);
+        }
+        setFixtures(data.fixtures ?? []);
+        setLoaded(true);
+      } catch (e) {
+        setFixtures([]);
+        setLoaded(true);
+        setError(e instanceof Error ? e.message : "Failed to load fixtures");
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
-  useEffect(() => {
-    void load(league, false);
-  }, [league, load]);
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function addFixture(row: UpcomingFixtureRow) {
     setMsg(null);
@@ -86,6 +116,26 @@ export function BatchFixturePicker({
     });
     onMatchesChange(appendFixtureMatches(matches, [next]));
     setMsg(`Added ${row.home.name} vs ${row.away.name}.`);
+  }
+
+  function addSelected() {
+    setMsg(null);
+    const rows = fixtures.filter(
+      (f) => selectedIds.has(f.apiFixtureId) && !draftHasApiFixtureId(matches, f.apiFixtureId)
+    );
+    if (!rows.length) {
+      setMsg("Select fixtures to add, or they may already be in the batch.");
+      return;
+    }
+    const imported = rows.map((row) =>
+      logMatchFromUpcomingFixture(row, {
+        id: newId(),
+        settings: comboSettings,
+      })
+    );
+    onMatchesChange(appendFixtureMatches(matches, imported));
+    setSelectedIds(new Set());
+    setMsg(`Added ${imported.length} match${imported.length === 1 ? "" : "es"} from the API.`);
   }
 
   function removeMatch(id: string) {
@@ -110,21 +160,12 @@ export function BatchFixturePicker({
       >
         <div>
           <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>
-            Add from upcoming fixtures
+            Load upcoming matches from the API
           </div>
           <p style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-            Pick matches to pre-fill teams and date. Manual rows still work as a fallback.
+            Fills teams, date, and kickoff only. Manual team entry still works below.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={loading}
-          onClick={() => void load(league, true)}
-          style={{ minHeight: 40, minWidth: 88 }}
-        >
-          {loading ? "…" : "Refresh"}
-        </button>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.75rem" }}>
@@ -134,6 +175,11 @@ export function BatchFixturePicker({
           onChange={(e) => {
             const next = e.target.value as NextMatchesLeague;
             setLeague(next);
+            setFixtures([]);
+            setLoaded(false);
+            setSelectedIds(new Set());
+            setError(null);
+            setMsg(null);
             onLeagueChange?.(next);
           }}
           style={{ maxWidth: 220, minHeight: 40 }}
@@ -145,9 +191,44 @@ export function BatchFixturePicker({
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={loading}
+          onClick={() => void load(league, false)}
+          style={{ minHeight: 40 }}
+        >
+          {loading ? "Loading…" : "Load upcoming matches"}
+        </button>
+        {loaded && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={loading}
+            onClick={() => void load(league, true)}
+            style={{ minHeight: 40, minWidth: 88 }}
+          >
+            Refresh
+          </button>
+        )}
+        {selectedIds.size > 0 && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={addSelected}
+            style={{ minHeight: 40 }}
+          >
+            Add selected ({selectedIds.size})
+          </button>
+        )}
       </div>
 
-      {error && (
+      {apiUnavailable && (
+        <p style={{ color: "var(--warn)", fontSize: "0.8125rem", margin: "0 0 0.5rem" }}>
+          API unavailable — enter teams manually.
+        </p>
+      )}
+      {error && !apiUnavailable && (
         <p style={{ color: "var(--danger)", fontSize: "0.8125rem", margin: "0 0 0.5rem" }}>
           {error}
         </p>
@@ -199,67 +280,77 @@ export function BatchFixturePicker({
         </div>
       )}
 
-      <div
-        style={{
-          maxHeight: 280,
-          overflowY: "auto",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          WebkitOverflowScrolling: "touch",
-        }}
-      >
-        {loading && fixtures.length === 0 && (
-          <p style={{ margin: "0.75rem", color: "var(--muted)", fontSize: "0.8125rem" }}>
-            Loading upcoming fixtures…
-          </p>
-        )}
-        {!loading && !error && fixtures.length === 0 && (
-          <p style={{ margin: "0.75rem", color: "var(--muted)", fontSize: "0.8125rem" }}>
-            No upcoming matches found.
-          </p>
-        )}
-        {fixtures.map((row) => {
-          const added = draftHasApiFixtureId(matches, row.apiFixtureId);
-          return (
-            <div
-              key={row.apiFixtureId}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.65rem 0.75rem",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontWeight: 600,
-                    fontSize: "0.875rem",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {row.home.name} vs {row.away.name}
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                  {formatKickoff(row.kickoffIso)}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={added}
-                onClick={() => addFixture(row)}
-                style={{ minHeight: 40, minWidth: 64, flexShrink: 0 }}
+      {loaded && (
+        <div
+          style={{
+            maxHeight: 280,
+            overflowY: "auto",
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          {loading && fixtures.length === 0 && (
+            <p style={{ margin: "0.75rem", color: "var(--muted)", fontSize: "0.8125rem" }}>
+              Loading upcoming fixtures…
+            </p>
+          )}
+          {!loading && !error && fixtures.length === 0 && (
+            <p style={{ margin: "0.75rem", color: "var(--muted)", fontSize: "0.8125rem" }}>
+              No upcoming fixtures found for this league
+            </p>
+          )}
+          {fixtures.map((row) => {
+            const added = draftHasApiFixtureId(matches, row.apiFixtureId);
+            const checked = selectedIds.has(row.apiFixtureId);
+            return (
+              <div
+                key={row.apiFixtureId}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  padding: "0.65rem 0.75rem",
+                  borderBottom: "1px solid var(--border)",
+                }}
               >
-                {added ? "Added" : "Add"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={added}
+                  onChange={() => toggleSelect(row.apiFixtureId)}
+                  aria-label={`Select ${row.home.name} vs ${row.away.name}`}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "0.875rem",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {row.home.name} vs {row.away.name}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                    {formatKickoff(row.kickoffIso)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={added}
+                  onClick={() => addFixture(row)}
+                  style={{ minHeight: 40, minWidth: 64, flexShrink: 0 }}
+                >
+                  {added ? "Added" : "Add"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

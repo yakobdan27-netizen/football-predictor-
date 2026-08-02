@@ -147,21 +147,32 @@ function finalizePick(
   baseJudgment: string
 ): RecommendedPick {
   const mp = computeMasterProbability(ctx, match, marketKey, pred);
-  const confidence = mp.pSignal;
-  const confNote =
-    confidence !== userOriginal.confidence
+  const totalRel =
+    mp.signals.cap.reliability +
+    mp.signals.form.reliability +
+    mp.signals.h2h.reliability +
+    mp.signals.you.reliability +
+    mp.signals.luck.reliability +
+    mp.signals.lineup.reliability;
+  const insufficientData =
+    totalRel <= 0 && (mp.dataSampleSize ?? 0) <= 0;
+  const confidence = insufficientData ? 0 : mp.pSignal;
+  const confNote = insufficientData
+    ? " Insufficient data — no fabricated confidence."
+    : confidence !== userOriginal.confidence
       ? ` P_signal ${confidence}% (you entered ${userOriginal.confidence}%).`
       : ` P_signal ${confidence}%.`;
   const pick = makePick(
     { ...pred, confidence },
     action,
-    `${baseJudgment}${confNote} ${mp.breakdown}`,
+    `${insufficientData ? "Insufficient data. " : ""}${baseJudgment}${confNote} ${mp.breakdown}`,
     userOriginal,
     mp.breakdown
   );
-  pick.pSignal = mp.pSignal;
+  pick.pSignal = confidence;
   pick.dataSampleSize = mp.dataSampleSize;
   pick.mathSnapshot = buildPickMathSnapshot(mp, pred.odds);
+  pick.insufficientData = insufficientData;
   return pick;
 }
 
@@ -605,12 +616,17 @@ export function buildRecommendedBatchFromSelection(
 
   if (selection.selected.length === 0) return null;
 
-  const recommendedMatches: RecommendedMatch[] = selection.selected.map((leg) => ({
-    id: leg.matchId,
-    homeTeam: leg.homeTeam,
-    awayTeam: leg.awayTeam,
-    predictions: { [leg.marketKey]: leg.pick },
-  }));
+  const recommendedMatches: RecommendedMatch[] = selection.selected.map((leg) => {
+    const pick = leg.pick;
+    return {
+      id: leg.matchId,
+      homeTeam: leg.homeTeam,
+      awayTeam: leg.awayTeam,
+      predictions: { [leg.marketKey]: pick },
+      insufficientData: pick.insufficientData === true,
+      partlyFromApi: pick.partlyFromApi === true,
+    };
+  });
 
   const summary = buildSummary(original, selection, ctx);
 

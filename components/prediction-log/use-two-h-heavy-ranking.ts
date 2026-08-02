@@ -44,6 +44,7 @@ export function useTwoHHeavyRanking(
   loading: boolean;
 } {
   const [apiByKey, setApiByKey] = useState<Record<string, CachedTeamHalfProfile>>({});
+  const [histByKey, setHistByKey] = useState<Record<string, CachedTeamHalfProfile>>({});
   const [loading, setLoading] = useState(false);
   const refreshToken = opts?.refreshToken ?? 0;
 
@@ -60,6 +61,7 @@ export function useTwoHHeavyRanking(
   useEffect(() => {
     if (!batch || !requestKey) {
       setApiByKey({});
+      setHistByKey({});
       return;
     }
 
@@ -73,16 +75,21 @@ export function useTwoHHeavyRanking(
       qs.append("q", `${match.awayTeam}|away|${league}`);
     }
 
-    void fetch(`/api/two-h-heavy/profiles?${qs.toString()}`)
+    void fetch(`/api/two-h-heavy/profiles?${qs.toString()}&fillGaps=1`)
       .then(async (res) => {
         const data = (await res.json()) as {
           profiles?: Record<string, CachedTeamHalfProfile>;
+          histProfiles?: Record<string, CachedTeamHalfProfile>;
         };
         if (cancelled) return;
         setApiByKey(data.profiles ?? {});
+        setHistByKey(data.histProfiles ?? {});
       })
       .catch(() => {
-        if (!cancelled) setApiByKey({});
+        if (!cancelled) {
+          setApiByKey({});
+          setHistByKey({});
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -102,10 +109,11 @@ export function useTwoHHeavyRanking(
       if (live) liveByMatchId[m.id] = live;
     }
     return predictBatchTwoHHeavy(batch, allBatches, {
+      histByKey,
       apiByKey,
       liveByMatchId,
     });
-  }, [batch, allBatches, apiByKey]);
+  }, [batch, allBatches, apiByKey, histByKey]);
 
   const byId = useMemo(() => {
     const out: Record<string, TwoHHeavyResult> = {};

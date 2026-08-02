@@ -1,6 +1,9 @@
 /**
  * Tunable constants for 2H-heavy (P(2H > 1H)) ranking.
  * Advisory only — never blocks a pick.
+ *
+ * Per-league BETA_2H: use beta2hFor(league) from @/lib/hist/recompute-betas
+ * (fallback remains BETA_2H = 1.15).
  */
 
 export const BETA_2H = 1.15;

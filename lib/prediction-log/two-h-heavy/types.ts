@@ -1,4 +1,4 @@
-export type TeamHalfSource = "api" | "db" | "prior";
+export type TeamHalfSource = "hist" | "api" | "db" | "prior";
 
 /** Match-level badge: worst of two teams, or live when conditioned. */
 export type MatchDataSource = TeamHalfSource | "live";
@@ -32,6 +32,10 @@ export interface TwoHHeavyResult {
   confidence: number;
   data_source: MatchDataSource;
   thinData: boolean;
+  /** True when either side used KV/API-filled half profile. */
+  partlyFromApi: boolean;
+  /** True when still below MIN_MATCHES after gap fill (honest insufficient). */
+  insufficientData: boolean;
   homeProfile: TeamHalfProfile;
   awayProfile: TeamHalfProfile;
   /** True when probabilities conditioned on realized 1H (in-play 2H). */
@@ -51,4 +55,6 @@ export interface CachedTeamHalfProfile {
   last_match_date: string | null;
   formation?: string | null;
   updatedAt: string;
+  /** Provenance for KV rows — api fills never overwrite manual batch HT. */
+  source?: "api" | "hist";
 }

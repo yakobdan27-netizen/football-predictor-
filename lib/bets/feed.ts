@@ -47,7 +47,7 @@ function isLive(f: LiveFixtureDto): boolean {
   return LIVE_STATUSES.inPlay.has(f.status.toUpperCase());
 }
 
-async function toFeedEvent(
+export async function toFeedEventFromLiveDto(
   f: LiveFixtureDto,
   feedType: BetFeedType
 ): Promise<BetFeedEvent> {
@@ -86,7 +86,7 @@ async function toFeedEvent(
   };
 }
 
-function groupByLeague(events: BetFeedEvent[]): BetFeedLeagueGroup[] {
+export function groupFeedByLeague(events: BetFeedEvent[]): BetFeedLeagueGroup[] {
   const map = new Map<number, BetFeedLeagueGroup>();
   for (const e of events) {
     let g = map.get(e.leagueId);
@@ -107,7 +107,9 @@ function groupByLeague(events: BetFeedEvent[]): BetFeedLeagueGroup[] {
 
 const PREFETCH_ODDS_MAX = 8;
 
-async function softPrefetchOdds(events: BetFeedEvent[]): Promise<BetFeedEvent[]> {
+export async function softPrefetchOddsForEvents(
+  events: BetFeedEvent[]
+): Promise<BetFeedEvent[]> {
   const { fetchAndCacheOddsForFixture } = await import("./odds-fetch");
   const out: BetFeedEvent[] = [];
   let fetched = 0;
@@ -141,9 +143,11 @@ export async function buildBetFeed(
     live.sort((a, b) => (b.statusMinute ?? 0) - (a.statusMinute ?? 0));
     const events = [];
     for (const f of live) {
-      events.push(await toFeedEvent(f, "LIVE"));
+      events.push(await toFeedEventFromLiveDto(f, "LIVE"));
     }
-    return { groups: groupByLeague(events), count: events.length };
+    // Soft-refresh odds for visible live events (capped; never blocks feed).
+    const withOdds = await softPrefetchOddsForEvents(events);
+    return { groups: groupFeedByLeague(withOdds), count: withOdds.length };
   }
 
   // Pre-match: upcoming from live store, then filter future NS
@@ -154,8 +158,8 @@ export async function buildBetFeed(
   );
   const events = [];
   for (const f of pre) {
-    events.push(await toFeedEvent(f, "PRE"));
+    events.push(await toFeedEventFromLiveDto(f, "PRE"));
   }
-  const withOdds = await softPrefetchOdds(events);
-  return { groups: groupByLeague(withOdds), count: withOdds.length };
+  const withOdds = await softPrefetchOddsForEvents(events);
+  return { groups: groupFeedByLeague(withOdds), count: withOdds.length };
 }

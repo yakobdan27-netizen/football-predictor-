@@ -93,6 +93,15 @@ export function RecommendedPickRow({
           </div>
         )}
         <p style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}>{pick.judgment}</p>
+        {(pick.partlyFromApi || pick.insufficientData) && (
+          <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.35rem" }}>
+            {pick.insufficientData
+              ? "Insufficient data"
+              : pick.partlyFromApi
+                ? "partly from API"
+                : null}
+          </p>
+        )}
         <button
           type="button"
           className="btn btn-secondary"
@@ -289,6 +298,13 @@ export function RecommendedPickRow({
       <p style={{ fontSize: "0.875rem", marginTop: "0.5rem", color: "var(--muted)" }}>
         {pick.judgment}
       </p>
+      {(pick.partlyFromApi || pick.insufficientData) && (
+        <p style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "0.25rem" }}>
+          {pick.insufficientData
+            ? "Insufficient data"
+            : "partly from API"}
+        </p>
+      )}
 
       {pick.learnerWhy && (
         <details style={{ marginTop: "0.35rem" }}>

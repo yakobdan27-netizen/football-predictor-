@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { TRACKING_BANNER, QUICK_MARKET_DEFS } from "@/lib/bets/constants";
 import type { BetFeedLeagueGroup } from "@/lib/bets/feed";
+import { LIVE_SYNC_LEAGUES, type LiveSyncLeague } from "@/lib/live/constants";
 
 type Tab = "live" | "pre" | "open" | "settled";
 type SlipMode = "SINGLE" | "MULTI";
@@ -39,6 +40,8 @@ type SlipPick = {
   marketType: string;
   chosenLabel: string;
   chosenOdd: number;
+  /** True when odd was missing at add time — user should type MANUAL. */
+  needsOdd?: boolean;
   home: string;
   away: string;
   stake: number;
@@ -114,6 +117,31 @@ function displayLabel(m: MarketDto): string {
   return def?.display ?? m.selectionLabel;
 }
 
+function kickoffDayKey(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+/** Group events by local kickoff day for date/time headers. */
+function groupEventsByDay(events: FeedEvent[]): Array<{ day: string; events: FeedEvent[] }> {
+  const map = new Map<string, FeedEvent[]>();
+  for (const ev of events) {
+    const day = kickoffDayKey(ev.kickoffUtc);
+    const list = map.get(day) ?? [];
+    list.push(ev);
+    map.set(day, list);
+  }
+  return [...map.entries()].map(([day, evs]) => ({ day, events: evs }));
+}
+
 export function BetCouponApp() {
   const [tab, setTab] = useState<Tab>("pre");
   const [groups, setGroups] = useState<BetFeedLeagueGroup[]>([]);
@@ -134,6 +162,8 @@ export function BetCouponApp() {
   const [slips, setSlips] = useState<OpenSlip[]>([]);
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
   const [editingOdd, setEditingOdd] = useState<Record<number, string>>({});
+  const [league, setLeague] = useState<LiveSyncLeague>("Premier League");
+  const [loadMsg, setLoadMsg] = useState<string | null>(null);
 
   const loadQuota = useCallback(async () => {
     try {
@@ -196,6 +226,49 @@ export function BetCouponApp() {
     }
   }, []);
 
+  const loadGames = useCallback(
+    async (refresh: boolean) => {
+      if (tab !== "pre" && tab !== "live") return;
+      setLoading(true);
+      setError(null);
+      setLoadMsg(null);
+      try {
+        const res = await fetch("/api/bets/load", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ league, tab }),
+        });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          warning?: string;
+          groups?: BetFeedLeagueGroup[];
+          count?: number;
+          fromLive?: number;
+          fromApi?: number;
+        };
+        if (!res.ok || !data.ok) {
+          setError(data.error ?? "Load games failed");
+          if (!data.groups?.length) setGroups([]);
+        } else {
+          setGroups(data.groups ?? []);
+          setLoadMsg(
+            data.count === 0
+              ? data.warning ?? "No games found for this league"
+              : `Loaded ${data.count} game(s)${refresh ? " (refresh)" : ""} · live_* ${data.fromLive ?? 0} · API ${data.fromApi ?? 0}`
+          );
+          if (data.warning && data.count === 0) setError(null);
+        }
+        void loadQuota();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Load games failed");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [league, tab, loadQuota]
+  );
+
   const loadSlips = useCallback(async (status: "OPEN" | "SETTLED") => {
     setLoading(true);
     setError(null);
@@ -228,15 +301,22 @@ export function BetCouponApp() {
     else void loadSlips(tab === "open" ? "OPEN" : "SETTLED");
   }, [tab, loadFeed, loadSlips]);
 
-  // 60s DB poll for open bets + live feed scores
+  // Reuse Live page poller: /api/live/poll then refresh feed / open slips
   useEffect(() => {
     if (tab !== "open" && tab !== "live") return;
-    const id = setInterval(() => {
+    const tick = async () => {
+      try {
+        await fetch("/api/live/poll", { method: "POST" });
+      } catch {
+        /* never block UI */
+      }
       if (tab === "open") void loadSlips("OPEN");
       if (tab === "live") void loadFeed("live");
-    }, 60_000);
+      void loadQuota();
+    };
+    const id = setInterval(() => void tick(), 60_000);
     return () => clearInterval(id);
-  }, [tab, loadFeed, loadSlips]);
+  }, [tab, loadFeed, loadSlips, loadQuota]);
 
   const hasSameEventConflict = useMemo(() => {
     if (mode !== "MULTI") return false;
@@ -244,30 +324,42 @@ export function BetCouponApp() {
     return new Set(ids).size < ids.length;
   }, [mode, picks]);
 
-  const multiTotalOdd = useMemo(
-    () => picks.reduce((acc, p) => acc * p.chosenOdd, picks.length ? 1 : 0),
+  const picksMissingOdd = useMemo(
+    () => picks.some((p) => p.needsOdd || !Number.isFinite(p.chosenOdd) || p.chosenOdd <= 1),
     [picks]
   );
+
+  const multiTotalOdd = useMemo(() => {
+    if (!picks.length) return 0;
+    return picks.reduce(
+      (acc, p) => acc * (p.chosenOdd > 1 ? p.chosenOdd : 1),
+      1
+    );
+  }, [picks]);
   const multiReturn = useMemo(
     () => Math.round(multiStake * multiTotalOdd * 100) / 100,
     [multiStake, multiTotalOdd]
   );
 
   function togglePick(ev: FeedEvent, m: MarketDto) {
-    const odd =
-      m.odd ??
-      (editingOdd[m.id] ? parseFloat(editingOdd[m.id]!) : NaN);
+    const typed = editingOdd[m.id] ? parseFloat(editingOdd[m.id]!) : NaN;
+    const odd = Number.isFinite(m.odd) && (m.odd as number) > 1
+      ? (m.odd as number)
+      : Number.isFinite(typed) && typed > 1
+        ? typed
+        : NaN;
     const key = `${ev.betEventId}-${m.id}`;
     setPicks((prev) => {
       if (prev.some((p) => p.key === key)) {
         return prev.filter((p) => p.key !== key);
       }
-      if (!Number.isFinite(odd) || odd <= 1) {
-        setPlaceMsg("Enter an odd > 1 for MANUAL markets before adding.");
-        return prev;
-      }
+      const needsOdd = !Number.isFinite(odd) || odd <= 1;
       setSlipOpen(true);
-      setPlaceMsg(null);
+      setPlaceMsg(
+        needsOdd
+          ? "Added without odd — type a MANUAL odd on the slip (never blocked)."
+          : null
+      );
       return [
         ...prev,
         {
@@ -277,7 +369,8 @@ export function BetCouponApp() {
           marketId: m.id,
           marketType: m.marketType,
           chosenLabel: m.selectionLabel,
-          chosenOdd: odd,
+          chosenOdd: needsOdd ? 1 : odd,
+          needsOdd,
           home: ev.home,
           away: ev.away,
           stake: 10,
@@ -320,8 +413,20 @@ export function BetCouponApp() {
 
   async function placeSlip() {
     if (!picks.length) return;
+    if (multiStake <= 0 && mode === "MULTI") {
+      setPlaceMsg("Stake must be positive.");
+      return;
+    }
+    if (mode === "SINGLE" && picks.some((p) => !(p.stake > 0))) {
+      setPlaceMsg("Each single needs a positive stake.");
+      return;
+    }
     setPlacing(true);
-    setPlaceMsg(null);
+    setPlaceMsg(
+      picksMissingOdd
+        ? "Placing with placeholder odd 1.00 where MANUAL odds were not set — tracking only."
+        : null
+    );
     try {
       const body =
         mode === "SINGLE"
@@ -331,7 +436,7 @@ export function BetCouponApp() {
                 betEventId: p.betEventId,
                 marketId: p.marketId,
                 chosenLabel: p.chosenLabel,
-                chosenOdd: p.chosenOdd,
+                chosenOdd: p.chosenOdd >= 1 ? p.chosenOdd : 1,
                 stake: p.stake,
               })),
             }
@@ -342,7 +447,7 @@ export function BetCouponApp() {
                 betEventId: p.betEventId,
                 marketId: p.marketId,
                 chosenLabel: p.chosenLabel,
-                chosenOdd: p.chosenOdd,
+                chosenOdd: p.chosenOdd >= 1 ? p.chosenOdd : 1,
               })),
             };
       const res = await fetch("/api/bets/slips", {
@@ -506,23 +611,73 @@ export function BetCouponApp() {
               }}
             >
               {t.label}
-              {t.id === "open" && picks.length
-                ? ""
-                : t.id === "live" || t.id === "pre"
-                  ? ""
-                  : ""}
             </button>
           ))}
         </div>
+
+        {(tab === "pre" || tab === "live") && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.5rem",
+              alignItems: "center",
+              marginBottom: "0.75rem",
+            }}
+          >
+            <select
+              className="select"
+              value={league}
+              onChange={(e) => setLeague(e.target.value as LiveSyncLeague)}
+              style={{ maxWidth: 220, minHeight: 40 }}
+              aria-label="League"
+            >
+              {LIVE_SYNC_LEAGUES.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={loading}
+              onClick={() => void loadGames(false)}
+              style={{ minHeight: 40 }}
+            >
+              {loading ? "Loading…" : "Load games"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading}
+              onClick={() => void loadGames(true)}
+              style={{ minHeight: 40 }}
+            >
+              Refresh
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="alert alert-error" style={{ marginBottom: "0.75rem" }}>
             {error}
           </div>
         )}
+        {loadMsg && (
+          <p style={{ fontSize: "0.8125rem", color: "var(--accent)", margin: "0 0 0.5rem" }}>
+            {loadMsg}
+          </p>
+        )}
         {placeMsg && (
           <p style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>
             {placeMsg}
+          </p>
+        )}
+        {picksMissingOdd && picks.length > 0 && (
+          <p style={{ fontSize: "0.75rem", color: "var(--warn, #b8860b)" }}>
+            Warning: some selections need a MANUAL odd (&gt;1). You can still place
+            (placeholder 1.00).
           </p>
         )}
         {loading && (
@@ -530,11 +685,20 @@ export function BetCouponApp() {
         )}
 
         {(tab === "pre" || tab === "live") &&
+          !groups.length &&
+          !loading && (
+            <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
+              Select a league and press Load games.
+            </p>
+          )}
+
+        {(tab === "pre" || tab === "live") &&
           groups.map((g) => {
             const leagueGroups = g as unknown as BetFeedLeagueGroup & {
               events: FeedEvent[];
             };
             const isCollapsed = collapsed[g.leagueId];
+            const dayGroups = groupEventsByDay(leagueGroups.events ?? []);
             return (
               <section key={g.leagueId} style={{ marginBottom: "1rem" }}>
                 <button
@@ -560,18 +724,33 @@ export function BetCouponApp() {
                   {leagueGroups.events?.length ?? 0})
                 </button>
                 {!isCollapsed &&
-                  (leagueGroups.events ?? []).map((ev) => (
-                    <EventCard
-                      key={ev.apiFixtureId}
-                      ev={ev}
-                      live={tab === "live"}
-                      picks={picks}
-                      editingOdd={editingOdd}
-                      setEditingOdd={setEditingOdd}
-                      onToggle={togglePick}
-                      onSaveOdd={saveManualOdd}
-                      onRefreshOdds={refreshOdds}
-                    />
+                  dayGroups.map((day) => (
+                    <div key={day.day}>
+                      <div
+                        style={{
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          color: "var(--muted)",
+                          marginTop: "0.65rem",
+                          marginBottom: "0.15rem",
+                        }}
+                      >
+                        {day.day}
+                      </div>
+                      {day.events.map((ev) => (
+                        <EventCard
+                          key={ev.apiFixtureId}
+                          ev={ev}
+                          live={tab === "live"}
+                          picks={picks}
+                          editingOdd={editingOdd}
+                          setEditingOdd={setEditingOdd}
+                          onToggle={togglePick}
+                          onSaveOdd={saveManualOdd}
+                          onRefreshOdds={refreshOdds}
+                        />
+                      ))}
+                    </div>
                   ))}
               </section>
             );
@@ -606,6 +785,19 @@ export function BetCouponApp() {
           onStake={(key, stake) =>
             setPicks((p) =>
               p.map((x) => (x.key === key ? { ...x, stake } : x))
+            )
+          }
+          onOdd={(key, odd) =>
+            setPicks((p) =>
+              p.map((x) =>
+                x.key === key
+                  ? {
+                      ...x,
+                      chosenOdd: odd,
+                      needsOdd: !(Number.isFinite(odd) && odd > 1),
+                    }
+                  : x
+              )
             )
           }
         />
@@ -675,6 +867,19 @@ export function BetCouponApp() {
               onStake={(key, stake) =>
                 setPicks((p) =>
                   p.map((x) => (x.key === key ? { ...x, stake } : x))
+                )
+              }
+              onOdd={(key, odd) =>
+                setPicks((p) =>
+                  p.map((x) =>
+                    x.key === key
+                      ? {
+                          ...x,
+                          chosenOdd: odd,
+                          needsOdd: !(Number.isFinite(odd) && odd > 1),
+                        }
+                      : x
+                  )
                 )
               }
             />
@@ -844,6 +1049,7 @@ function SlipPanel({
   onPlace,
   onRemove,
   onStake,
+  onOdd,
 }: {
   picks: SlipPick[];
   mode: SlipMode;
@@ -857,6 +1063,7 @@ function SlipPanel({
   onPlace: () => void;
   onRemove: (key: string) => void;
   onStake: (key: string, stake: number) => void;
+  onOdd: (key: string, odd: number) => void;
 }) {
   return (
     <div
@@ -931,8 +1138,32 @@ function SlipPanel({
             </button>
           </div>
           <div style={{ color: "var(--muted)" }}>
-            {p.marketType} · {p.chosenLabel} @ {fmtOdd(p.chosenOdd)}
+            {p.marketType} · {p.chosenLabel} @{" "}
+            {p.needsOdd || p.chosenOdd <= 1 ? "—" : fmtOdd(p.chosenOdd)}
           </div>
+          <label
+            style={{
+              display: "flex",
+              gap: "0.35rem",
+              alignItems: "center",
+              marginTop: 4,
+              fontSize: "0.75rem",
+            }}
+          >
+            Odd
+            <input
+              type="number"
+              min={1}
+              step={0.01}
+              placeholder="—"
+              value={p.needsOdd && p.chosenOdd <= 1 ? "" : p.chosenOdd}
+              onChange={(e) => onOdd(p.key, Number(e.target.value) || 1)}
+              style={{ width: "5rem" }}
+            />
+            {p.needsOdd ? (
+              <span style={{ color: "var(--warn, #b8860b)" }}>MANUAL</span>
+            ) : null}
+          </label>
           {mode === "SINGLE" && (
             <label style={{ display: "flex", gap: "0.35rem", alignItems: "center", marginTop: 4 }}>
               Stake

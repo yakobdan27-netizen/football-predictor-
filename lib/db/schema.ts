@@ -347,3 +347,153 @@ export type BetSlip = typeof betSlips.$inferSelect;
 export type NewBetSlip = typeof betSlips.$inferInsert;
 export type BetSelection = typeof betSelections.$inferSelect;
 export type NewBetSelection = typeof betSelections.$inferInsert;
+
+/**
+ * Historical AF seed tables — read-only reference for models.
+ * Writers live only under lib/hist/. Never touch live_, bet_, match_stats, or pred-log.
+ */
+export const histFixtures = pgTable(
+  "hist_fixtures",
+  {
+    fixtureId: integer("fixture_id").primaryKey(),
+    leagueId: integer("league_id").notNull(),
+    season: integer("season").notNull(),
+    round: text("round"),
+    dateUtc: timestamp("date_utc", { withTimezone: true }).notNull(),
+    homeId: integer("home_id"),
+    awayId: integer("away_id"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    venue: text("venue"),
+    htHome: integer("ht_home"),
+    htAway: integer("ht_away"),
+    ftHome: integer("ft_home"),
+    ftAway: integer("ft_away"),
+    status: text("status").notNull(),
+    dataCompleteness: text("data_completeness").notNull().default("core-only"),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    leagueSeasonIdx: index("hist_fixtures_league_season_idx").on(
+      t.leagueId,
+      t.season
+    ),
+    dateIdx: index("hist_fixtures_date_idx").on(t.dateUtc),
+  })
+);
+
+export const histGoals = pgTable(
+  "hist_goals",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id"),
+    minute: integer("minute"),
+    extraMinute: integer("extra_minute"),
+    half: text("half").notNull(),
+    player: text("player"),
+    type: text("type"),
+  },
+  (t) => ({
+    fixtureIdx: index("hist_goals_fixture_idx").on(t.fixtureId),
+  })
+);
+
+export const histStats = pgTable(
+  "hist_stats",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id").notNull(),
+    shots: integer("shots"),
+    sot: integer("sot"),
+    possession: integer("possession"),
+    corners: integer("corners"),
+    yellow: integer("yellow"),
+    red: integer("red"),
+    fouls: integer("fouls"),
+    offsides: integer("offsides"),
+  },
+  (t) => ({
+    fixtureTeamIdx: index("hist_stats_fixture_team_idx").on(
+      t.fixtureId,
+      t.teamId
+    ),
+  })
+);
+
+export const histLineups = pgTable(
+  "hist_lineups",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id").notNull(),
+    formation: text("formation"),
+  },
+  (t) => ({
+    fixtureTeamIdx: index("hist_lineups_fixture_team_idx").on(
+      t.fixtureId,
+      t.teamId
+    ),
+  })
+);
+
+export const histTeams = pgTable("hist_teams", {
+  teamId: integer("team_id").primaryKey(),
+  name: text("name").notNull(),
+  logo: text("logo"),
+  country: text("country"),
+  firstSeenSeason: integer("first_seen_season"),
+});
+
+export const histJobs = pgTable(
+  "hist_jobs",
+  {
+    leagueId: integer("league_id").notNull(),
+    season: integer("season").notNull(),
+    leagueName: text("league_name").notNull(),
+    status: text("status").notNull().default("pending"),
+    cursorFixtureId: integer("cursor_fixture_id"),
+    fixturesTotal: integer("fixtures_total").notNull().default(0),
+    fixturesImported: integer("fixtures_imported").notNull().default(0),
+    goalsImported: integer("goals_imported").notNull().default(0),
+    statsImported: integer("stats_imported").notNull().default(0),
+    skipReason: text("skip_reason"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      columns: [t.leagueId, t.season],
+      name: "hist_jobs_pk",
+    }),
+    statusIdx: index("hist_jobs_status_idx").on(t.status),
+  })
+);
+
+export const histMeta = pgTable("hist_meta", {
+  id: integer("id").primaryKey().default(1),
+  plan: text("plan"),
+  limitDay: integer("limit_day"),
+  remaining: integer("remaining"),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  lastSummary: text("last_summary"),
+  beta2hJson: text("beta_2h_json"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
+export type HistFixture = typeof histFixtures.$inferSelect;
+export type NewHistFixture = typeof histFixtures.$inferInsert;
+export type HistGoal = typeof histGoals.$inferSelect;
+export type NewHistGoal = typeof histGoals.$inferInsert;
+export type HistStat = typeof histStats.$inferSelect;
+export type NewHistStat = typeof histStats.$inferInsert;
+export type HistLineup = typeof histLineups.$inferSelect;
+export type NewHistLineup = typeof histLineups.$inferInsert;
+export type HistTeam = typeof histTeams.$inferSelect;
+export type NewHistTeam = typeof histTeams.$inferInsert;
+export type HistJob = typeof histJobs.$inferSelect;
+export type NewHistJob = typeof histJobs.$inferInsert;
+export type HistMeta = typeof histMeta.$inferSelect;
+export type NewHistMeta = typeof histMeta.$inferInsert;

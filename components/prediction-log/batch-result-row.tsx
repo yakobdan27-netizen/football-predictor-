@@ -362,20 +362,38 @@ export function BatchResultRow({
                     ⚠
                   </span>
                 ) : null}
+                {twoHHeavy.insufficientData ? (
+                  <span
+                    className="batch-2h-thin"
+                    title="Insufficient data after manual + API gap fill"
+                    style={{ marginLeft: 4 }}
+                  >
+                    insufficient data
+                  </span>
+                ) : null}
               </td>
               <td className="batch-col-2h-conf" title={`Confidence ${twoHHeavy.confidence.toFixed(3)}`}>
-                {pctShort(twoHHeavy.confidence)}
+                {twoHHeavy.insufficientData ? "—" : pctShort(twoHHeavy.confidence)}
               </td>
               <td className="batch-col-2h-exp" title="Expected 1H goals">
-                {twoHHeavy.expected_1h.toFixed(2)}
+                {twoHHeavy.insufficientData ? "—" : twoHHeavy.expected_1h.toFixed(2)}
               </td>
               <td className="batch-col-2h-exp" title="Expected 2H goals">
-                {twoHHeavy.expected_2h.toFixed(2)}
+                {twoHHeavy.insufficientData ? "—" : twoHHeavy.expected_2h.toFixed(2)}
               </td>
               <td className="batch-col-2h-src">
                 <span className={`batch-2h-source batch-2h-source-${twoHHeavy.data_source}`}>
                   {twoHHeavy.data_source}
                 </span>
+                {twoHHeavy.partlyFromApi ? (
+                  <span
+                    className="batch-2h-thin"
+                    title="Some half intensities filled from API-Football"
+                    style={{ display: "block", fontSize: "0.65rem" }}
+                  >
+                    partly from API
+                  </span>
+                ) : null}
               </td>
             </>
           ) : (

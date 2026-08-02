@@ -2,8 +2,8 @@
  * Exact brief formula for P(2H total goals > 1H total goals).
  */
 import { poissonPmf } from "@/lib/predictor/poisson";
+import { beta2hFor } from "@/lib/hist/recompute-betas";
 import {
-  BETA_2H,
   FORMATION_ADJUST,
   MIN_MATCHES,
   POISSON_CAP,
@@ -42,7 +42,7 @@ export function computeHalfMus(
     0.5 * (home.sc_1h + away.conc_1h) + 0.5 * (away.sc_1h + home.conc_1h);
   const mu_2h =
     0.5 * (home.sc_2h + away.conc_2h) + 0.5 * (away.sc_2h + home.conc_2h);
-  const mu_2h_tilted = mu_2h * BETA_2H;
+  const mu_2h_tilted = mu_2h * beta2hFor(league);
   const raw_total = mu_1h + mu_2h_tilted;
   const league_total = leagueTotalFor(league);
 

@@ -17,6 +17,10 @@
       "schedule": "0 4 * * *"
     },
     {
+      "path": "/api/cron/hist-backfill",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/live-prematch",
       "schedule": "0 15 * * *"
     }
@@ -76,6 +80,18 @@
     "app/api/cron/stats-backfill/status/route.ts": {
       "maxDuration": 30
     },
+    "app/api/cron/hist-backfill/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/hist/backfill/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/hist/backfill/status/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/hist/recompute-betas/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/cron/live-prematch/route.ts": {
       "maxDuration": 60
     },
@@ -84,6 +100,9 @@
     },
     "app/api/bets/feed/route.ts": {
       "maxDuration": 30
+    },
+    "app/api/bets/load/route.ts": {
+      "maxDuration": 60
     },
     "app/api/bets/odds/route.ts": {
       "maxDuration": 30

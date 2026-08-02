@@ -35,6 +35,8 @@ export interface MatchComboResult {
   hasGrid: boolean;
   /** True when a combo was selected but pFinal is under the active tier floor (soft warning only). */
   belowTierFloor: boolean;
+  partlyFromApi?: boolean;
+  insufficientData?: boolean;
 }
 
 export interface ComboAccumulatorResult {
@@ -47,6 +49,8 @@ export interface ComboAccumulatorResult {
   rBatch: number;
   rLoss: number;
   droppedCount: number;
+  /** True when any kept leg used API-filled data. */
+  partlyFromApi?: boolean;
 }
 
 function toCandidate(
@@ -108,6 +112,12 @@ export function evaluateMatchCombos(
   const logMatch = batch.matches.find((m) => m.id === rm.id);
   const userComboId =
     batch.recommended?.comboPickByMatch?.[rm.id] ?? logMatch?.comboPick?.comboId;
+  const pickFlags = {
+    partlyFromApi:
+      rm.partlyFromApi === true || selected?.pick.partlyFromApi === true,
+    insufficientData:
+      rm.insufficientData === true || selected?.pick.insufficientData === true,
+  };
 
   if (!grid) {
     if (userComboId && logMatch?.comboPick) {
@@ -127,12 +137,13 @@ export function evaluateMatchCombos(
         matchId: rm.id,
         homeTeam: rm.homeTeam,
         awayTeam: rm.awayTeam,
-        selected: selectedCombo,
+        selected: pickFlags.insufficientData ? null : selectedCombo,
         alternative: null,
         fallbackSingle,
-        allEvaluated: [selectedCombo],
+        allEvaluated: pickFlags.insufficientData ? [] : [selectedCombo],
         hasGrid: false,
         belowTierFloor: belowFloorFlag(selectedCombo, tierFloor),
+        ...pickFlags,
       };
     }
     return {
@@ -145,6 +156,8 @@ export function evaluateMatchCombos(
       allEvaluated: [],
       hasGrid: false,
       belowTierFloor: false,
+      ...pickFlags,
+      insufficientData: true,
     };
   }
 
@@ -200,12 +213,13 @@ export function evaluateMatchCombos(
     matchId: rm.id,
     homeTeam: rm.homeTeam,
     awayTeam: rm.awayTeam,
-    selected: best,
-    alternative,
+    selected: pickFlags.insufficientData ? null : best,
+    alternative: pickFlags.insufficientData ? null : alternative,
     fallbackSingle,
-    allEvaluated: evaluated,
+    allEvaluated: pickFlags.insufficientData ? [] : evaluated,
     hasGrid: true,
     belowTierFloor: belowFloorFlag(best, tierFloor),
+    ...pickFlags,
   };
 }
 
@@ -247,8 +261,10 @@ export function buildComboAccumulator(
   teamsQuality?: TeamsQualityStore | null
 ): ComboAccumulatorResult {
   const tierFloor = settings.tierMinPFinal[tier];
-  let legs = matchResults.filter((m) => m.selected);
-  const droppedLegs: MatchComboResult[] = [];
+  const droppedLegs: MatchComboResult[] = matchResults.filter(
+    (m) => m.insufficientData === true
+  );
+  let legs = matchResults.filter((m) => m.selected && !m.insufficientData);
 
   while (legs.length > 2) {
     const combinedProbability = productPFinal(legs);
@@ -303,6 +319,7 @@ export function buildComboAccumulator(
     combinedOdds,
     riskAdjustedConfidence,
     status,
+    partlyFromApi: legs.some((l) => l.partlyFromApi),
     rBatch: risk.rBatch,
     rLoss: risk.rLoss,
     droppedCount: droppedLegs.length,

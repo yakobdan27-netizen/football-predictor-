@@ -85,14 +85,15 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate odds — never invent; require a numeric chosenOdd > 1
+    // Never invent odds. Allow odd >= 1 so tracking slips aren't blocked;
+    // warn clients to type MANUAL odds when API odds are missing.
     for (const s of selections) {
-      if (!Number.isFinite(s.chosenOdd) || s.chosenOdd <= 1) {
+      if (!Number.isFinite(s.chosenOdd) || s.chosenOdd < 1) {
         return NextResponse.json(
           {
             ok: false,
             error:
-              "Each selection needs a valid odd (>1). Enter MANUAL odds if API odds are missing.",
+              "Each selection needs a numeric odd (≥1). Enter MANUAL odds if API odds are missing.",
           },
           { status: 400 }
         );

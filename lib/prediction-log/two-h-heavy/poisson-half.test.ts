@@ -53,6 +53,8 @@ function resultFromProfiles(
     confidence,
     data_source: home.source === "prior" || away.source === "prior" ? "prior" : "db",
     thinData: isThinData(home.n_matches, away.n_matches),
+    partlyFromApi: home.source === "api" || away.source === "api",
+    insufficientData: isThinData(home.n_matches, away.n_matches),
     homeProfile: home,
     awayProfile: away,
     live: false,

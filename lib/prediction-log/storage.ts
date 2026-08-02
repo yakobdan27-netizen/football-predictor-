@@ -25,6 +25,7 @@ import {
   TEAM_CHARACTERISTICS_KEY,
 } from "./team-characteristics";
 import { recomputeAnalysis } from "./analysis";
+import { matchLeague } from "./match-league";
 import { generateRecommendedBatch } from "./generate-recommended-batch";
 import { generateBestRecommendationBatch } from "./generate-tiered-recommendations";
 import { generateLearnerRecommendedBatch } from "./learner-recommendations";
@@ -966,14 +967,79 @@ export function generateBatchRecommendation(
   return attachCorrectScoreToBatch({ ...batch, recommended: withHybrid });
 }
 
+/** On-demand AF half-profile gap fill before reco (manual-first assist). */
+async function warmApiProfilesForBatch(
+  batch: PredictionBatch
+): Promise<Set<string>> {
+  const apiTeamKeys = new Set<string>();
+  if (typeof fetch === "undefined") return apiTeamKeys;
+  const qs = new URLSearchParams();
+  for (const m of batch.matches) {
+    const league = matchLeague(m, batch.league);
+    if (m.homeTeam?.trim()) {
+      qs.append("q", `${m.homeTeam.trim()}|home|${league}`);
+    }
+    if (m.awayTeam?.trim()) {
+      qs.append("q", `${m.awayTeam.trim()}|away|${league}`);
+    }
+  }
+  if (![...qs.keys()].length) return apiTeamKeys;
+  try {
+    const res = await fetch(`/api/two-h-heavy/profiles?${qs.toString()}&fillGaps=1`);
+    const data = (await res.json()) as {
+      profiles?: Record<string, { source?: string; teamName?: string }>;
+    };
+    for (const row of Object.values(data.profiles ?? {})) {
+      if (row.source === "api" && row.teamName) {
+        apiTeamKeys.add(row.teamName.trim().toLowerCase());
+      }
+    }
+  } catch {
+    /* pure manual fallback */
+  }
+  return apiTeamKeys;
+}
+
+function tagRecommendedWithApiAssist(
+  batch: PredictionBatch,
+  apiTeamKeys: Set<string>
+): PredictionBatch {
+  if (!batch.recommended || apiTeamKeys.size === 0) return batch;
+  const matches = batch.recommended.matches.map((rm) => {
+    const partly =
+      apiTeamKeys.has(rm.homeTeam.trim().toLowerCase()) ||
+      apiTeamKeys.has(rm.awayTeam.trim().toLowerCase());
+    if (!partly) return rm;
+    const predictions = { ...rm.predictions };
+    for (const key of Object.keys(predictions) as (keyof typeof predictions)[]) {
+      const pick = predictions[key];
+      if (pick) predictions[key] = { ...pick, partlyFromApi: true };
+    }
+    return { ...rm, partlyFromApi: true, predictions };
+  });
+  return {
+    ...batch,
+    recommended: { ...batch.recommended, matches },
+  };
+}
+
 export async function generateBatchRecommendationAsync(
   batch: PredictionBatch,
   settings: RecommendationSettings,
   learnerEnabled?: boolean,
   luckyNumbers: number[] = []
 ): Promise<PredictionBatch> {
+  const apiTeamKeys = await warmApiProfilesForBatch(batch);
   const clubRecords = await loadClubRecordsForBatchFromCache(batch);
-  return generateBatchRecommendation(batch, settings, learnerEnabled, clubRecords, null, luckyNumbers);
+  const updated = generateBatchRecommendation(
+    batch,
+    settings,
+    learnerEnabled,
+    clubRecords,
+    null,
+    luckyNumbers
+  );
+  return tagRecommendedWithApiAssist(updated, apiTeamKeys);
 }
 
 export async function generateBestRecommendationBatchAsync(
