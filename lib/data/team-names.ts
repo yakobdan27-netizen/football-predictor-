@@ -117,6 +117,8 @@ export const TEAM_ALIASES: Record<string, string> = {
   Troyes: "Troyes",
   "Le Mans FC": "Le Mans",
   "Le Mans": "Le Mans",
+  Frosinone: "Frosinone",
+  "Frosinone Calcio": "Frosinone",
   "1. FSV Mainz 05": "Mainz",
   "FSV Mainz 05": "Mainz",
   Mainz: "Mainz",

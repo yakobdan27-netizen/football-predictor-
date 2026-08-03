@@ -258,8 +258,24 @@ export function resolveTeamHalfProfile(
     return fromCachedApi(team, venue, cached, src);
   }
 
-  const db = fromDbSeeds(team, venue, league, samples);
-  if (db) return db;
+  // Thin live HT samples only — never treat JSON seed baselines as N≥8 evidence.
+  if (samples.length > 0) {
+    const n = samples.length;
+    const avg = (pick: (s: HalfSample) => number) =>
+      samples.reduce((a, s) => a + pick(s), 0) / n;
+    return {
+      team: standardizeTeamName(team),
+      venue,
+      sc_1h: avg((s) => s.sc1),
+      sc_2h: avg((s) => s.sc2),
+      conc_1h: avg((s) => s.conc1),
+      conc_2h: avg((s) => s.conc2),
+      n_matches: n,
+      last_match_date: samples[0]?.date ?? null,
+      source: "db",
+      formation: null,
+    };
+  }
 
   return priorProfile(team, venue, league);
 }

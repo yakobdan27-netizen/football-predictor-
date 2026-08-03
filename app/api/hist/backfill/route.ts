@@ -4,13 +4,19 @@ import { runHistBackfillChunk } from "@/lib/hist/backfill";
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
+type Body = { gapPriority?: boolean };
+
 /**
  * POST /api/hist/backfill
  * Public manual kick (same work as cron hist-backfill).
+ * Body `{ "gapPriority": true }` drains incomplete coverage buckets first.
  */
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    const summary = await runHistBackfillChunk();
+    const body = (await request.json().catch(() => ({}))) as Body;
+    const summary = await runHistBackfillChunk({
+      gapPriority: body.gapPriority === true,
+    });
     return NextResponse.json(summary, {
       status: summary.ok ? 200 : 503,
     });

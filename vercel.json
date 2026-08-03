@@ -92,6 +92,9 @@
     "app/api/hist/recompute-betas/route.ts": {
       "maxDuration": 60
     },
+    "app/api/hist/coverage/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/cron/live-prematch/route.ts": {
       "maxDuration": 60
     },

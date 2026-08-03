@@ -30,7 +30,10 @@ export function TeamAutocompleteCell({
     () => `teams-${league.replace(/\s/g, "-")}-${placeholder ?? "team"}`,
     [league, placeholder]
   );
-  const teams = useMemo(() => teamsForLeague(league), [league]);
+  const teams = useMemo(
+    () => teamsForLeague(league, teamsQuality),
+    [league, teamsQuality]
+  );
   const tier = value ? lookupTeam(teamsQuality, value)?.tier : null;
   const tierColor = tier ? (teamsQuality?.tier_config ?? DEFAULT_TIER_CONFIG)[tier]?.color : undefined;
   const [highlight, setHighlight] = useState(-1);

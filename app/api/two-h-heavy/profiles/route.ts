@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { logApiFootballHealth } from "@/lib/apiClient";
-import { loadHistProfilesForTeams } from "@/lib/hist/team-half-intensities";
+import { apiLeagueId } from "@/lib/football-api/leagues";
+import { warmLeaguePriorsCache } from "@/lib/hist/league-priors";
+import { loadTeamHalfStatsProfiles } from "@/lib/hist/persist-team-half-stats";
 import { warmBetaCache } from "@/lib/hist/recompute-betas";
+import { loadHistProfilesForTeams } from "@/lib/hist/team-half-intensities";
 import {
   fillProfileGapsOnDemand,
   readCachedProfilesForTeams,
@@ -10,7 +13,7 @@ import type { VenueSide } from "@/lib/prediction-log/two-h-heavy/types";
 
 /**
  * GET /api/two-h-heavy/profiles?q=Team|home|League&q=...
- * Manual-first: hist + KV, then on-demand AF gap fill (fillGaps=0 to skip).
+ * Prefer team_half_stats → hist_fixtures → KV → on-demand AF gap fill.
  */
 export async function GET(request: Request) {
   try {
@@ -50,11 +53,18 @@ export async function GET(request: Request) {
       });
     }
 
-    await warmBetaCache().catch(() => ({}));
-    const [profiles, histProfiles] = await Promise.all([
+    await Promise.all([
+      warmBetaCache().catch(() => ({})),
+      warmLeaguePriorsCache().catch(() => ({})),
+    ]);
+
+    const [profiles, histLive, ths] = await Promise.all([
       readCachedProfilesForTeams(requests),
       loadHistProfilesForTeams(requests).catch(() => ({})),
+      loadTeamHalfStatsProfiles(requests, apiLeagueId).catch(() => ({})),
     ]);
+    // Prefer persisted team_half_stats over on-the-fly hist compute.
+    const histProfiles = { ...histLive, ...ths };
 
     let apiUnavailable = false;
     let nextProfiles = profiles;

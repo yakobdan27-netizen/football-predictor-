@@ -301,9 +301,31 @@ export async function ensureSchema(): Promise<void> {
       last_run_at timestamptz,
       last_summary text,
       beta_2h_json text,
+      league_priors_json text,
       updated_at timestamptz NOT NULL
     )
   `;
+  // Additive column for DBs created before league_priors_json
+  await sql`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS league_priors_json text`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS team_half_stats (
+      id serial PRIMARY KEY,
+      team_id integer,
+      team_name text NOT NULL,
+      league_id integer NOT NULL,
+      venue text NOT NULL,
+      scored_1h real NOT NULL,
+      scored_2h real NOT NULL,
+      conceded_1h real NOT NULL,
+      conceded_2h real NOT NULL,
+      sample_size integer NOT NULL,
+      thin_data integer NOT NULL DEFAULT 0,
+      last_updated timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS team_half_stats_team_league_venue_idx ON team_half_stats (team_name, league_id, venue)`;
+  await sql`CREATE INDEX IF NOT EXISTS team_half_stats_league_idx ON team_half_stats (league_id)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS matches (

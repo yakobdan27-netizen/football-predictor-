@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import {
   buildLadder,
+  LADDER_CONFIG,
   legsForRound,
+  shortLeagueLabel,
   suggestStakeSplit,
   type LadderRound,
   type RiskExposure,
@@ -64,6 +66,9 @@ export function LadderApp() {
   const [bankrollInput, setBankrollInput] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [confFloor, setConfFloor] = useState(LADDER_CONFIG.CONF_FLOOR);
+  const [maxPerLeague, setMaxPerLeague] = useState(LADDER_CONFIG.MAX_PER_LEAGUE);
+  const [whyOpen, setWhyOpen] = useState(false);
 
   useEffect(() => {
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
@@ -74,8 +79,13 @@ export function LadderApp() {
 
   const ladder = useMemo(() => {
     if (!batch) return null;
-    return buildLadder({ ranked, batch });
-  }, [ranked, batch]);
+    return buildLadder({
+      ranked,
+      batch,
+      confFloor,
+      maxPerLeague,
+    });
+  }, [ranked, batch, confFloor, maxPerLeague]);
 
   const bankroll = useMemo(() => {
     const n = Number.parseFloat(bankrollInput);
@@ -86,6 +96,17 @@ export function LadderApp() {
     if (bankroll == null || !ladder) return null;
     return suggestStakeSplit(bankroll, ladder.rounds);
   }, [bankroll, ladder]);
+
+  const distStrip = useMemo(() => {
+    if (!ladder?.selection.leagueCounts) return [];
+    return Object.entries(ladder.selection.leagueCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([league, count]) => ({
+        league,
+        label: shortLeagueLabel(league),
+        count,
+      }));
+  }, [ladder]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -113,7 +134,7 @@ export function LadderApp() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Survival Ladder (2H &gt; 1H)</h1>
         <p className="page-sub">
-          Round-reduction parlays from the top matches ranked by P(2H total goals &gt; 1H). Read-only —
+          Round-reduction parlays from floor-passing matches, spread across leagues. Read-only —
           never blocks a bet.
         </p>
       </div>
@@ -124,8 +145,8 @@ export function LadderApp() {
 
       <p className="ladder-payout-note">
         <strong>Payout vs. Safety:</strong> R1 (most legs) = highest potential payout, lowest hit rate.
-        Later rounds (fewer legs) = lower payout, higher hit rate. Independent-leg approximation used
-        for combined probability.
+        Later rounds (fewer legs) = lower payout, higher hit rate. Diversifying legs across leagues
+        makes this independence estimate more realistic, but correlation is never zero.
       </p>
 
       <div
@@ -182,6 +203,55 @@ export function LadderApp() {
         </button>
       </div>
 
+      <div
+        className="card"
+        style={{
+          marginBottom: "1rem",
+          display: "grid",
+          gap: "0.75rem",
+          fontSize: "0.8125rem",
+        }}
+      >
+        <strong>Advanced (recomputes from real ranking)</strong>
+        <label style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+          Confidence floor ({confFloor.toFixed(2)})
+          <input
+            type="range"
+            min={0.4}
+            max={0.8}
+            step={0.05}
+            value={confFloor}
+            onChange={(e) => setConfFloor(Number(e.target.value))}
+            style={{ flex: 1, minWidth: "10rem" }}
+            aria-label="Confidence floor"
+          />
+        </label>
+        <label style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+          Max per league
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ minHeight: 36, padding: "0 0.65rem" }}
+            disabled={maxPerLeague <= 1}
+            onClick={() => setMaxPerLeague((n) => Math.max(1, n - 1))}
+          >
+            −
+          </button>
+          <span style={{ fontVariantNumeric: "tabular-nums", minWidth: "1.5rem", textAlign: "center" }}>
+            {maxPerLeague}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ minHeight: 36, padding: "0 0.65rem" }}
+            disabled={maxPerLeague >= 10}
+            onClick={() => setMaxPerLeague((n) => Math.min(10, n + 1))}
+          >
+            +
+          </button>
+        </label>
+      </div>
+
       {ladder?.shortfallNotice && (
         <div className="alert" style={{ marginBottom: "1rem" }}>
           {ladder.shortfallNotice}
@@ -192,16 +262,75 @@ export function LadderApp() {
         <p className="page-sub">Select a saved batch to build the ladder.</p>
       ) : !ladder || ladder.n === 0 ? (
         <p className="page-sub">
-          {loading ? "Ranking matches…" : "No ranked matches available for this batch."}
+          {loading
+            ? "Ranking matches…"
+            : "No matches met the confidence floor for this batch."}
         </p>
       ) : (
         <>
+          {distStrip.length > 0 && (
+            <div
+              className="ladder-dist-strip"
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.35rem",
+                marginBottom: "0.75rem",
+              }}
+              aria-label="League distribution"
+            >
+              {distStrip.map((d) => (
+                <span
+                  key={d.league}
+                  style={{
+                    fontSize: "0.75rem",
+                    fontWeight: 700,
+                    padding: "0.25rem 0.5rem",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                  }}
+                >
+                  {d.label} {d.count}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <details
+            className="card"
+            style={{ marginBottom: "1rem", fontSize: "0.8125rem" }}
+            open={whyOpen}
+            onToggle={(e) => setWhyOpen((e.target as HTMLDetailsElement).open)}
+          >
+            <summary style={{ cursor: "pointer", fontWeight: 700 }}>Why these {ladder.n}?</summary>
+            <p style={{ margin: "0.5rem 0 0" }}>
+              Filtered to matches with confidence ≥ {ladder.selection.confFloor.toFixed(2)}, then
+              spread across leagues (max {ladder.selection.maxPerLeagueInitial} per league, relaxed
+              to {ladder.selection.maxPerLeagueUsed} only among floor-passers if needed).{" "}
+              {ladder.selection.qualifiedCount} match
+              {ladder.selection.qualifiedCount === 1 ? "" : "es"} qualified.
+            </p>
+            <p style={{ margin: "0.35rem 0 0", color: "var(--muted)" }}>
+              Selected:{" "}
+              {distStrip.map((d) => `${d.label} ${d.count}`).join(" · ") || "—"}
+            </p>
+            {ladder.selection.relaxReason ? (
+              <p style={{ margin: "0.35rem 0 0", color: "var(--muted)" }}>
+                {ladder.selection.relaxReason}
+              </p>
+            ) : null}
+          </details>
+
           <div className="ladder-legend card" style={{ marginBottom: "1rem", fontSize: "0.8125rem" }}>
             <strong>Drop order (weakest first):</strong>{" "}
-            {ladder.matches.map((m) => `${m.letter}=${m.homeTeam} vs ${m.awayTeam}`).join(" · ")}
+            {ladder.matches
+              .map(
+                (m) =>
+                  `${m.letter}=${m.homeTeam} vs ${m.awayTeam} (${shortLeagueLabel(m.league)})`
+              )
+              .join(" · ")}
           </div>
 
-          {/* Desktop table */}
           <div className="card ladder-table-wrap ladder-desktop">
             <table className="table ladder-table" style={{ width: "100%", fontSize: "0.8125rem" }}>
               <thead>
@@ -234,12 +363,11 @@ export function LadderApp() {
               </tbody>
             </table>
             <p className="ladder-footnote">
-              Combined Prob assumes independent legs (model estimate only). Risky = P(2H&gt;1H) below
-              55%.
+              Diversifying legs across leagues makes this independence estimate more realistic, but
+              correlation is never zero. Risky = P(2H&gt;1H) below 55%.
             </p>
           </div>
 
-          {/* Mobile cards */}
           <div className="ladder-mobile">
             {ladder.rounds.map((round, i) => (
               <RoundCard
@@ -357,7 +485,17 @@ function LegList({
           <Link href={matchHref(batchId, leg.apiFixtureId)} className="ladder-leg-link">
             <span className="ladder-leg-letter">{leg.letter}</span>
             <span>
-              {leg.homeTeam} vs {leg.awayTeam}
+              {leg.homeTeam} vs {leg.awayTeam}{" "}
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  color: "var(--muted)",
+                  marginLeft: "0.25rem",
+                }}
+              >
+                {shortLeagueLabel(leg.league)}
+              </span>
             </span>
             <span className="ladder-leg-meta">
               {leg.kickoff} · P(2H&gt;1H) {leg.p2h_display} · conf {leg.confidence_display}

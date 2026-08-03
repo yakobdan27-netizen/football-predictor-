@@ -69,11 +69,17 @@ export function CombinedOddsBatchCard({
 
       {!extended && !gridsReady && (
         <p style={{ margin: "0.75rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
-          Score grids are still preparing (or unavailable for some fixtures). Combos use seed priors when
-          club history is thin.
+          Score grids unavailable for some fixtures (insufficient club sample). Legs without real
+          data are excluded — never fabricated from seed priors.
         </p>
       )}
 
+      {accumulator.combinedProbability != null && (
+        <p style={{ margin: "0.5rem 0 0", fontSize: "0.75rem", color: "var(--muted)" }}>
+          Independence caveat: legs in the same league/matchday may correlate, so the combined
+          probability is an estimate, not a guarantee.
+        </p>
+      )}
       <div style={{ marginTop: "1rem", display: "grid", gap: "0.75rem" }}>
         {matches.map((m) => (
           <CombinedOddsMatchCard

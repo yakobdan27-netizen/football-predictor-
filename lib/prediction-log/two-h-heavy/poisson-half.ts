@@ -2,7 +2,7 @@
  * Exact brief formula for P(2H total goals > 1H total goals).
  */
 import { poissonPmf } from "@/lib/predictor/poisson";
-import { beta2hFor } from "@/lib/hist/recompute-betas";
+import { beta2hFor } from "@/lib/hist/beta-cache";
 import {
   FORMATION_ADJUST,
   MIN_MATCHES,

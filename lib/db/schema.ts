@@ -480,8 +480,39 @@ export const histMeta = pgTable("hist_meta", {
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   lastSummary: text("last_summary"),
   beta2hJson: text("beta_2h_json"),
+  leaguePriorsJson: text("league_priors_json"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+/**
+ * Persisted venue-split half intensities derived from hist_*.
+ * Models read; writers under lib/hist/ only.
+ */
+export const teamHalfStats = pgTable(
+  "team_half_stats",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id"),
+    teamName: text("team_name").notNull(),
+    leagueId: integer("league_id").notNull(),
+    venue: text("venue").notNull(),
+    scored1h: real("scored_1h").notNull(),
+    scored2h: real("scored_2h").notNull(),
+    conceded1h: real("conceded_1h").notNull(),
+    conceded2h: real("conceded_2h").notNull(),
+    sampleSize: integer("sample_size").notNull(),
+    thinData: integer("thin_data").notNull().default(0),
+    lastUpdated: timestamp("last_updated", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    teamLeagueVenueIdx: index("team_half_stats_team_league_venue_idx").on(
+      t.teamName,
+      t.leagueId,
+      t.venue
+    ),
+    leagueIdx: index("team_half_stats_league_idx").on(t.leagueId),
+  })
+);
 
 export type HistFixture = typeof histFixtures.$inferSelect;
 export type NewHistFixture = typeof histFixtures.$inferInsert;
@@ -497,3 +528,5 @@ export type HistJob = typeof histJobs.$inferSelect;
 export type NewHistJob = typeof histJobs.$inferInsert;
 export type HistMeta = typeof histMeta.$inferSelect;
 export type NewHistMeta = typeof histMeta.$inferInsert;
+export type TeamHalfStat = typeof teamHalfStats.$inferSelect;
+export type NewTeamHalfStat = typeof teamHalfStats.$inferInsert;

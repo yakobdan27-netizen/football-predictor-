@@ -205,7 +205,7 @@ function matchHasGrid(rm: RecommendedMatch): boolean {
 
 /**
  * Attach score grids to every recommended match that lacks one.
- * Uses correct-score freeze path (live meta or seed priors).
+ * Uses live club meta only — never JSON seed λs as fabricated evidence.
  */
 export function attachComboScoreGrids(
   batch: PredictionBatch,

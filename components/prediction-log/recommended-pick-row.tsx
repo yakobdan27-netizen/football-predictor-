@@ -305,6 +305,12 @@ export function RecommendedPickRow({
             : "partly from API"}
         </p>
       )}
+      {typeof pick.dataSampleSize === "number" && (
+        <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>
+          Data confidence · sample size {pick.dataSampleSize}
+          {pick.dataSampleSize < 8 ? " (thin — lean on league priors)" : ""}
+        </p>
+      )}
 
       {pick.learnerWhy && (
         <details style={{ marginTop: "0.35rem" }}>

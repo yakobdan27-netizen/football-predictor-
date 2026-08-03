@@ -11,7 +11,7 @@ export const DEMO_DOMESTIC_LEAGUES: DemoLeagueGroup[] = [
     teams: [
       "Arsenal", "Aston Villa", "Bournemouth", "Brentford", "Brighton",
       "Burnley", "Chelsea", "Coventry", "Crystal Palace", "Everton", "Fulham",
-      "Hull", "Ipswich", "Leeds", "Leicester", "Liverpool", "Man City",
+      "Hull", "Ipswich Town", "Leeds", "Leicester", "Liverpool", "Man City",
       "Man United", "Newcastle", "Nott'm Forest", "Southampton",
       "Sunderland", "Tottenham", "West Ham", "Wolves",
     ],
@@ -20,17 +20,17 @@ export const DEMO_DOMESTIC_LEAGUES: DemoLeagueGroup[] = [
     id: "La Liga",
     teams: [
       "Alaves", "Ath Bilbao", "Ath Madrid", "Barcelona", "Betis",
-      "Celta", "Elche", "Espanol", "Getafe", "Girona",
-      "Las Palmas", "Leganes", "Levante", "Mallorca", "Osasuna",
-      "Oviedo", "Real Madrid", "Sevilla", "Sociedad", "Valencia",
-      "Valladolid", "Vallecano", "Villarreal",
+      "Celta", "Deportivo", "Elche", "Espanol", "Getafe", "Girona",
+      "Las Palmas", "Leganes", "Levante", "Malaga", "Mallorca", "Osasuna",
+      "Oviedo", "Racing Santander", "Real Madrid", "Sevilla", "Sociedad",
+      "Valencia", "Valladolid", "Vallecano", "Villarreal",
     ],
   },
   {
     id: "Serie A",
     teams: [
       "Atalanta", "Bologna", "Cagliari", "Como", "Cremonese",
-      "Empoli", "Fiorentina", "Genoa", "Inter", "Juventus",
+      "Empoli", "Fiorentina", "Frosinone", "Genoa", "Inter", "Juventus",
       "Lazio", "Lecce", "Milan", "Monza", "Napoli",
       "Parma", "Pisa", "Roma", "Sassuolo", "Torino",
       "Udinese", "Venezia", "Verona",
@@ -41,18 +41,19 @@ export const DEMO_DOMESTIC_LEAGUES: DemoLeagueGroup[] = [
     teams: [
       "Augsburg", "Bayern Munich", "Bochum", "Dortmund", "Ein Frankfurt",
       "FC Koln", "Freiburg", "Hamburg", "Heidenheim", "Hoffenheim",
-      "Holstein Kiel", "Leverkusen", "M'gladbach", "Mainz", "RB Leipzig",
-      "St Pauli", "Stuttgart", "Union Berlin", "Werder Bremen", "Wolfsburg",
+      "Holstein Kiel", "Leverkusen", "M'gladbach", "Mainz", "Paderborn",
+      "RB Leipzig", "St Pauli", "Stuttgart", "Union Berlin", "Werder Bremen",
+      "Wolfsburg",
     ],
   },
   {
     id: "Ligue 1",
     teams: [
-      "Angers", "Auxerre", "Brest", "Le Havre", "Lens",
+      "Angers", "Auxerre", "Brest", "Le Havre", "Le Mans", "Lens",
       "Lille", "Lorient", "Lyon", "Marseille", "Metz",
       "Monaco", "Montpellier", "Nantes", "Nice", "Paris FC",
       "Paris SG", "Reims", "Rennes", "St Etienne", "Strasbourg",
-      "Toulouse",
+      "Toulouse", "Troyes",
     ],
   },
 ];

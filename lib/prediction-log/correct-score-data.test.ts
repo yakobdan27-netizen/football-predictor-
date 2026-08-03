@@ -14,10 +14,10 @@ function withSample(record: ClubRecord, n: number): ClubRecord {
     ...record,
     capacity: { ...record.capacity, sampleSize: n, lowSample: n < 5 },
     statMetadata: {
-      attack_strength_home: 1,
-      attack_strength_away: 1,
-      defense_strength_home: 1,
-      defense_strength_away: 1,
+      attack_strength_home: 1.2,
+      attack_strength_away: 1.1,
+      defense_strength_home: 0.9,
+      defense_strength_away: 0.95,
       goals_for_rolling: 1.2,
       goals_against_rolling: 1.1,
       xg_for: 1.2,
@@ -46,7 +46,7 @@ test("correctScoreHasEnoughData requires both clubs at threshold", () => {
   assert.equal(correctScoreHasEnoughData(null, awayOk), false);
 });
 
-test("scoreGridForMatch uses seed priors when sample is insufficient", () => {
+test("scoreGridForMatch returns null when sample is insufficient (no seed fabricate)", () => {
   const home = withSample(createClubRecord("h", "Arsenal", "Premier League"), 0);
   const away = withSample(createClubRecord("a", "Chelsea", "Premier League"), 0);
   const match: LogMatch = {
@@ -66,12 +66,10 @@ test("scoreGridForMatch uses seed priors when sample is insufficient", () => {
     null,
     []
   );
-  assert.ok(grid);
-  assert.ok(grid!.length > 0);
-  assert.ok(grid![0]!.length > 0);
+  assert.equal(grid, null);
 });
 
-test("scoreGridForMatch returns null when clubs have no sample and no seed", () => {
+test("scoreGridForMatch returns null when clubs have no sample", () => {
   const home = withSample(createClubRecord("h", "ZZ Unknown FC", "Premier League"), 0);
   const away = withSample(createClubRecord("a", "YY Mystery United", "Premier League"), 0);
   const match: LogMatch = {

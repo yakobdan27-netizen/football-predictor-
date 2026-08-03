@@ -90,8 +90,8 @@ export function CombinedOddsApp() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Combined Odds</h1>
         <p className="page-sub">
-          Combo picks for every match in every saved batch — score grids from recommendations or seed
-          priors.{" "}
+          Combo picks for every match in every saved batch — probabilities from real club/hist
+          samples only (insufficient-data legs excluded).{" "}
           <Link href="/recommendation" style={{ color: "var(--accent)" }}>
             Single-market picks →
           </Link>{" "}
