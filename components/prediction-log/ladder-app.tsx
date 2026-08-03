@@ -66,8 +66,8 @@ export function LadderApp() {
   const [bankrollInput, setBankrollInput] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const [confFloor, setConfFloor] = useState(LADDER_CONFIG.CONF_FLOOR);
-  const [maxPerLeague, setMaxPerLeague] = useState(LADDER_CONFIG.MAX_PER_LEAGUE);
+  const [confFloor, setConfFloor] = useState<number>(LADDER_CONFIG.CONF_FLOOR);
+  const [maxPerLeague, setMaxPerLeague] = useState<number>(LADDER_CONFIG.MAX_PER_LEAGUE);
   const [whyOpen, setWhyOpen] = useState(false);
 
   useEffect(() => {
