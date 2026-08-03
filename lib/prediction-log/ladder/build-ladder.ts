@@ -8,6 +8,10 @@ import {
   LADDER_CONFIG,
   MAX_LEGS,
   RISK_THRESHOLD,
+  resolveConfTiers,
+  tierRank,
+  type ConfTier,
+  type ConfTiers,
 } from "./config";
 
 export type RiskExposure = "HIGH" | "Medium" | "Low" | "Very Low";
@@ -17,6 +21,8 @@ export interface LadderMatch {
   homeTeam: string;
   awayTeam: string;
   league: string;
+  /** Confidence tier label — not the drop-order letter. */
+  tier: ConfTier;
   /** Kickoff datetime string, or FILL_FROM_DB when missing. */
   kickoff: string;
   /** Model P(2H>1H), or null when missing/non-finite. */
@@ -26,7 +32,7 @@ export interface LadderMatch {
   confidence: number | null;
   confidence_display: string;
   survival: number | null;
-  /** Drop-order letter: A = weakest (dropped first). */
+  /** Drop-order letter: A = weakest (dropped first). Not the confidence tier. */
   letter: string;
   apiFixtureId?: number;
 }
@@ -51,12 +57,18 @@ export interface LadderRound {
 }
 
 export interface LadderSelectionAudit {
+  /** Tier A floor (compat / slider). */
   confFloor: number;
+  confTiers: ConfTiers;
+  hardMin: number;
   maxPerLeagueInitial: number;
   maxPerLeagueUsed: number;
+  /** Matches with conf >= HARD_MIN. */
   qualifiedCount: number;
   selectedCount: number;
   leagueCounts: Record<string, number>;
+  tierCounts: Record<ConfTier, number>;
+  tiersUsed: ConfTier[];
   /** Why the per-league cap was raised, if at all. */
   relaxReason: string | null;
 }
@@ -67,6 +79,8 @@ export interface LadderResult {
   /** Drop order letters A.. (weakest first). */
   dropOrder: string[];
   shortfallNotice: string | null;
+  /** Honest mix notice when B/C backfill was used to reach size. */
+  mixNotice: string | null;
   n: number;
   selection: LadderSelectionAudit;
 }
@@ -77,7 +91,9 @@ export type BuildLadderOpts = {
   /** @deprecated Prefer ladderSize */
   maxLegs?: number;
   ladderSize?: number;
+  /** Tier A floor (slider). */
   confFloor?: number;
+  confTiers?: ConfTiers;
   maxPerLeague?: number;
   tieBand?: number;
 };
@@ -121,7 +137,6 @@ function kickoffFor(
 }
 
 function survivalScore(r: TwoHHeavyResult): number {
-  // Missing → treat as weakest (dropped first).
   if (!isFiniteProb(r.p_2h_gt_1h) || !Number.isFinite(r.confidence)) return -1;
   return r.p_2h_gt_1h * r.confidence;
 }
@@ -139,103 +154,151 @@ function countLeagues(selected: TwoHHeavyResult[]): Record<string, number> {
   return counts;
 }
 
+function emptyTierCounts(): Record<ConfTier, number> {
+  return { A: 0, B: 0, C: 0 };
+}
+
+function assignTier(
+  ranked: TwoHHeavyResult[],
+  tiers: ConfTiers,
+  hardMin: number
+): { pools: Record<ConfTier, TwoHHeavyResult[]>; qualifiedCount: number } {
+  const pools: Record<ConfTier, TwoHHeavyResult[]> = { A: [], B: [], C: [] };
+  let qualifiedCount = 0;
+  for (const r of ranked) {
+    if (!Number.isFinite(r.confidence) || r.confidence < hardMin) continue;
+    qualifiedCount += 1;
+    const c = r.confidence;
+    if (c >= tiers.A) pools.A.push(r);
+    else if (c >= tiers.B) pools.B.push(r);
+    else pools.C.push(r);
+  }
+  for (const t of ["A", "B", "C"] as ConfTier[]) {
+    pools[t].sort(compareTwoHHeavy);
+  }
+  return { pools, qualifiedCount };
+}
+
 /**
- * Floor-safe greedy fill with per-league cap that relaxes only among
- * conf >= floor matches. Pool walked in compareTwoHHeavy order so
- * maxPerLeague >= ladderSize matches old global top-N.
+ * Tiered greedy fill: A → B → C. Per-league cap uses global counts across tiers;
+ * relaxes +1 only within the current tier's remaining pool.
  */
 export function selectDiversifiedLegs(
   ranked: TwoHHeavyResult[],
   opts: {
     ladderSize: number;
-    confFloor: number;
     maxPerLeague: number;
+    confFloor?: number;
+    confTiers?: ConfTiers;
+    hardMin?: number;
   }
 ): {
   selected: TwoHHeavyResult[];
+  tierById: Map<string, ConfTier>;
   qualifiedCount: number;
   maxPerLeagueUsed: number;
   relaxReason: string | null;
   leagueCounts: Record<string, number>;
+  tierCounts: Record<ConfTier, number>;
+  confTiers: ConfTiers;
+  hardMin: number;
 } {
-  const { ladderSize, confFloor, maxPerLeague: initialCap } = opts;
-  const eligible = ranked
-    .filter((r) => Number.isFinite(r.confidence) && r.confidence >= confFloor)
-    .sort(compareTwoHHeavy);
+  const hardMin = opts.hardMin ?? LADDER_CONFIG.HARD_MIN;
+  const confTiers = opts.confTiers ?? resolveConfTiers(opts.confFloor);
+  const { ladderSize, maxPerLeague: initialCap } = opts;
 
-  const qualifiedCount = eligible.length;
-  if (qualifiedCount === 0) {
-    return {
-      selected: [],
-      qualifiedCount: 0,
-      maxPerLeagueUsed: initialCap,
-      relaxReason: null,
-      leagueCounts: {},
-    };
-  }
-
-  let cap = Math.max(1, initialCap);
-  let selected: TwoHHeavyResult[] = [];
-  let maxPerLeagueUsed = cap;
+  const { pools, qualifiedCount } = assignTier(ranked, confTiers, hardMin);
+  const selected: TwoHHeavyResult[] = [];
+  const tierById = new Map<string, ConfTier>();
+  const leagueCounts: Record<string, number> = {};
+  const tierCounts = emptyTierCounts();
+  let maxPerLeagueUsed = Math.max(1, initialCap);
   let relaxReason: string | null = null;
+  const selectedIds = new Set<string>();
 
-  while (selected.length < ladderSize && cap <= ladderSize) {
-    selected = [];
-    const leagueCounts: Record<string, number> = {};
-    const overflow: TwoHHeavyResult[] = [];
+  for (const tier of ["A", "B", "C"] as ConfTier[]) {
+    if (selected.length >= ladderSize) break;
+    const pool = pools[tier];
+    if (pool.length === 0) continue;
 
-    for (const r of eligible) {
+    let localCap = Math.max(1, initialCap);
+
+    while (selected.length < ladderSize) {
+      for (const r of pool) {
+        if (selected.length >= ladderSize) break;
+        if (selectedIds.has(r.matchId)) continue;
+        const lg = leagueKey(r);
+        const n = leagueCounts[lg] ?? 0;
+        if (n < localCap) {
+          selected.push(r);
+          selectedIds.add(r.matchId);
+          leagueCounts[lg] = n + 1;
+          tierById.set(r.matchId, tier);
+          tierCounts[tier] += 1;
+        }
+      }
+
       if (selected.length >= ladderSize) break;
-      const lg = leagueKey(r);
-      const n = leagueCounts[lg] ?? 0;
-      if (n < cap) {
-        selected.push(r);
-        leagueCounts[lg] = n + 1;
-      } else {
-        overflow.push(r);
+
+      const remaining = pool.filter((r) => !selectedIds.has(r.matchId));
+      if (remaining.length === 0) break;
+
+      // Remaining are cap-blocked — relax among this tier only.
+      if (localCap >= ladderSize) break;
+      localCap += 1;
+      maxPerLeagueUsed = Math.max(maxPerLeagueUsed, localCap);
+      if (localCap > initialCap) {
+        relaxReason = `Raised max-per-league from ${initialCap} to ${localCap} while filling Tier ${tier} (only among matches already in that tier pool).`;
       }
     }
 
-    maxPerLeagueUsed = cap;
-
-    if (selected.length >= ladderSize || overflow.length === 0) {
-      if (cap > initialCap) {
-        relaxReason = `Raised max-per-league from ${initialCap} to ${cap} to fill slots using only matches with conf ≥ ${confFloor}.`;
-      }
-      break;
-    }
-
-    // Need more slots and overflow remains — relax cap among floor-passers only.
-    if (cap >= ladderSize) break;
-    cap += 1;
-    if (cap > initialCap) {
-      relaxReason = `Raised max-per-league from ${initialCap} to ${cap} to fill slots using only matches with conf ≥ ${confFloor}.`;
-    }
+    maxPerLeagueUsed = Math.max(maxPerLeagueUsed, localCap);
   }
 
   return {
     selected,
+    tierById,
     qualifiedCount,
     maxPerLeagueUsed,
     relaxReason,
     leagueCounts: countLeagues(selected),
+    tierCounts,
+    confTiers,
+    hardMin,
   };
 }
 
+export type SortDropOrderOpts = {
+  tieBand: number;
+  tierById: Map<string, ConfTier>;
+};
+
 /**
- * Drop order: ascending survival = p × confidence.
- * Within TIE_BAND, drop the match from the most-represented league first.
+ * Drop order: weaker confidence tiers first (C → B → A), then ascending
+ * rank_score = p × conf. Within TIE_BAND same-tier, thin most-represented league.
  */
 export function sortDropOrder(
   selected: TwoHHeavyResult[],
-  tieBand: number
+  opts: SortDropOrderOpts | number
 ): TwoHHeavyResult[] {
+  const tieBand =
+    typeof opts === "number" ? opts : opts.tieBand;
+  const tierById =
+    typeof opts === "number"
+      ? new Map<string, ConfTier>()
+      : opts.tierById;
   const leagueCounts = countLeagues(selected);
+
   return [...selected].sort((a, b) => {
+    const ta = tierById.get(a.matchId) ?? "A";
+    const tb = tierById.get(b.matchId) ?? "A";
+    const tr = tierRank(ta) - tierRank(tb);
+    if (tr !== 0) return tr;
+
     const sa = survivalScore(a);
     const sb = survivalScore(b);
     if (Math.abs(sa - sb) > tieBand) return sa - sb;
-    // Near-equal survival: thin the most-represented league first.
+
     const ca = leagueCounts[leagueKey(a)] ?? 0;
     const cb = leagueCounts[leagueKey(b)] ?? 0;
     if (ca !== cb) return cb - ca;
@@ -245,43 +308,56 @@ export function sortDropOrder(
 
 /**
  * Build round-reduction ladder from 2H-heavy rankings.
- * Selection: conf floor → greedy per-league fill (relax among floor-passers).
- * Drop order: ascending survival = p × confidence, TIE_BAND league thinning.
+ * Selection: tiers A→B→C + greedy per-league fill.
+ * Drop order: tier first, then rank_score, TIE_BAND league thinning.
  */
 export function buildLadder(params: BuildLadderOpts): LadderResult {
   const ladderSize =
     params.ladderSize ?? params.maxLegs ?? LADDER_CONFIG.LADDER_SIZE;
-  const confFloor = params.confFloor ?? LADDER_CONFIG.CONF_FLOOR;
+  const confTiers =
+    params.confTiers ?? resolveConfTiers(params.confFloor);
   const maxPerLeague = params.maxPerLeague ?? LADDER_CONFIG.MAX_PER_LEAGUE;
   const tieBand = params.tieBand ?? LADDER_CONFIG.TIE_BAND;
+  const hardMin = LADDER_CONFIG.HARD_MIN;
 
   const logById: Record<string, LogMatch> = {};
   for (const m of params.batch.matches) logById[m.id] = m;
 
   const pick = selectDiversifiedLegs(params.ranked, {
     ladderSize,
-    confFloor,
     maxPerLeague,
+    confTiers,
+    hardMin,
   });
   const selected = pick.selected;
   const n = selected.length;
+  const tiersUsed = (["A", "B", "C"] as ConfTier[]).filter(
+    (t) => pick.tierCounts[t] > 0
+  );
 
-  const emptyAudit: LadderSelectionAudit = {
-    confFloor,
+  const audit: LadderSelectionAudit = {
+    confFloor: confTiers.A,
+    confTiers: pick.confTiers,
+    hardMin: pick.hardMin,
     maxPerLeagueInitial: maxPerLeague,
     maxPerLeagueUsed: pick.maxPerLeagueUsed,
     qualifiedCount: pick.qualifiedCount,
     selectedCount: n,
     leagueCounts: pick.leagueCounts,
+    tierCounts: pick.tierCounts,
+    tiersUsed,
     relaxReason: pick.relaxReason,
   };
 
   let shortfallNotice: string | null = null;
-  if (pick.qualifiedCount === 0) {
-    shortfallNotice =
-      "Only 0 matches met the confidence floor today — ladder built with 0. Lower the floor only if you accept weaker picks.";
+  let mixNotice: string | null = null;
+
+  if (pick.qualifiedCount === 0 || n === 0) {
+    shortfallNotice = `Only 0 matches met the minimum (${hardMin}) today — ladder built with 0. We did not pad it with anything weaker.`;
   } else if (n < ladderSize) {
-    shortfallNotice = `Only ${n} match${n === 1 ? "" : "es"} met the confidence floor today — ladder built with ${n}. Lower the floor only if you accept weaker picks.`;
+    shortfallNotice = `Only ${n} match${n === 1 ? "" : "es"} met the minimum (${hardMin}) today — ladder built with ${n}. We did not pad it with anything weaker.`;
+  } else if (pick.tierCounts.B > 0 || pick.tierCounts.C > 0) {
+    mixNotice = `${n} legs built — ${pick.tierCounts.A} Tier A, ${pick.tierCounts.B} Tier B, ${pick.tierCounts.C} Tier C. Backfill legs (B/C) are weaker and drop out first; only Tier-A picks remain in the final rounds.`;
   }
 
   if (n === 0) {
@@ -291,12 +367,16 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
       dropOrder: [],
       shortfallNotice:
         shortfallNotice ?? "No ranked matches in this batch.",
+      mixNotice: null,
       n: 0,
-      selection: emptyAudit,
+      selection: audit,
     };
   }
 
-  const dropOrdered = sortDropOrder(selected, tieBand);
+  const dropOrdered = sortDropOrder(selected, {
+    tieBand,
+    tierById: pick.tierById,
+  });
 
   const letterById = new Map<string, string>();
   const dropOrder: string[] = [];
@@ -316,6 +396,7 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
       homeTeam: r.homeTeam || log?.homeTeam || FILL_FROM_DB,
       awayTeam: r.awayTeam || log?.awayTeam || FILL_FROM_DB,
       league: leagueKey(r),
+      tier: pick.tierById.get(r.matchId) ?? "A",
       kickoff: kickoffFor(r.matchId, logById, params.batch.date),
       p2h_gt_1h: p,
       p2h_display: formatProb(p),
@@ -385,8 +466,9 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
     rounds,
     dropOrder,
     shortfallNotice,
+    mixNotice,
     n,
-    selection: emptyAudit,
+    selection: audit,
   };
 }
 
@@ -412,6 +494,9 @@ export function shortLeagueLabel(league: string): string {
   return map[league] ?? league;
 }
 
+export const TIER_TOOLTIP =
+  "A = met primary confidence floor; B/C = backfill to complete the 10, lower confidence, dropped first in the ladder.";
+
 // Re-export thresholds for tests/UI docs
 export {
   COMBINED_HIGH,
@@ -420,4 +505,6 @@ export {
   FILL_FROM_DB,
   MAX_LEGS,
   LADDER_CONFIG,
-};
+  CONF_FLOOR,
+  resolveConfTiers,
+} from "./config";

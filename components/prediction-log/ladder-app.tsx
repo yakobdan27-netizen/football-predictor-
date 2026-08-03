@@ -4,10 +4,15 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import {
   buildLadder,
+  CONF_FLOOR,
   LADDER_CONFIG,
   legsForRound,
+  resolveConfTiers,
   shortLeagueLabel,
   suggestStakeSplit,
+  TIER_TOOLTIP,
+  type ConfTier,
+  type LadderMatch,
   type LadderRound,
   type RiskExposure,
 } from "@/lib/prediction-log/ladder";
@@ -44,6 +49,17 @@ function riskLabel(r: RiskExposure): string {
   }
 }
 
+function tierChipStyle(tier: ConfTier): CSSProperties {
+  switch (tier) {
+    case "A":
+      return { background: "rgba(22, 101, 52, 0.14)", color: "#166534" };
+    case "B":
+      return { background: "rgba(180, 83, 9, 0.16)", color: "#b45309" };
+    default:
+      return { background: "rgba(185, 28, 28, 0.12)", color: "#b91c1c" };
+  }
+}
+
 function matchHref(batchId: string, apiFixtureId?: number): string {
   if (apiFixtureId != null && Number.isFinite(apiFixtureId)) {
     return `/decision-maker?batch=${encodeURIComponent(batchId)}&fixture_id=${apiFixtureId}`;
@@ -66,9 +82,11 @@ export function LadderApp() {
   const [bankrollInput, setBankrollInput] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  const [confFloor, setConfFloor] = useState<number>(LADDER_CONFIG.CONF_FLOOR);
+  const [confFloor, setConfFloor] = useState<number>(CONF_FLOOR);
   const [maxPerLeague, setMaxPerLeague] = useState<number>(LADDER_CONFIG.MAX_PER_LEAGUE);
   const [whyOpen, setWhyOpen] = useState(false);
+
+  const derivedTiers = useMemo(() => resolveConfTiers(confFloor), [confFloor]);
 
   useEffect(() => {
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
@@ -134,7 +152,7 @@ export function LadderApp() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Survival Ladder (2H &gt; 1H)</h1>
         <p className="page-sub">
-          Round-reduction parlays from floor-passing matches, spread across leagues. Read-only —
+          Round-reduction parlays from tiered confidence matches, spread across leagues. Read-only —
           never blocks a bet.
         </p>
       </div>
@@ -214,7 +232,7 @@ export function LadderApp() {
       >
         <strong>Advanced (recomputes from real ranking)</strong>
         <label style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
-          Confidence floor ({confFloor.toFixed(2)})
+          Tier A floor ({confFloor.toFixed(2)})
           <input
             type="range"
             min={0.4}
@@ -223,9 +241,13 @@ export function LadderApp() {
             value={confFloor}
             onChange={(e) => setConfFloor(Number(e.target.value))}
             style={{ flex: 1, minWidth: "10rem" }}
-            aria-label="Confidence floor"
+            aria-label="Tier A confidence floor"
           />
         </label>
+        <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.75rem" }}>
+          Derived tiers: B ≥ {derivedTiers.B.toFixed(2)} · C ≥ {derivedTiers.C.toFixed(2)} (hard
+          minimum {LADDER_CONFIG.HARD_MIN})
+        </p>
         <label style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
           Max per league
           <button
@@ -257,6 +279,11 @@ export function LadderApp() {
           {ladder.shortfallNotice}
         </div>
       )}
+      {ladder?.mixNotice && (
+        <div className="alert" style={{ marginBottom: "1rem" }}>
+          {ladder.mixNotice}
+        </div>
+      )}
 
       {!batch ? (
         <p className="page-sub">Select a saved batch to build the ladder.</p>
@@ -264,7 +291,7 @@ export function LadderApp() {
         <p className="page-sub">
           {loading
             ? "Ranking matches…"
-            : "No matches met the confidence floor for this batch."}
+            : `No matches met the minimum confidence (${LADDER_CONFIG.HARD_MIN}) for this batch.`}
         </p>
       ) : (
         <>
@@ -275,7 +302,7 @@ export function LadderApp() {
                 display: "flex",
                 flexWrap: "wrap",
                 gap: "0.35rem",
-                marginBottom: "0.75rem",
+                marginBottom: "0.5rem",
               }}
               aria-label="League distribution"
             >
@@ -296,6 +323,17 @@ export function LadderApp() {
             </div>
           )}
 
+          <p
+            style={{
+              margin: "0 0 0.75rem",
+              fontSize: "0.8125rem",
+              fontWeight: 600,
+            }}
+          >
+            Tier A: {ladder.selection.tierCounts.A} · Tier B: {ladder.selection.tierCounts.B} · Tier
+            C: {ladder.selection.tierCounts.C}
+          </p>
+
           <details
             className="card"
             style={{ marginBottom: "1rem", fontSize: "0.8125rem" }}
@@ -304,15 +342,22 @@ export function LadderApp() {
           >
             <summary style={{ cursor: "pointer", fontWeight: 700 }}>Why these {ladder.n}?</summary>
             <p style={{ margin: "0.5rem 0 0" }}>
-              Filtered to matches with confidence ≥ {ladder.selection.confFloor.toFixed(2)}, then
-              spread across leagues (max {ladder.selection.maxPerLeagueInitial} per league, relaxed
-              to {ladder.selection.maxPerLeagueUsed} only among floor-passers if needed).{" "}
+              Filled strongest-first: Tier A (conf ≥ {ladder.selection.confTiers.A.toFixed(2)}), then
+              B (≥ {ladder.selection.confTiers.B.toFixed(2)}), then C (≥{" "}
+              {ladder.selection.confTiers.C.toFixed(2)}), never below hard minimum{" "}
+              {ladder.selection.hardMin}. Spread across leagues (max{" "}
+              {ladder.selection.maxPerLeagueInitial} per league, relaxed to{" "}
+              {ladder.selection.maxPerLeagueUsed} only within the current tier if needed).{" "}
               {ladder.selection.qualifiedCount} match
-              {ladder.selection.qualifiedCount === 1 ? "" : "es"} qualified.
+              {ladder.selection.qualifiedCount === 1 ? "" : "es"} cleared the minimum.
             </p>
             <p style={{ margin: "0.35rem 0 0", color: "var(--muted)" }}>
               Selected:{" "}
               {distStrip.map((d) => `${d.label} ${d.count}`).join(" · ") || "—"}
+            </p>
+            <p style={{ margin: "0.35rem 0 0", color: "var(--muted)" }}>
+              Tiers: A {ladder.selection.tierCounts.A} · B {ladder.selection.tierCounts.B} · C{" "}
+              {ladder.selection.tierCounts.C}
             </p>
             {ladder.selection.relaxReason ? (
               <p style={{ margin: "0.35rem 0 0", color: "var(--muted)" }}>
@@ -326,7 +371,7 @@ export function LadderApp() {
             {ladder.matches
               .map(
                 (m) =>
-                  `${m.letter}=${m.homeTeam} vs ${m.awayTeam} (${shortLeagueLabel(m.league)})`
+                  `${m.letter}=${m.homeTeam} vs ${m.awayTeam} (Tier ${m.tier}, ${shortLeagueLabel(m.league)})`
               )
               .join(" · ")}
           </div>
@@ -364,7 +409,7 @@ export function LadderApp() {
             </table>
             <p className="ladder-footnote">
               Diversifying legs across leagues makes this independence estimate more realistic, but
-              correlation is never zero. Risky = P(2H&gt;1H) below 55%.
+              correlation is never zero. Risky = P(2H&gt;1H) below 55%. Tier chips: {TIER_TOOLTIP}
             </p>
           </div>
 
@@ -402,7 +447,7 @@ function RoundTableRows({
   onToggle: () => void;
   stake?: number;
   batchId: string;
-  legs: ReturnType<typeof legsForRound>;
+  legs: LadderMatch[];
 }) {
   return (
     <>
@@ -449,7 +494,7 @@ function RoundCard({
   onToggle: () => void;
   stake?: number;
   batchId: string;
-  legs: ReturnType<typeof legsForRound>;
+  legs: LadderMatch[];
 }) {
   return (
     <div className={`card ladder-round-card${expanded ? " is-expanded" : ""}`}>
@@ -476,7 +521,7 @@ function LegList({
   legs,
 }: {
   batchId: string;
-  legs: ReturnType<typeof legsForRound>;
+  legs: LadderMatch[];
 }) {
   return (
     <ul className="ladder-leg-list">
@@ -495,6 +540,19 @@ function LegList({
                 }}
               >
                 {shortLeagueLabel(leg.league)}
+              </span>{" "}
+              <span
+                title={TIER_TOOLTIP}
+                style={{
+                  fontSize: "0.65rem",
+                  fontWeight: 800,
+                  padding: "0.1rem 0.35rem",
+                  borderRadius: 3,
+                  marginLeft: "0.2rem",
+                  ...tierChipStyle(leg.tier),
+                }}
+              >
+                Tier {leg.tier}
               </span>
             </span>
             <span className="ladder-leg-meta">

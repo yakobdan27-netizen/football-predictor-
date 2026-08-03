@@ -9,11 +9,13 @@ import {
   sortDropOrder,
   FILL_FROM_DB,
   LADDER_CONFIG,
+  resolveConfTiers,
 } from "./build-ladder";
 import { compareTwoHHeavy } from "@/lib/prediction-log/two-h-heavy";
 import { suggestStakeSplit } from "./stake-split";
 import type { TwoHHeavyResult } from "@/lib/prediction-log/two-h-heavy";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
+import type { ConfTier } from "./config";
 
 function fakeResult(
   id: string,
@@ -83,7 +85,7 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   };
 }
 
-// --- Top 10 selection; no padding ---
+// --- Top 10 selection; no padding below HARD_MIN ---
 {
   const ranked = Array.from({ length: 12 }, (_, i) =>
     fakeResult(`m${i}`, 0.7 - i * 0.01, 0.9)
@@ -96,6 +98,7 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   assert.equal(ladder.n, 10);
   assert.equal(ladder.rounds.length, 10);
   assert.equal(ladder.shortfallNotice, null);
+  assert.equal(ladder.mixNotice, null); // all Tier A
 }
 
 {
@@ -105,13 +108,12 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   const ladder = buildLadder({ ranked, batch: batchFrom(ranked) });
   assert.equal(ladder.n, 4);
   assert.equal(ladder.rounds.length, 4);
-  assert.ok(ladder.shortfallNotice?.includes("confidence floor"));
+  assert.ok(ladder.shortfallNotice?.includes("minimum"));
   assert.ok(ladder.shortfallNotice?.includes("Only 4"));
 }
 
-// --- Drop order = ascending p×confidence; R_k has n-k+1 legs ---
+// --- Drop order within same tier = ascending p×confidence ---
 {
-  // All conf >= floor. survival: mStrong=0.8, mMid=0.6, mWeak=0.5*0.6=0.3
   const ranked = [
     fakeResult("mStrong", 0.8, 1),
     fakeResult("mMid", 0.6, 1),
@@ -123,6 +125,7 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   assert.equal(weak?.letter, "A");
   const strong = ladder.matches.find((m) => m.matchId === "mStrong");
   assert.equal(strong?.letter, "C");
+  for (const m of ladder.matches) assert.equal(m.tier, "A");
 
   for (let k = 1; k <= 3; k++) {
     assert.equal(ladder.rounds[k - 1]!.bets, 3 - k + 1);
@@ -188,10 +191,9 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   assert.ok(stakes[1]! > stakes[0]!);
 }
 
-// --- Diversity: no league exceeds max while others qualify ---
+// --- Diversity: no league exceeds max while others qualify (Tier A) ---
 {
   const ranked: TwoHHeavyResult[] = [];
-  // Four leagues with plenty of floor-passers → fill 10 without relaxing past 3
   for (let i = 0; i < 5; i++) {
     ranked.push(fakeResult(`pl${i}`, 0.8 - i * 0.01, 0.9, "Premier League"));
   }
@@ -208,7 +210,6 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
     ranked,
     batch: batchFrom(ranked),
     maxPerLeague: 3,
-    confFloor: 0.55,
     ladderSize: 10,
   });
   const counts = ladder.selection.leagueCounts;
@@ -219,31 +220,85 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   assert.equal(ladder.n, 10);
   const sum = Object.values(counts).reduce((a, b) => a + b, 0);
   assert.equal(sum, ladder.n);
-  assert.ok(Object.keys(counts).length >= 3);
+  const tierSum =
+    ladder.selection.tierCounts.A +
+    ladder.selection.tierCounts.B +
+    ladder.selection.tierCounts.C;
+  assert.equal(tierSum, ladder.n);
   for (const m of ladder.matches) {
-    assert.ok((m.confidence ?? 0) >= 0.55);
+    assert.ok((m.confidence ?? 0) >= LADDER_CONFIG.HARD_MIN);
+    assert.equal(m.tier, "A");
   }
 }
 
-// --- Every selected clears floor ---
+// --- Tier preference: no B while unused A exists ---
 {
   const ranked = [
-    fakeResult("hi", 0.8, 0.9, "Premier League"),
-    fakeResult("lo", 0.9, 0.4, "La Liga"), // below floor
-    fakeResult("ok", 0.7, 0.6, "Serie A"),
+    fakeResult("a1", 0.6, 0.9, "Premier League"),
+    fakeResult("a2", 0.55, 0.8, "Ligue 1"),
+    fakeResult("b1", 0.95, 0.5, "Serie A"), // high p, Tier B only
+    fakeResult("c1", 0.99, 0.4, "Bundesliga"),
+  ];
+  const pick = selectDiversifiedLegs(ranked, {
+    ladderSize: 2,
+    maxPerLeague: 10,
+  });
+  assert.deepEqual(
+    pick.selected.map((r) => r.matchId).sort(),
+    ["a1", "a2"]
+  );
+  assert.equal(pick.tierById.get("a1"), "A");
+  assert.equal(pick.tierById.get("a2"), "A");
+}
+
+// --- Backfill B/C to reach 10; never below HARD_MIN ---
+{
+  const ranked: TwoHHeavyResult[] = [];
+  for (let i = 0; i < 3; i++) {
+    ranked.push(fakeResult(`a${i}`, 0.7, 0.9, "Premier League"));
+  }
+  for (let i = 0; i < 4; i++) {
+    ranked.push(fakeResult(`b${i}`, 0.7, 0.5, "Ligue 1"));
+  }
+  for (let i = 0; i < 4; i++) {
+    ranked.push(fakeResult(`c${i}`, 0.7, 0.4, "Serie A"));
+  }
+  ranked.push(fakeResult("junk", 0.99, 0.2, "La Liga")); // below HARD_MIN
+  const ladder = buildLadder({
+    ranked,
+    batch: batchFrom(ranked),
+    maxPerLeague: 10,
+    ladderSize: 10,
+  });
+  assert.equal(ladder.n, 10);
+  assert.equal(ladder.selection.tierCounts.A, 3);
+  assert.equal(ladder.selection.tierCounts.B, 4);
+  assert.equal(ladder.selection.tierCounts.C, 3);
+  assert.ok(ladder.mixNotice?.includes("Tier A"));
+  assert.ok(!ladder.matches.some((m) => m.matchId === "junk"));
+  for (const m of ladder.matches) {
+    assert.ok((m.confidence ?? 0) >= LADDER_CONFIG.HARD_MIN);
+  }
+}
+
+// --- Drop order: all C before B before A ---
+{
+  const ranked = [
+    fakeResult("ta", 0.9, 0.9, "Premier League"),
+    fakeResult("tb", 0.9, 0.5, "Ligue 1"),
+    fakeResult("tc", 0.9, 0.4, "Serie A"),
   ];
   const ladder = buildLadder({
     ranked,
     batch: batchFrom(ranked),
-    confFloor: 0.55,
+    maxPerLeague: 10,
   });
-  assert.ok(!ladder.matches.some((m) => m.matchId === "lo"));
-  for (const m of ladder.matches) {
-    assert.ok((m.confidence ?? 0) >= 0.55);
-  }
+  const tiers = ladder.matches.map((m) => m.tier);
+  assert.deepEqual(tiers, ["C", "B", "A"]);
+  assert.equal(ladder.matches[0]!.letter, "A"); // first dropped = Tier C
 }
 
-// --- maxPerLeague=10 matches old global top-10 ---
+// --- maxPerLeague=10 + enough Tier A ≡ Tier-A top-10 ---
 {
   const ranked = Array.from({ length: 15 }, (_, i) => {
     const leagues = [
@@ -260,40 +315,26 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
       leagues[i % leagues.length]!
     );
   });
-  const oldTop = [...ranked]
-    .sort(compareTwoHHeavy)
-    .slice(0, 10)
-    .map((r) => r.matchId);
-  const ladder = buildLadder({
-    ranked,
-    batch: batchFrom(ranked),
-    maxPerLeague: 10,
-    confFloor: 0.55,
-  });
-  assert.deepEqual(
-    ladder.matches
-      .slice()
-      .sort((a, b) => {
-        // selection order is drop order; compare selected set IDs to old top
-        return 0;
-      })
-      .map((m) => m.matchId)
-      .sort(),
-    [...oldTop].sort()
-  );
-  // Selection order among greedy with cap=10 should be compareTwoHHeavy order
+  const tierA = ranked
+    .filter((r) => r.confidence >= LADDER_CONFIG.CONF_TIERS.A)
+    .sort(compareTwoHHeavy);
+  const oldTop = tierA.slice(0, 10).map((r) => r.matchId);
+  assert.ok(oldTop.length === 10);
   const pick = selectDiversifiedLegs(ranked, {
     ladderSize: 10,
-    confFloor: 0.55,
     maxPerLeague: 10,
+    confFloor: LADDER_CONFIG.CONF_TIERS.A,
   });
   assert.deepEqual(
     pick.selected.map((r) => r.matchId),
     oldTop
   );
+  for (const id of pick.selected.map((r) => r.matchId)) {
+    assert.equal(pick.tierById.get(id), "A");
+  }
 }
 
-// --- Below-floor never selected for balance ---
+// --- Below HARD_MIN never selected for balance ---
 {
   const ranked = [
     fakeResult("a1", 0.8, 0.9, "Premier League"),
@@ -302,30 +343,49 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   ];
   const pick = selectDiversifiedLegs(ranked, {
     ladderSize: 10,
-    confFloor: 0.55,
     maxPerLeague: 1,
   });
   assert.ok(!pick.selected.some((r) => r.matchId === "weak"));
   assert.equal(pick.qualifiedCount, 2);
 }
 
-// --- TIE_BAND: drop most-represented league first when survival near-equal ---
+// --- TIE_BAND within same tier: drop most-represented league first ---
 {
-  const a = fakeResult("pl1", 0.7, 0.8, "Premier League"); // survival 0.56
-  const b = fakeResult("pl2", 0.7, 0.8, "Premier League"); // survival 0.56
-  const c = fakeResult("sa1", 0.7, 0.8, "Serie A"); // survival 0.56
-  const ordered = sortDropOrder([a, b, c], LADDER_CONFIG.TIE_BAND);
-  // Two PL + one SA → PL thinned first (two of first two drops should be PL-heavy)
+  const a = fakeResult("pl1", 0.7, 0.8, "Premier League");
+  const b = fakeResult("pl2", 0.7, 0.8, "Premier League");
+  const c = fakeResult("sa1", 0.7, 0.8, "Serie A");
+  const tierById = new Map<string, ConfTier>([
+    ["pl1", "A"],
+    ["pl2", "A"],
+    ["sa1", "A"],
+  ]);
+  const ordered = sortDropOrder([a, b, c], {
+    tieBand: LADDER_CONFIG.TIE_BAND,
+    tierById,
+  });
   const firstTwoLeagues = ordered.slice(0, 2).map((r) => r.league);
   assert.equal(firstTwoLeagues.filter((l) => l === "Premier League").length, 2);
   assert.equal(ordered[2]!.league, "Serie A");
 }
 
-// --- League attached on LadderMatch ---
+// --- League + tier attached on LadderMatch ---
 {
   const ranked = [fakeResult("x", 0.7, 0.9, "Bundesliga")];
   const ladder = buildLadder({ ranked, batch: batchFrom(ranked) });
   assert.equal(ladder.matches[0]!.league, "Bundesliga");
+  assert.equal(ladder.matches[0]!.tier, "A");
+}
+
+// --- resolveConfTiers ---
+{
+  const t = resolveConfTiers(0.55);
+  assert.equal(t.A, 0.55);
+  assert.equal(t.B, 0.45);
+  assert.equal(t.C, 0.35);
+  const low = resolveConfTiers(0.4);
+  assert.equal(low.A, 0.4);
+  assert.equal(low.B, 0.35);
+  assert.equal(low.C, 0.35);
 }
 
 console.log("ladder build-ladder tests passed");
