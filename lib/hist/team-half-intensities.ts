@@ -13,18 +13,10 @@ import type {
   TeamHalfProfile,
   VenueSide,
 } from "@/lib/prediction-log/two-h-heavy/types";
-import { currentHistSeason } from "./seasons";
-
-/** Exponential decay half-life in seasons (age 0 = current). */
-const SEASON_HALF_LIFE = 3;
+import { currentHistSeason, histSeasonWeight, histWindowMinSeason } from "./seasons";
 
 function teamKey(name: string): string {
   return standardizeTeamName(name).trim().toLowerCase();
-}
-
-function seasonWeight(season: number, current: number): number {
-  const age = Math.max(0, current - season);
-  return Math.pow(0.5, age / SEASON_HALF_LIFE);
 }
 
 async function htFromGoals(
@@ -67,6 +59,7 @@ export async function computeTeamHalfFromHist(
   const limit = opts?.limit ?? 40;
   const minMatches = opts?.minMatches ?? MIN_MATCHES;
   const current = currentHistSeason();
+  const minSeason = histWindowMinSeason();
 
   const rows = await db
     .select({
@@ -86,6 +79,7 @@ export async function computeTeamHalfFromHist(
     .where(
       and(
         eq(histFixtures.leagueId, leagueId),
+        gte(histFixtures.season, minSeason),
         or(
           eq(histFixtures.homeTeam, standardizeTeamName(team)),
           eq(histFixtures.awayTeam, standardizeTeamName(team)),
@@ -125,7 +119,7 @@ export async function computeTeamHalfFromHist(
     }
     const ftH = row.ftHome!;
     const ftA = row.ftAway!;
-    const w = seasonWeight(row.season, current);
+    const w = histSeasonWeight(row.season, current);
     const date =
       row.dateUtc instanceof Date
         ? row.dateUtc.toISOString().slice(0, 10)
@@ -222,7 +216,7 @@ export async function loadHistProfilesForTeams(
   return out;
 }
 
-/** Optional league FT goal average when sample ≥ minMatches. */
+/** Optional league FT goal average when sample ≥ minMatches (11-season window, weighted). */
 export async function leagueGoalAverageFromHist(
   league: string,
   opts?: { minMatches?: number }
@@ -231,10 +225,13 @@ export async function leagueGoalAverageFromHist(
   if (leagueId == null) return null;
   const minMatches = opts?.minMatches ?? MIN_MATCHES;
   const db = await getDb();
-  const [row] = await db
+  const current = currentHistSeason();
+  const minSeason = histWindowMinSeason();
+  const rows = await db
     .select({
-      n: sql<number>`count(*)::int`,
-      avg: sql<number>`avg((${histFixtures.ftHome} + ${histFixtures.ftAway})::float)`,
+      season: histFixtures.season,
+      ftHome: histFixtures.ftHome,
+      ftAway: histFixtures.ftAway,
     })
     .from(histFixtures)
     .where(
@@ -242,11 +239,17 @@ export async function leagueGoalAverageFromHist(
         eq(histFixtures.leagueId, leagueId),
         isNotNull(histFixtures.ftHome),
         isNotNull(histFixtures.ftAway),
-        gte(histFixtures.season, currentHistSeason() - 7)
+        gte(histFixtures.season, minSeason)
       )
     );
-  const n = Number(row?.n ?? 0);
-  const avg = Number(row?.avg ?? NaN);
-  if (n < minMatches || !Number.isFinite(avg)) return null;
-  return avg;
+  if (rows.length < minMatches) return null;
+  let wSum = 0;
+  let gSum = 0;
+  for (const r of rows) {
+    const w = histSeasonWeight(r.season, current);
+    wSum += w;
+    gSum += (r.ftHome! + r.ftAway!) * w;
+  }
+  if (wSum <= 0) return null;
+  return gSum / wSum;
 }

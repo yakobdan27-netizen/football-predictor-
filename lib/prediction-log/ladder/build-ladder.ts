@@ -47,6 +47,8 @@ export interface LadderRound {
   legLetters: string[];
   /** Summary of legs for table column. */
   legsSummary: string;
+  /** Per-leg P(2H>1H) percents, strongest-first (e.g. "J 72.0% · I 68.1%"). */
+  leg_percents_display: string;
   /** Risky letters (p < RISK_THRESHOLD) still included. */
   risky_matches: string[];
   risky_display: string;
@@ -446,6 +448,13 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
     else if (k === n) legsSummary = "best only";
     else legsSummary = `drop weakest ${k - 1}`;
 
+    const leg_percents_display = keptStrongFirst
+      .map((r) => {
+        const m = matchById.get(r.matchId)!;
+        return `${m.letter} ${m.p2h_display}`;
+      })
+      .join(" · ");
+
     rounds.push({
       round: k,
       label: `R${k}`,
@@ -453,6 +462,7 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
       legIds,
       legLetters,
       legsSummary,
+      leg_percents_display,
       risky_matches: risky,
       risky_display: risky.length ? risky.join(", ") : "—",
       combined_prob: combined,

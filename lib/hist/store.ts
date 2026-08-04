@@ -24,16 +24,13 @@ import { histJobKeys } from "./seasons";
 export async function ensureHistJobs(): Promise<number> {
   const db = await getDb();
   const keys = histJobKeys();
-  const [existing] = await db.select({ n: count() }).from(histJobs);
-  if ((existing?.n ?? 0) >= keys.length) {
-    return keys.length;
-  }
   const now = new Date();
+  // Always upsert missing keys (onConflictDoNothing). Never resets done jobs.
   const values = keys.map((key) => ({
     leagueId: key.leagueId,
     season: key.season,
     leagueName: key.leagueName,
-    status: "pending",
+    status: "pending" as const,
     cursorFixtureId: null,
     fixturesTotal: 0,
     fixturesImported: 0,
@@ -44,7 +41,6 @@ export async function ensureHistJobs(): Promise<number> {
     finishedAt: null,
     updatedAt: now,
   }));
-  // Batch insert — neon-http is slow per round-trip
   const chunkSize = 10;
   for (let i = 0; i < values.length; i += chunkSize) {
     const chunk = values.slice(i, i + chunkSize);

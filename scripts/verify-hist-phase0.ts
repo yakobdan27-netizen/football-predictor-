@@ -1,5 +1,5 @@
 /**
- * Phase 0 preconditions: API key, /status quota, Big-5 league IDs, 7 completed seasons.
+ * Phase 0 preconditions: API key, /status quota, Big-5 league IDs, 11 completed seasons.
  * Run: npx tsx scripts/verify-hist-phase0.ts
  */
 import { readFileSync, existsSync } from "node:fs";
@@ -115,9 +115,9 @@ async function main() {
   }
 
   const seasons = histSeasonYears({ includeCurrent: false });
-  console.log(`PASS seasons (7 completed): ${seasons.join(", ")}`);
-  if (seasons.length !== 7) {
-    console.error(`FAIL seasons: expected 7, got ${seasons.length}`);
+  console.log(`PASS seasons (11 completed): ${seasons.join(", ")}`);
+  if (seasons.length !== 11) {
+    console.error(`FAIL seasons: expected 11, got ${seasons.length}`);
     process.exit(1);
   }
 

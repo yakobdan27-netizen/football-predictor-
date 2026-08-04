@@ -1,5 +1,5 @@
 /**
- * Season window for hist_* backfill: previous 7 completed + current.
+ * Season window for hist_* backfill: previous 11 completed + current.
  */
 import { LEAGUE_API_IDS, apiSeasonFromDate } from "@/lib/football-api/leagues";
 import type { LeagueOption } from "@/lib/prediction-log/markets-config";
@@ -12,7 +12,21 @@ export const HIST_BIG5_LEAGUES: Array<{ name: LeagueOption; id: number }> = [
   { name: "Ligue 1", id: LEAGUE_API_IDS["Ligue 1"] },
 ];
 
-export const HIST_COMPLETED_SEASON_COUNT = 7;
+/** Completed seasons in the permanent reference window (plus current when included). */
+export const HIST_COMPLETED_SEASON_COUNT = 11;
+
+/**
+ * Exponential season decay: w = base ^ seasons_ago.
+ * Current/most-recent completed relative to `current` = 1.0.
+ */
+export const HIST_SEASON_DECAY_BASE = 0.8;
+
+export function histSeasonWeight(
+  season: number,
+  current: number = currentHistSeason()
+): number {
+  return Math.pow(HIST_SEASON_DECAY_BASE, Math.max(0, current - season));
+}
 
 export function todayIsoDate(d: Date = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -24,7 +38,7 @@ export function currentHistSeason(today: Date = new Date()): number {
 }
 
 /**
- * Completed seasons: previous 7 start years (e.g. Aug 2026 → 2019…2025).
+ * Completed seasons: previous 11 start years (e.g. Aug 2026 → 2015…2025).
  * Plus current when includeCurrent (default true).
  */
 export function histSeasonYears(opts?: {
@@ -38,6 +52,12 @@ export function histSeasonYears(opts?: {
   }
   if (opts?.includeCurrent === false) return completed;
   return [...completed, current];
+}
+
+/** Oldest season start year included in the completed window. */
+export function histWindowMinSeason(today?: Date): number {
+  const current = currentHistSeason(today);
+  return current - HIST_COMPLETED_SEASON_COUNT;
 }
 
 export type HistJobKey = {

@@ -5,6 +5,7 @@ import {
   attachComboScoreGrids,
   batchEligibleForComboView,
   ensureComboRecommendedShell,
+  matchesNeedingComboGrid,
 } from "@/lib/prediction-log/prepare-batch-combos";
 import { loadClubRecordsForBatch } from "@/lib/prediction-log/club-record-insights";
 import {
@@ -16,7 +17,7 @@ import type { PredictionBatch } from "@/lib/prediction-log/types";
 
 /**
  * Prepare every batch with matches for Combined Odds:
- * shell recommended fixtures + attach score grids (async).
+ * shell recommended fixtures + attach score grids (club first, then hist-weighted).
  */
 export function usePreparedComboBatches(batches: PredictionBatch[]) {
   const eligible = useMemo(
@@ -47,7 +48,39 @@ export function usePreparedComboBatches(batches: PredictionBatch[]) {
             const clubRecords =
               (await loadClubRecordsForBatchFromCache(shelled).catch(() => null)) ??
               (await loadClubRecordsForBatch(shelled, clubIndex, fetchClubRecord));
-            next.push(attachComboScoreGrids(shelled, clubRecords, clubIndex, batches));
+            let withGrids = attachComboScoreGrids(
+              shelled,
+              clubRecords,
+              clubIndex,
+              batches
+            );
+            const needHist = matchesNeedingComboGrid(withGrids);
+            if (needHist.length > 0) {
+              try {
+                const res = await fetch("/api/hist/combo-grids", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ matches: needHist }),
+                });
+                if (res.ok) {
+                  const data = (await res.json()) as {
+                    grids?: Record<string, number[][]>;
+                  };
+                  if (data.grids && Object.keys(data.grids).length > 0) {
+                    withGrids = attachComboScoreGrids(
+                      withGrids,
+                      clubRecords,
+                      clubIndex,
+                      batches,
+                      data.grids
+                    );
+                  }
+                }
+              } catch {
+                // hist optional — keep club-only grids
+              }
+            }
+            next.push(withGrids);
           } catch {
             next.push(shelled);
           }

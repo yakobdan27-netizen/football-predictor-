@@ -205,13 +205,15 @@ function matchHasGrid(rm: RecommendedMatch): boolean {
 
 /**
  * Attach score grids to every recommended match that lacks one.
- * Uses live club meta only — never JSON seed λs as fabricated evidence.
+ * Uses live club meta first; optional histGrids fill thin matches before API.
+ * Never JSON seed λs as fabricated evidence.
  */
 export function attachComboScoreGrids(
   batch: PredictionBatch,
   clubRecords: Record<string, ClubRecord>,
   clubIndex: ClubIndex | null,
-  allBatches: PredictionBatch[]
+  allBatches: PredictionBatch[],
+  histGrids?: Record<string, number[][]>
 ): PredictionBatch {
   const shelled = ensureComboRecommendedShell(batch);
   if (!shelled.recommended) return shelled;
@@ -221,26 +223,38 @@ export function attachComboScoreGrids(
     const logMatch = shelled.matches.find((m) => m.id === rm.id);
     if (!logMatch) return rm;
     const league = matchLeague(logMatch, shelled.league);
-    const grid = scoreGridForMatch(logMatch, league, clubRecords, clubIndex, allBatches);
+    let grid = scoreGridForMatch(logMatch, league, clubRecords, clubIndex, allBatches);
+    let fromHist = false;
+    if (!grid && histGrids?.[rm.id]) {
+      grid = histGrids[rm.id]!;
+      fromHist = true;
+    }
     if (!grid) return rm;
 
     const predictions = { ...rm.predictions };
     const keys = Object.keys(predictions) as LogMarketKey[];
+    const attach = (pick: RecommendedPick) => {
+      const next = attachGridToPick(pick, grid);
+      if (!fromHist) return next;
+      return {
+        ...next,
+        judgment: next.judgment
+          ? `${next.judgment} · hist-weighted sample`
+          : "Hist-weighted sample",
+      };
+    };
     if (keys.length === 0) {
-      predictions["1x2"] = attachGridToPick(
-        {
-          prediction: "home",
-          confidence: 50,
-          action: "keep",
-          judgment: "Combo grid shell",
-          accepted: true,
-        },
-        grid
-      );
+      predictions["1x2"] = attach({
+        prediction: "home",
+        confidence: 50,
+        action: "keep",
+        judgment: "Combo grid shell",
+        accepted: true,
+      });
     } else {
       for (const key of keys) {
         const pick = predictions[key];
-        if (pick) predictions[key] = attachGridToPick(pick, grid);
+        if (pick) predictions[key] = attach(pick);
       }
     }
     return { ...rm, predictions };
@@ -250,6 +264,35 @@ export function attachComboScoreGrids(
     ...shelled,
     recommended: { ...shelled.recommended, matches },
   };
+}
+
+/** Match ids that still lack a score grid after club attach. */
+export function matchesNeedingComboGrid(batch: PredictionBatch): Array<{
+  matchId: string;
+  homeTeam: string;
+  awayTeam: string;
+  league: string;
+}> {
+  const shelled = ensureComboRecommendedShell(batch);
+  if (!shelled.recommended) return [];
+  const out: Array<{
+    matchId: string;
+    homeTeam: string;
+    awayTeam: string;
+    league: string;
+  }> = [];
+  for (const rm of shelled.recommended.matches) {
+    if (matchHasGrid(rm)) continue;
+    const logMatch = shelled.matches.find((m) => m.id === rm.id);
+    if (!logMatch?.homeTeam || !logMatch.awayTeam) continue;
+    out.push({
+      matchId: rm.id,
+      homeTeam: logMatch.homeTeam,
+      awayTeam: logMatch.awayTeam,
+      league: matchLeague(logMatch, shelled.league),
+    });
+  }
+  return out;
 }
 
 export function batchEligibleForComboView(batch: PredictionBatch): boolean {

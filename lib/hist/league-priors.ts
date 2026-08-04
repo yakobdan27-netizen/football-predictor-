@@ -1,8 +1,8 @@
 /**
- * Hist-derived league scoring priors (goals/game, O/U 2.5, BTTS).
- * Stored on hist_meta.league_priors_json; sync readers use in-memory cache.
+ * Hist-derived league scoring priors (goals/game, O/U 2.5, BTTS)
+ * with 11-season recency weighting. Stored on hist_meta.league_priors_json.
  */
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { histFixtures, histMeta } from "@/lib/db/schema";
 import {
@@ -10,7 +10,13 @@ import {
   LEAGUE_TOTAL,
 } from "@/lib/prediction-log/two-h-heavy/static-league-totals";
 import { setLeagueTotalCache } from "./league-total-cache";
-import { HIST_BIG5_LEAGUES, currentHistSeason } from "./seasons";
+import {
+  HIST_BIG5_LEAGUES,
+  HIST_COMPLETED_SEASON_COUNT,
+  currentHistSeason,
+  histSeasonWeight,
+  histWindowMinSeason,
+} from "./seasons";
 
 /** Local fallbacks — avoid circular import with two-h-heavy/config. */
 const MIN_MATCHES = 8;
@@ -19,6 +25,7 @@ export type LeaguePriorRow = {
   league: string;
   leagueId: number;
   n: number;
+  weightedN: number;
   goalsPerGame: number;
   over25Rate: number | null;
   bttsRate: number | null;
@@ -35,16 +42,16 @@ export async function recomputeLeaguePriors(): Promise<{
 }> {
   const db = await getDb();
   const current = currentHistSeason();
+  const minSeason = histWindowMinSeason();
   const priors: LeaguePriorRow[] = [];
   const stored: Record<string, LeaguePriorRow> = {};
 
   for (const league of HIST_BIG5_LEAGUES) {
-    const [row] = await db
+    const rows = await db
       .select({
-        n: sql<number>`count(*)::int`,
-        avg: sql<number>`avg((${histFixtures.ftHome} + ${histFixtures.ftAway})::float)`,
-        over25: sql<number>`avg(case when (${histFixtures.ftHome} + ${histFixtures.ftAway}) > 2.5 then 1.0 else 0.0 end)`,
-        btts: sql<number>`avg(case when ${histFixtures.ftHome} > 0 and ${histFixtures.ftAway} > 0 then 1.0 else 0.0 end)`,
+        season: histFixtures.season,
+        ftHome: histFixtures.ftHome,
+        ftAway: histFixtures.ftAway,
       })
       .from(histFixtures)
       .where(
@@ -52,32 +59,39 @@ export async function recomputeLeaguePriors(): Promise<{
           eq(histFixtures.leagueId, league.id),
           isNotNull(histFixtures.ftHome),
           isNotNull(histFixtures.ftAway),
-          sql`${histFixtures.season} >= ${current - 7}`
+          gte(histFixtures.season, minSeason)
         )
       );
 
-    const n = Number(row?.n ?? 0);
-    const avg = Number(row?.avg ?? NaN);
+    let wSum = 0;
+    let gSum = 0;
+    let overSum = 0;
+    let bttsSum = 0;
+    for (const r of rows) {
+      const w = histSeasonWeight(r.season, current);
+      const total = r.ftHome! + r.ftAway!;
+      wSum += w;
+      gSum += total * w;
+      if (total > 2.5) overSum += w;
+      if (r.ftHome! > 0 && r.ftAway! > 0) bttsSum += w;
+    }
+
+    const n = rows.length;
     const fallback = LEAGUE_TOTAL[league.name] ?? DEFAULT_LEAGUE_TOTAL;
     const prior: LeaguePriorRow = {
       league: league.name,
       leagueId: league.id,
       n,
+      weightedN: wSum,
       goalsPerGame:
-        n >= MIN_MATCHES && Number.isFinite(avg) ? avg : fallback,
-      over25Rate:
-        n >= MIN_MATCHES && Number.isFinite(Number(row?.over25))
-          ? Number(row!.over25)
-          : null,
-      bttsRate:
-        n >= MIN_MATCHES && Number.isFinite(Number(row?.btts))
-          ? Number(row!.btts)
-          : null,
+        n >= MIN_MATCHES && wSum > 0 ? gSum / wSum : fallback,
+      over25Rate: n >= MIN_MATCHES && wSum > 0 ? overSum / wSum : null,
+      bttsRate: n >= MIN_MATCHES && wSum > 0 ? bttsSum / wSum : null,
     };
     priors.push(prior);
     stored[league.name] = prior;
     console.info(
-      `[hist] league prior ${league.name}: gpg=${prior.goalsPerGame.toFixed(3)} n=${n} (fallback_const=${fallback})`
+      `[hist] league prior ${league.name}: gpg=${prior.goalsPerGame.toFixed(3)} n=${n} wN=${wSum.toFixed(1)} (window=${HIST_COMPLETED_SEASON_COUNT})`
     );
   }
 
@@ -87,14 +101,14 @@ export async function recomputeLeaguePriors(): Promise<{
     .values({
       id: 1,
       leaguePriorsJson: JSON.stringify(stored),
-      lastSummary: `league priors recomputed ${now.toISOString()}`,
+      lastSummary: `league priors recomputed ${now.toISOString()} (${HIST_COMPLETED_SEASON_COUNT} seasons weighted)`,
       updatedAt: now,
     })
     .onConflictDoUpdate({
       target: histMeta.id,
       set: {
         leaguePriorsJson: JSON.stringify(stored),
-        lastSummary: `league priors recomputed ${now.toISOString()}`,
+        lastSummary: `league priors recomputed ${now.toISOString()} (${HIST_COMPLETED_SEASON_COUNT} seasons weighted)`,
         updatedAt: now,
       },
     });

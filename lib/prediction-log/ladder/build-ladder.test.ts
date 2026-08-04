@@ -133,6 +133,8 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   assert.deepEqual(ladder.rounds[2]!.legIds, ["mStrong"]);
   assert.ok(ladder.rounds[0]!.legIds.includes("mWeak"));
   assert.ok(!ladder.rounds[1]!.legIds.includes("mWeak"));
+  assert.ok(ladder.rounds[0]!.leg_percents_display.includes("%"));
+  assert.ok(ladder.rounds[0]!.leg_percents_display.includes("C "));
 }
 
 // --- Combined product ---

@@ -1,4 +1,12 @@
-export { histSeasonYears, histJobKeys, HIST_BIG5_LEAGUES } from "./seasons";
+export {
+  histSeasonYears,
+  histJobKeys,
+  histSeasonWeight,
+  histWindowMinSeason,
+  HIST_BIG5_LEAGUES,
+  HIST_COMPLETED_SEASON_COUNT,
+  HIST_SEASON_DECAY_BASE,
+} from "./seasons";
 export { runHistPreflight, readHistMeta } from "./preflight";
 export { runHistBackfillChunk } from "./backfill";
 export type { HistBackfillChunkSummary } from "./backfill";
@@ -29,3 +37,14 @@ export {
   recomputeLeaguePriors,
   warmLeaguePriorsCache,
 } from "./league-priors";
+export {
+  leagueMarketBasesFromHist,
+  h2hFromHist,
+  scoreGridFromHist,
+  comboHistGridsForMatches,
+} from "./combo-samples";
+export type {
+  HistLeagueMarketBases,
+  HistH2HSample,
+  HistScoreGridResult,
+} from "./combo-samples";

@@ -1,5 +1,5 @@
 /**
- * Read-only hist_* coverage audit for 5 leagues × 7 completed seasons (35 buckets).
+ * Read-only hist_* coverage audit for 5 leagues × 11 completed seasons (55 buckets).
  * Never calls API-Football. Uses batched SQL for speed.
  */
 import { and, eq, inArray, sql } from "drizzle-orm";

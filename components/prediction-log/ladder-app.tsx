@@ -371,7 +371,7 @@ export function LadderApp() {
             {ladder.matches
               .map(
                 (m) =>
-                  `${m.letter}=${m.homeTeam} vs ${m.awayTeam} (Tier ${m.tier}, ${shortLeagueLabel(m.league)})`
+                  `${m.letter}=${m.homeTeam} vs ${m.awayTeam} ${m.p2h_display} (Tier ${m.tier}, ${shortLeagueLabel(m.league)})`
               )
               .join(" · ")}
           </div>
@@ -383,11 +383,12 @@ export function LadderApp() {
                   <th>Round</th>
                   <th>Bets</th>
                   <th>Legs</th>
-                  <th>Risky Matches</th>
-                  <th title="Product of P(2H>1H) — independent-leg approximation">
-                    Combined Prob
+                  <th title="Each leg’s model P(2H&gt;1H)">Match %</th>
+                  <th>Risky</th>
+                  <th title="Product of individual match % — independent-leg approximation">
+                    Combined
                   </th>
-                  <th>Risk Exposure</th>
+                  <th>Risk</th>
                   {stakes ? <th>Suggested stake</th> : null}
                 </tr>
               </thead>
@@ -461,6 +462,9 @@ function RoundTableRows({
         </td>
         <td>{round.bets}</td>
         <td>{round.legsSummary}</td>
+        <td style={{ fontVariantNumeric: "tabular-nums", maxWidth: "22rem" }}>
+          {round.leg_percents_display}
+        </td>
         <td>{round.risky_display}</td>
         <td>{round.combined_display}</td>
         <td>
@@ -472,7 +476,7 @@ function RoundTableRows({
       </tr>
       {expanded ? (
         <tr className="ladder-legs-row">
-          <td colSpan={stake != null ? 7 : 6}>
+          <td colSpan={stake != null ? 8 : 7}>
             <LegList batchId={batchId} legs={legs} />
           </td>
         </tr>
@@ -507,6 +511,9 @@ function RoundCard({
         </span>
       </button>
       <div className="ladder-round-card-meta">
+        <span style={{ fontVariantNumeric: "tabular-nums" }}>
+          Match %: {round.leg_percents_display}
+        </span>
         <span>Risky: {round.risky_display}</span>
         <span>Combined: {round.combined_display}</span>
         {stake != null ? <span>Stake: {stake.toFixed(2)}</span> : null}
@@ -556,7 +563,11 @@ function LegList({
               </span>
             </span>
             <span className="ladder-leg-meta">
-              {leg.kickoff} · P(2H&gt;1H) {leg.p2h_display} · conf {leg.confidence_display}
+              <strong style={{ fontVariantNumeric: "tabular-nums" }}>{leg.p2h_display}</strong>
+              {" · "}
+              conf {leg.confidence_display}
+              {" · "}
+              {leg.kickoff}
             </span>
           </Link>
         </li>
