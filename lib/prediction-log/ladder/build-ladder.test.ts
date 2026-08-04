@@ -265,7 +265,7 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   for (let i = 0; i < 4; i++) {
     ranked.push(fakeResult(`c${i}`, 0.7, 0.4, "Serie A"));
   }
-  ranked.push(fakeResult("junk", 0.99, 0.2, "La Liga")); // below HARD_MIN
+  ranked.push(fakeResult("junk", 0.99, 0.05, "La Liga")); // below HARD_MIN
   const ladder = buildLadder({
     ranked,
     batch: batchFrom(ranked),
@@ -341,7 +341,7 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   const ranked = [
     fakeResult("a1", 0.8, 0.9, "Premier League"),
     fakeResult("a2", 0.79, 0.9, "Premier League"),
-    fakeResult("weak", 0.99, 0.3, "La Liga"),
+    fakeResult("weak", 0.99, 0.05, "La Liga"),
   ];
   const pick = selectDiversifiedLegs(ranked, {
     ladderSize: 10,
@@ -383,11 +383,15 @@ function batchFrom(ranked: TwoHHeavyResult[]): PredictionBatch {
   const t = resolveConfTiers(0.55);
   assert.equal(t.A, 0.55);
   assert.equal(t.B, 0.45);
-  assert.equal(t.C, 0.35);
+  assert.equal(t.C, 0.1);
   const low = resolveConfTiers(0.4);
   assert.equal(low.A, 0.4);
-  assert.equal(low.B, 0.35);
-  assert.equal(low.C, 0.35);
+  assert.equal(low.B, 0.3);
+  assert.equal(low.C, 0.1);
+  const floor = resolveConfTiers(0.1);
+  assert.equal(floor.A, 0.1);
+  assert.equal(floor.B, 0.1);
+  assert.equal(floor.C, 0.1);
 }
 
 console.log("ladder build-ladder tests passed");

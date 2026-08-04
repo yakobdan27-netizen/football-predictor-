@@ -235,7 +235,7 @@ export function LadderApp() {
           Tier A floor ({confFloor.toFixed(2)})
           <input
             type="range"
-            min={0.4}
+            min={0.1}
             max={0.8}
             step={0.05}
             value={confFloor}
