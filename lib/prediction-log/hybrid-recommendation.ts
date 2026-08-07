@@ -1,6 +1,6 @@
 /**
- * 50/50 hybrid recommendation confidence:
- * final = (AI learner score × 0.5) + (system calculation score × 0.5)
+ * Hybrid recommendation confidence via canonical 60/40 blend:
+ * final = (API-DB system score × 0.6) + (Manual/AI learner score × 0.4)
  *
  * AI score defaults to neutral 50 until ≥20 scored manual picks exist.
  * Non-blocking — never prevents recommendations.
@@ -47,11 +47,19 @@ import {
   getL1CardFromStore,
   type L1SeasonRosterStore,
 } from "./l1-season-roster";
+import {
+  PREDICTION_WEIGHTS,
+  blendBadgeLabel,
+  weightedEstimate,
+  type BlendSource,
+} from "./prediction-weights";
 import { seasonForDate } from "./season";
 import type { LearnerStatsStore, LogMarketKey, RecommendedPick } from "./types";
 
-export const HYBRID_AI_WEIGHT = 0.5;
-export const HYBRID_SYSTEM_WEIGHT = 0.5;
+/** @deprecated Use PREDICTION_WEIGHTS.manualAi — kept as alias for one release. */
+export const HYBRID_AI_WEIGHT = PREDICTION_WEIGHTS.manualAi;
+/** @deprecated Use PREDICTION_WEIGHTS.apiDb — kept as alias for one release. */
+export const HYBRID_SYSTEM_WEIGHT = PREDICTION_WEIGHTS.apiDb;
 /** Brief: minimum manual scored picks before AI score is non-neutral. */
 export const HYBRID_AI_MIN_SAMPLES = 20;
 export const HYBRID_NEUTRAL_AI_SCORE = 50;
@@ -67,6 +75,7 @@ export interface HybridRecommendationResult {
   systemContribution: number;
   aiContributionWeight: number;
   systemContributionWeight: number;
+  blendSource: BlendSource;
   recommendation: HybridRecommendationLevel;
   confidenceBand: ConfidenceBand;
   aiSamples: number;
@@ -319,11 +328,17 @@ export function calculateHybridRecommendation(
 ): HybridRecommendationResult {
   const systemCalculationScore = clampScore(systemScore);
   const aiLearnerScore = clampScore(aiScore);
-  const hybridConfidence = clampScore(
-    aiLearnerScore * HYBRID_AI_WEIGHT + systemCalculationScore * HYBRID_SYSTEM_WEIGHT
-  );
-  const aiContribution = clampScore(aiLearnerScore * HYBRID_AI_WEIGHT);
-  const systemContribution = clampScore(systemCalculationScore * HYBRID_SYSTEM_WEIGHT);
+  // weightedEstimate(apiDerived, manualAi) — API-DB first
+  const blend =
+    weightedEstimate(systemCalculationScore, aiLearnerScore) ?? {
+      value: systemCalculationScore,
+      source: "api_only" as const,
+      apiWeight: 1,
+      manualAiWeight: 0,
+    };
+  const hybridConfidence = clampScore(blend.value);
+  const aiContribution = clampScore(aiLearnerScore * blend.manualAiWeight);
+  const systemContribution = clampScore(systemCalculationScore * blend.apiWeight);
   const aiNeutral = opts?.aiNeutral ?? false;
   const aiSamples = opts?.aiSamples ?? 0;
 
@@ -333,8 +348,9 @@ export function calculateHybridRecommendation(
     hybridConfidence,
     aiContribution,
     systemContribution,
-    aiContributionWeight: HYBRID_AI_WEIGHT,
-    systemContributionWeight: HYBRID_SYSTEM_WEIGHT,
+    aiContributionWeight: blend.manualAiWeight,
+    systemContributionWeight: blend.apiWeight,
+    blendSource: blend.source,
     recommendation: hybridRecommendationLevel(hybridConfidence),
     confidenceBand: confidenceBand(hybridConfidence),
     aiSamples,
@@ -343,7 +359,7 @@ export function calculateHybridRecommendation(
   };
 }
 
-/** Apply 50/50 hybrid fields onto a recommended pick (after system pFinal is set). */
+/** Apply 60/40 hybrid fields onto a recommended pick (after system pFinal is set). */
 export function applyHybridToRecommendedPick(
   pick: RecommendedPick,
   stats: LearnerStatsStore | null | undefined,
@@ -359,9 +375,10 @@ export function applyHybridToRecommendedPick(
     aiNeutral: ai.aiNeutral,
   });
 
+  const blendLabel = blendBadgeLabel(hybrid.blendSource);
   const breakdownParts = [
     pick.confidenceBreakdown,
-    `Hybrid 50/50 — ${hybrid.breakdownLabel} → ${hybrid.hybridConfidence}% (${hybrid.recommendation})`,
+    `${blendLabel} — ${hybrid.breakdownLabel} → ${hybrid.hybridConfidence}% (${hybrid.recommendation})`,
     ai.aiNeutral
       ? `AI neutral (${HYBRID_NEUTRAL_AI_SCORE}) until ${HYBRID_AI_MIN_SAMPLES} scored picks (${ai.samples} so far).`
       : `AI from ${ai.samples} scored picks.`,
@@ -379,6 +396,7 @@ export function applyHybridToRecommendedPick(
     hybridRecommendation: hybrid.recommendation,
     aiContributionWeight: hybrid.aiContributionWeight,
     systemContributionWeight: hybrid.systemContributionWeight,
+    blendSource: hybrid.blendSource,
     learnerConfidence: hybrid.aiLearnerScore,
     confidence: hybrid.hybridConfidence,
     confidenceBand: hybrid.confidenceBand,

@@ -32,7 +32,7 @@ loadEnvFile(".env");
 async function main() {
   const { ensureSchema } = await import("../lib/db/init");
   const { runHistPreflight } = await import("../lib/hist/preflight");
-  const { histSeasonYears, HIST_BIG5_LEAGUES } = await import(
+  const { histSeasonYears, HIST_LEAGUES } = await import(
     "../lib/hist/seasons"
   );
   const { ensureHistJobs, histJobsSummary } = await import("../lib/hist/store");
@@ -57,7 +57,7 @@ async function main() {
   console.log("SEASONS", histSeasonYears());
   console.log(
     "LEAGUES",
-    HIST_BIG5_LEAGUES.map((l) => `${l.id}:${l.name}`).join(", ")
+    HIST_LEAGUES.map((l) => `${l.id}:${l.name}(${l.type})`).join(", ")
   );
   console.log("ensureHistJobs…");
   await ensureHistJobs();

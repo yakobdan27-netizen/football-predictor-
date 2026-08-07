@@ -9,15 +9,20 @@ import {
   hybridRecommendationLevel,
 } from "./hybrid-recommendation";
 import { emptyLearnerStats } from "./ai-learner";
+import { PREDICTION_WEIGHTS, blendBadgeLabel } from "./prediction-weights";
 import type { RecommendedPick } from "./types";
 
-test("50/50 weighting is mathematically correct", () => {
+test("60/40 weighting is mathematically correct", () => {
   const r = calculateHybridRecommendation(68, 60);
-  assert.equal(r.hybridConfidence, 64);
-  assert.equal(r.aiContribution, 30);
-  assert.equal(r.systemContribution, 34);
+  // 0.6*68 + 0.4*60 = 40.8 + 24 = 64.8
+  assert.equal(r.hybridConfidence, 64.8);
+  assert.equal(r.aiContribution, 24);
+  assert.equal(r.systemContribution, 40.8);
+  assert.equal(r.aiContributionWeight, PREDICTION_WEIGHTS.manualAi);
+  assert.equal(r.systemContributionWeight, PREDICTION_WEIGHTS.apiDb);
+  assert.equal(r.blendSource, "blended");
   assert.equal(r.recommendation, "MODERATE");
-  assert.equal(r.breakdownLabel, "AI: 30% | System: 34%");
+  assert.equal(r.breakdownLabel, "AI: 24% | System: 40.8%");
 });
 
 test("insufficient AI samples defaults to neutral 50", () => {
@@ -31,8 +36,8 @@ test("insufficient AI samples defaults to neutral 50", () => {
     aiSamples: ai.samples,
     aiNeutral: ai.aiNeutral,
   });
-  // (50*0.5) + (80*0.5) = 65
-  assert.equal(hybrid.hybridConfidence, 65);
+  // (80*0.6) + (50*0.4) = 48 + 20 = 68
+  assert.equal(hybrid.hybridConfidence, 68);
   assert.equal(hybrid.recommendation, "STRONG");
 });
 
@@ -66,10 +71,11 @@ test("applyHybridToRecommendedPick sets hybrid fields from pFinal", () => {
   const out = applyHybridToRecommendedPick(pick, stats);
   assert.equal(out.systemCalculationScore, 68);
   assert.equal(out.aiLearnerScore, 60);
-  assert.equal(out.hybridConfidence, 64);
-  assert.equal(out.confidence, 64);
+  assert.equal(out.hybridConfidence, 64.8);
+  assert.equal(out.confidence, 64.8);
   assert.equal(out.hybridRecommendation, "MODERATE");
-  assert.ok(out.confidenceBreakdown?.includes("Hybrid 50/50"));
+  assert.equal(out.blendSource, "blended");
+  assert.ok(out.confidenceBreakdown?.includes(blendBadgeLabel("blended")));
 });
 
 test("remove picks are left unchanged", () => {

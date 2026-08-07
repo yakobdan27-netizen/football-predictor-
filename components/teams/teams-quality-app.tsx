@@ -212,8 +212,11 @@ export function TeamsQualityApp() {
         />
       </div>
 
-      <div className="card" style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+      <div className="card">
+        <table
+          className="mobile-stack-table"
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}
+        >
           <thead>
             <tr style={{ textAlign: "left", borderBottom: "1px solid var(--border)" }}>
               <th style={{ padding: "0.5rem" }}>#</th>
@@ -239,8 +242,10 @@ export function TeamsQualityApp() {
                     opacity: team.inStore ? 1 : 0.85,
                   }}
                 >
-                  <td style={{ padding: "0.5rem", color: "var(--muted)" }}>{idx + 1}</td>
-                  <td style={{ padding: "0.5rem", fontWeight: 600 }}>
+                  <td data-label="#" style={{ padding: "0.5rem", color: "var(--muted)" }}>
+                    {idx + 1}
+                  </td>
+                  <td data-label="Team" style={{ padding: "0.5rem", fontWeight: 600 }}>
                     {team.team_name}
                     {team.isCustom && (
                       <span style={{ marginLeft: "0.35rem", fontSize: "0.7rem", color: "var(--muted)" }}>
@@ -253,14 +258,17 @@ export function TeamsQualityApp() {
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: "0.5rem", fontSize: "0.8125rem", color: "var(--muted)" }}>
+                  <td
+                    data-label="League"
+                    style={{ padding: "0.5rem", fontSize: "0.8125rem", color: "var(--muted)" }}
+                  >
                     {team.isCustom
                       ? team.leagues.length
                         ? team.leagues.join(", ")
                         : "—"
                       : "—"}
                   </td>
-                  <td style={{ padding: "0.5rem" }}>
+                  <td data-label="Tier" style={{ padding: "0.5rem" }}>
                     <select
                       className="select"
                       value={team.tier}
@@ -276,7 +284,7 @@ export function TeamsQualityApp() {
                       ))}
                     </select>
                   </td>
-                  <td style={{ padding: "0.5rem", color: "var(--muted)" }}>
+                  <td data-label="Boost" style={{ padding: "0.5rem", color: "var(--muted)" }}>
                     {store && team.inStore ? boostVsDLabel(team.tier, store) : "—"}
                   </td>
                 </tr>

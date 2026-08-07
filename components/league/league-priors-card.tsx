@@ -53,8 +53,11 @@ export function LeaguePriorsCard({
         and half-tempo. Research seeds (2021–26) are starting weights only — live results and
         trait overrides replace them. Never blocks a market.
       </p>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
+      <div>
+        <table
+          className="mobile-stack-table"
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}
+        >
           <thead>
             <tr style={{ textAlign: "left", color: "var(--muted)" }}>
               <th style={{ padding: "0.35rem 0.5rem" }}>League</th>
@@ -70,14 +73,30 @@ export function LeaguePriorsCard({
           <tbody>
             {rows.map((r) => (
               <tr key={r.leagueId} style={{ borderTop: "1px solid var(--border, #333)" }}>
-                <td style={{ padding: "0.4rem 0.5rem", fontWeight: 600 }}>{r.leagueName}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{fmt(r.over25_rate)}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{fmt(r.btts_rate)}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{fmt(r.avg_total_corners, 2)}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{fmt(r.home_goal_factor, 2)}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{fmt(r.late_goal_share)}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{r.sample_size}</td>
-                <td style={{ padding: "0.4rem 0.5rem" }}>{r.source}</td>
+                <td data-label="League" style={{ padding: "0.4rem 0.5rem", fontWeight: 600 }}>
+                  {r.leagueName}
+                </td>
+                <td data-label="Over 2.5%" style={{ padding: "0.4rem 0.5rem" }}>
+                  {fmt(r.over25_rate)}
+                </td>
+                <td data-label="BTTS%" style={{ padding: "0.4rem 0.5rem" }}>
+                  {fmt(r.btts_rate)}
+                </td>
+                <td data-label="Corners" style={{ padding: "0.4rem 0.5rem" }}>
+                  {fmt(r.avg_total_corners, 2)}
+                </td>
+                <td data-label="Home factor" style={{ padding: "0.4rem 0.5rem" }}>
+                  {fmt(r.home_goal_factor, 2)}
+                </td>
+                <td data-label="Late goal%" style={{ padding: "0.4rem 0.5rem" }}>
+                  {fmt(r.late_goal_share)}
+                </td>
+                <td data-label="n" style={{ padding: "0.4rem 0.5rem" }}>
+                  {r.sample_size}
+                </td>
+                <td data-label="Source" style={{ padding: "0.4rem 0.5rem" }}>
+                  {r.source}
+                </td>
               </tr>
             ))}
           </tbody>

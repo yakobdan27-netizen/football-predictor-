@@ -196,12 +196,59 @@ export async function ensureSchema(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS bet_selections_slip_idx ON bet_selections (bet_slip_id)`;
   await sql`CREATE INDEX IF NOT EXISTS bet_selections_event_idx ON bet_selections (bet_event_id)`;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS ext_users (
+      id serial PRIMARY KEY,
+      phone text NOT NULL UNIQUE,
+      display_name text,
+      first_seen_at timestamptz NOT NULL,
+      last_seen_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS ext_users_phone_idx ON ext_users (phone)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ext_slips (
+      id serial PRIMARY KEY,
+      ext_user_id integer NOT NULL,
+      created_at timestamptz NOT NULL,
+      slip_type text NOT NULL DEFAULT 'MULTI',
+      stake real NOT NULL,
+      total_odd real NOT NULL,
+      potential_return real NOT NULL,
+      note text,
+      status text NOT NULL DEFAULT 'SUBMITTED',
+      settled_at timestamptz
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS ext_slips_user_idx ON ext_slips (ext_user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS ext_slips_status_idx ON ext_slips (status)`;
+  await sql`CREATE INDEX IF NOT EXISTS ext_slips_created_idx ON ext_slips (created_at)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ext_selections (
+      id serial PRIMARY KEY,
+      ext_slip_id integer NOT NULL,
+      bet_event_id integer,
+      market_id integer,
+      event_label text NOT NULL,
+      market_label text NOT NULL,
+      chosen_label text NOT NULL,
+      chosen_odd real NOT NULL,
+      result text NOT NULL DEFAULT 'PENDING',
+      settled_at timestamptz
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS ext_selections_slip_idx ON ext_selections (ext_slip_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS ext_selections_event_idx ON ext_selections (bet_event_id)`;
+
   // Historical AF seed tables (isolated from live_*/bet_*/match_stats)
   await sql`
     CREATE TABLE IF NOT EXISTS hist_fixtures (
       fixture_id integer PRIMARY KEY,
       league_id integer NOT NULL,
       season integer NOT NULL,
+      comp_type text NOT NULL DEFAULT 'league',
       round text,
       date_utc timestamptz NOT NULL,
       home_id integer,
@@ -218,8 +265,10 @@ export async function ensureSchema(): Promise<void> {
       imported_at timestamptz NOT NULL
     )
   `;
+  await sql`ALTER TABLE hist_fixtures ADD COLUMN IF NOT EXISTS comp_type text NOT NULL DEFAULT 'league'`;
   await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_league_season_idx ON hist_fixtures (league_id, season)`;
   await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_date_idx ON hist_fixtures (date_utc)`;
+  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_comp_type_idx ON hist_fixtures (comp_type)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS hist_goals (
@@ -244,12 +293,14 @@ export async function ensureSchema(): Promise<void> {
       sot integer,
       possession integer,
       corners integer,
+      ht_corners integer,
       yellow integer,
       red integer,
       fouls integer,
       offsides integer
     )
   `;
+  await sql`ALTER TABLE hist_stats ADD COLUMN IF NOT EXISTS ht_corners integer`;
   await sql`CREATE INDEX IF NOT EXISTS hist_stats_fixture_team_idx ON hist_stats (fixture_id, team_id)`;
 
   await sql`

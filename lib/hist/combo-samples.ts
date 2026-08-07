@@ -82,6 +82,7 @@ export async function leagueMarketBasesFromHist(
     .where(
       and(
         eq(histFixtures.leagueId, leagueId),
+        eq(histFixtures.compType, "league"),
         isNotNull(histFixtures.ftHome),
         isNotNull(histFixtures.ftAway),
         gte(histFixtures.season, minSeason)
@@ -127,14 +128,15 @@ export async function leagueMarketBasesFromHist(
   };
 }
 
-/** Weighted H2H between two teams in a league (name-matched). */
+/**
+ * Weighted H2H between two teams across all competitions (league + cup).
+ * Cup meetings (e.g. UCL) count toward sample; intensities stay league-only elsewhere.
+ */
 export async function h2hFromHist(
   homeTeam: string,
   awayTeam: string,
   league: string
 ): Promise<HistH2HSample | null> {
-  const leagueId = apiLeagueId(league);
-  if (leagueId == null) return null;
   const home = standardizeTeamName(homeTeam);
   const away = standardizeTeamName(awayTeam);
   const hk = teamKey(home);
@@ -155,7 +157,6 @@ export async function h2hFromHist(
     .from(histFixtures)
     .where(
       and(
-        eq(histFixtures.leagueId, leagueId),
         isNotNull(histFixtures.ftHome),
         isNotNull(histFixtures.ftAway),
         gte(histFixtures.season, minSeason),

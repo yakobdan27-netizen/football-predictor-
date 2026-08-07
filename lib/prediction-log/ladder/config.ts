@@ -1,6 +1,7 @@
 /**
  * Tunable constants for the round-reduction survival ladder.
- * Advisory only — never blocks a bet.
+ * Tiers label quality and set drop order — they never reject a match.
+ * Per-league caps spread risk and fully relax before returning short.
  */
 
 export type ConfTier = "A" | "B" | "C";
@@ -12,22 +13,17 @@ export type ConfTiers = {
 };
 
 export const LADDER_CONFIG = {
-  /** Fill strongest-first; lower tiers backfill only to reach LADDER_SIZE. */
-  CONF_TIERS: { A: 0.55, B: 0.45, C: 0.1 } as ConfTiers,
-  /** Nothing below this ever enters, even to reach 10. */
-  HARD_MIN: 0.1,
-  /** Initial per-league cap; auto-relaxes +1 among current-tier pool only. */
-  MAX_PER_LEAGUE: 3,
-  /** Soft target for how many leagues to represent when possible. */
-  TARGET_MIN_LEAGUES: 3,
-  /** Rank-score window for same-tier correlation-aware drop-order ties. */
-  TIE_BAND: 0.03,
-  /** Max legs in the ladder. */
+  /** Max legs in the ladder (top-N survival ranking). */
   LADDER_SIZE: 10,
+  /** Quality labels only — never filter/reject. */
+  CONF_TIERS: { A: 0.55, B: 0.45, C: 0.0 } as ConfTiers,
+  /** Soft spread cap; auto-relaxes (+1) until ladder is full or pool exhausted. */
+  MAX_PER_LEAGUE: 3,
+  /** Soft goal: represent at least this many leagues when the pool allows. */
+  TARGET_MIN_LEAGUES: 3,
+  /** rank_score window for league-concentration drop tie-break. */
+  TIE_BAND: 0.03,
 } as const;
-
-/** Compat: Tier A primary floor. */
-export const CONF_FLOOR = LADDER_CONFIG.CONF_TIERS.A;
 
 /** Compat alias for LADDER_CONFIG.LADDER_SIZE. */
 export const MAX_LEGS = LADDER_CONFIG.LADDER_SIZE;
@@ -41,29 +37,18 @@ export const STAKE_EPS = 1e-6;
 
 /** Optional per-league overrides (future). */
 export type LadderPerLeagueOverride = {
-  confFloor?: number;
   maxPerLeague?: number;
 };
 
-/**
- * Resolve Tier A/B/C floors from an optional Tier-A slider value.
- * B = max(HARD_MIN, A - 0.10), C = HARD_MIN; ensures A >= B >= C.
- */
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+/** Map confidence → tier label. Never alters conf; never rejects. */
+export function labelTier(conf: number): ConfTier {
+  const { A, B } = LADDER_CONFIG.CONF_TIERS;
+  if (conf >= A) return "A";
+  if (conf >= B) return "B";
+  return "C";
 }
 
-export function resolveConfTiers(tierA?: number): ConfTiers {
-  const hardMin = LADDER_CONFIG.HARD_MIN;
-  const defaults = LADDER_CONFIG.CONF_TIERS;
-  const rawA =
-    tierA != null && Number.isFinite(tierA) ? tierA : defaults.A;
-  const A = round2(Math.max(hardMin, rawA));
-  const B = round2(Math.min(A, Math.max(hardMin, A - 0.1)));
-  const C = hardMin;
-  return { A, B, C };
-}
-
+/** Higher = stronger tier (A=2, B=1, C=0). Used for drop order. */
 export function tierRank(tier: ConfTier): number {
   return tier === "C" ? 0 : tier === "B" ? 1 : 2;
 }

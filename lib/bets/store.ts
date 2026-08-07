@@ -17,7 +17,7 @@ import {
   type NewBetMarket,
 } from "@/lib/db/schema";
 import type { BetFeedType, BetMarketSource, BetSlipType } from "./constants";
-import { QUICK_MARKET_DEFS } from "./constants";
+import { FULL_MARKET_OUTCOMES } from "./constants";
 
 export async function upsertBetEventFromLive(input: {
   apiFixtureId: number;
@@ -109,7 +109,7 @@ export async function listMarketsForEvent(
     .orderBy(asc(betMarkets.id));
 }
 
-/** Ensure quick-pick MANUAL skeleton markets exist when odds missing. */
+/** Ensure full-catalog MANUAL skeleton markets exist when odds missing. */
 export async function ensureManualSkeletonMarkets(
   betEventId: number
 ): Promise<BetMarket[]> {
@@ -120,7 +120,7 @@ export async function ensureManualSkeletonMarkets(
   const now = new Date();
   const toInsert: NewBetMarket[] = [];
 
-  for (const def of QUICK_MARKET_DEFS) {
+  for (const def of FULL_MARKET_OUTCOMES) {
     const k = `${def.marketType}::${def.selectionLabel}`;
     if (have.has(k)) continue;
     toInsert.push({
@@ -150,19 +150,30 @@ export async function replaceApiMarketsForEvent(
 ): Promise<BetMarket[]> {
   const db = await getDb();
   const now = new Date();
-  await db.delete(betMarkets).where(eq(betMarkets.betEventId, betEventId));
+  await ensureManualSkeletonMarkets(betEventId);
+  const existing = await listMarketsForEvent(betEventId);
+  const byKey = new Map(
+    existing.map((m) => [`${m.marketType}::${m.selectionLabel}`, m])
+  );
 
   const seen = new Set<string>();
-  const unique = rows.filter((r) => {
+  for (const r of rows) {
     const k = `${r.marketType}::${r.selectionLabel}`;
-    if (seen.has(k)) return false;
+    if (seen.has(k)) continue;
     seen.add(k);
-    return true;
-  });
-
-  if (unique.length) {
-    await db.insert(betMarkets).values(
-      unique.map((r) => ({
+    const prev = byKey.get(k);
+    if (prev) {
+      await db
+        .update(betMarkets)
+        .set({
+          odd: r.odd,
+          isAvailable: r.odd != null ? 1 : prev.isAvailable,
+          source: (r.odd != null ? "API" : prev.source) as BetMarketSource,
+          updatedAt: now,
+        })
+        .where(eq(betMarkets.id, prev.id));
+    } else {
+      await db.insert(betMarkets).values({
         betEventId,
         marketType: r.marketType,
         selectionLabel: r.selectionLabel,
@@ -170,11 +181,11 @@ export async function replaceApiMarketsForEvent(
         isAvailable: r.odd != null ? 1 : 0,
         source: (r.odd != null ? "API" : "MANUAL") as BetMarketSource,
         updatedAt: now,
-      }))
-    );
+      });
+    }
   }
 
-  return ensureManualSkeletonMarkets(betEventId);
+  return listMarketsForEvent(betEventId);
 }
 
 export async function updateMarketOdd(

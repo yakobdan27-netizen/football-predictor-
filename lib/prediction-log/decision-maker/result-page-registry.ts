@@ -1,6 +1,10 @@
 /**
  * Central registry of every result-producing page the Decision Maker consumes.
  * Add new analysis pages here — the engine discovers them automatically.
+ *
+ * WEIGHTING-EXEMPT: Page source weights (0.3/0.2/…) and candidate confidence
+ * wiring are NOT rebalanced via weightedEstimate (60/40 API↔Manual). Reco
+ * markets may already carry hybridConfidence from the recommendation blend.
  */
 import { leanLabel } from "../corners-model";
 import { getLeagueMatchupAnalysis } from "../league-matchup-analysis";

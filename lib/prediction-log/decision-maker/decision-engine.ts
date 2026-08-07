@@ -1,3 +1,9 @@
+/**
+ * WEIGHTING-EXEMPT: Decision Maker result-trace / page-merge stays byte-identical.
+ * Do NOT route mergeCandidates / normalisedSourceWeights through weightedEstimate
+ * (60/40 API↔Manual). Market % may inherit hybridConfidence from recommendation
+ * sources; aggregation math here is intentionally unchanged.
+ */
 import { marketIdentity } from "./market-category";
 import type {
   AggregatedMatchData,

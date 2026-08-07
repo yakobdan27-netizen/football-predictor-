@@ -11,7 +11,7 @@ import {
 } from "@/lib/prediction-log/two-h-heavy/static-league-totals";
 import { setLeagueTotalCache } from "./league-total-cache";
 import {
-  HIST_BIG5_LEAGUES,
+  HIST_DOMESTIC_LEAGUES,
   HIST_COMPLETED_SEASON_COUNT,
   currentHistSeason,
   histSeasonWeight,
@@ -46,7 +46,7 @@ export async function recomputeLeaguePriors(): Promise<{
   const priors: LeaguePriorRow[] = [];
   const stored: Record<string, LeaguePriorRow> = {};
 
-  for (const league of HIST_BIG5_LEAGUES) {
+  for (const league of HIST_DOMESTIC_LEAGUES) {
     const rows = await db
       .select({
         season: histFixtures.season,
@@ -57,6 +57,7 @@ export async function recomputeLeaguePriors(): Promise<{
       .where(
         and(
           eq(histFixtures.leagueId, league.id),
+          eq(histFixtures.compType, "league"),
           isNotNull(histFixtures.ftHome),
           isNotNull(histFixtures.ftAway),
           gte(histFixtures.season, minSeason)

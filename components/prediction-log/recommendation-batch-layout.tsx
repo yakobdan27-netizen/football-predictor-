@@ -16,9 +16,32 @@ import {
 import { LOG_MARKET_MAP } from "@/lib/prediction-log/markets-config";
 import { deriveActualsFromFacts } from "@/lib/prediction-log/grade-from-facts";
 import { pickCommentEmoji, pickCommentTitle } from "@/lib/prediction-log/pick-comment";
+import {
+  PREDICTION_WEIGHTS,
+  blendBadgeLabel,
+  blendBadgeTitle,
+} from "@/lib/prediction-log/prediction-weights";
 import { scoreMarket } from "@/lib/prediction-log/score-market";
 import { CorrectScoreOneLiner } from "./correct-score-panel";
 import type { LogMarketKey, LogMatch, PredictionBatch, ScoreResult } from "@/lib/prediction-log/types";
+
+function hybridBadgeTitle(pick: {
+  aiLearnerScore?: number;
+  systemCalculationScore?: number;
+  aiContributionWeight?: number;
+  systemContributionWeight?: number;
+  blendSource?: "blended" | "api_only" | "manual_ai_only";
+}): string {
+  const source = pick.blendSource ?? "blended";
+  const aiW = pick.aiContributionWeight ?? PREDICTION_WEIGHTS.manualAi;
+  const sysW = pick.systemContributionWeight ?? PREDICTION_WEIGHTS.apiDb;
+  if (pick.aiLearnerScore != null && pick.systemCalculationScore != null) {
+    const ai = Math.round(pick.aiLearnerScore * aiW * 10) / 10;
+    const sys = Math.round(pick.systemCalculationScore * sysW * 10) / 10;
+    return `${blendBadgeLabel(source)} — AI: ${ai}% | System: ${sys}%`;
+  }
+  return blendBadgeTitle(source);
+}
 
 interface RecommendationBatchLayoutProps {
   batch: PredictionBatch;
@@ -230,10 +253,9 @@ export function RecommendationBatchLayout({
                           className="badge reco-conf-badge"
                           style={confidenceBadgeStyle(conf)}
                           title={
-                            selected?.pick.aiLearnerScore != null &&
-                            selected?.pick.systemCalculationScore != null
-                              ? `AI: ${Math.round(selected.pick.aiLearnerScore * 0.5 * 10) / 10}% | System: ${Math.round(selected.pick.systemCalculationScore * 0.5 * 10) / 10}%`
-                              : "Hybrid confidence = AI 50% + system 50%"
+                            selected?.pick
+                              ? hybridBadgeTitle(selected.pick)
+                              : blendBadgeTitle("blended")
                           }
                         >
                           {hybridLabel ?? displayConfidenceLabel(conf)}
@@ -305,10 +327,9 @@ export function RecommendationBatchLayout({
                         className="badge reco-conf-badge"
                         style={confidenceBadgeStyle(conf)}
                         title={
-                          selected?.pick.aiLearnerScore != null &&
-                          selected?.pick.systemCalculationScore != null
-                            ? `AI: ${Math.round(selected.pick.aiLearnerScore * 0.5 * 10) / 10}% | System: ${Math.round(selected.pick.systemCalculationScore * 0.5 * 10) / 10}%`
-                            : "Hybrid confidence = AI 50% + system 50%"
+                          selected?.pick
+                            ? hybridBadgeTitle(selected.pick)
+                            : blendBadgeTitle("blended")
                         }
                       >
                         {hybridLabel ?? displayConfidenceLabel(conf)}

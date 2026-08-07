@@ -950,7 +950,7 @@ export function generateBatchRecommendation(
 
   if (!recommended) return batch;
 
-  // Apply 50/50 hybrid on entry-path recommendations (tiered path freezes separately)
+  // Apply 60/40 hybrid on entry-path recommendations (tiered path freezes separately)
   const withHybrid = {
     ...recommended,
     matches: applyHybridToRecommendedMatches(recommended.matches, learnerStats, {

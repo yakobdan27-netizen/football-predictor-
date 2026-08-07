@@ -264,7 +264,7 @@ function freezeRecommendedBatch(
           pFinal,
           confidenceBand: pFinal != null ? confidenceBand(pFinal) : pick.confidenceBand,
         };
-        // 50/50 hybrid: AI learner × 0.5 + system pFinal × 0.5 (system shrunk toward league prior)
+        // 60/40 hybrid: API-DB system × 0.6 + Manual/AI learner × 0.4 (system shrunk toward league prior)
         return [
           key,
           applyHybridToRecommendedPick(withSystem, learnerStats ?? null, {

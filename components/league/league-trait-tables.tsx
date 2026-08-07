@@ -31,8 +31,11 @@ export function LeagueTraitTables({ league }: LeagueTraitTablesProps) {
       {LEAGUE_TRAIT_GROUPS.map((group) => (
         <div key={group.title} className="card">
           <h3 style={{ fontSize: "0.9375rem", fontWeight: 700, marginBottom: "0.75rem" }}>{group.title}</h3>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse" }}>
+          <div>
+            <table
+              className="mobile-stack-table"
+              style={{ width: "100%", fontSize: "0.8125rem", borderCollapse: "collapse" }}
+            >
               <thead>
                 <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                   <th style={{ padding: "0.35rem 0.5rem" }}>Trait</th>
@@ -47,7 +50,7 @@ export function LeagueTraitTables({ league }: LeagueTraitTablesProps) {
                   const pctSuffix = label.includes("%") ? "%" : "";
                   return (
                     <tr key={key} style={{ borderTop: "1px solid var(--border)" }}>
-                      <td style={{ padding: "0.45rem 0.5rem" }}>
+                      <td data-label="Trait" style={{ padding: "0.45rem 0.5rem" }}>
                         {label}
                         {trait.manual ? (
                           <span style={{ marginLeft: "0.35rem", fontSize: "0.7rem", color: "var(--warn)" }}>
@@ -55,11 +58,15 @@ export function LeagueTraitTables({ league }: LeagueTraitTablesProps) {
                           </span>
                         ) : null}
                       </td>
-                      <td style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }}>
+                      <td data-label="Value" style={{ padding: "0.45rem 0.5rem", fontWeight: 600 }}>
                         {formatValue(trait, pctSuffix)}
                       </td>
-                      <td style={{ padding: "0.45rem 0.5rem" }}>{deltaBadge(trait.baselineDelta)}</td>
-                      <td style={{ padding: "0.45rem 0.5rem", color: "var(--muted)" }}>{trait.sampleSize}</td>
+                      <td data-label="vs baseline" style={{ padding: "0.45rem 0.5rem" }}>
+                        {deltaBadge(trait.baselineDelta)}
+                      </td>
+                      <td data-label="n" style={{ padding: "0.45rem 0.5rem", color: "var(--muted)" }}>
+                        {trait.sampleSize}
+                      </td>
                     </tr>
                   );
                 })}

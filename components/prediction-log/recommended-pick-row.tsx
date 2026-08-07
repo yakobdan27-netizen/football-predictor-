@@ -5,6 +5,11 @@ import {
   pickOptionsForMarket,
 } from "@/lib/prediction-log/markets-config";
 import { isValidOdds } from "@/lib/prediction-log/odds-bands";
+import {
+  PREDICTION_WEIGHTS,
+  blendBadgeLabel,
+  blendBadgeTitle,
+} from "@/lib/prediction-log/prediction-weights";
 import type { EvidencePoint, LogMarketKey, MarketPrediction, RecommendedPick } from "@/lib/prediction-log/types";
 
 interface RecommendedPickRowProps {
@@ -167,7 +172,7 @@ export function RecommendedPickRow({
                       ? "#c0a030"
                       : "var(--warn)",
               }}
-              title="Hybrid confidence = (AI learner × 50%) + (system × 50%)"
+              title={blendBadgeTitle(pick.blendSource ?? "blended")}
             >
               Hybrid: {pick.hybridConfidence}%
               {pick.hybridRecommendation ? ` · ${pick.hybridRecommendation}` : ""}
@@ -175,6 +180,21 @@ export function RecommendedPickRow({
           ) : pick.learnerConfidence != null ? (
             <span style={{ fontSize: "0.7rem", fontWeight: 600, color: "var(--accent)" }}>
               Confidence: {pick.learnerConfidence}%
+            </span>
+          ) : null}
+          {pick.hybridConfidence != null ? (
+            <span
+              style={{
+                fontSize: "0.65rem",
+                fontWeight: 600,
+                color: "var(--muted)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                padding: "0.1rem 0.35rem",
+              }}
+              title={blendBadgeTitle(pick.blendSource ?? "blended")}
+            >
+              {blendBadgeLabel(pick.blendSource ?? "blended")}
             </span>
           ) : null}
         </div>
@@ -192,16 +212,25 @@ export function RecommendedPickRow({
             flexWrap: "wrap",
             gap: "0.5rem",
           }}
-          title="50/50 hybrid methodology"
+          title={blendBadgeTitle(pick.blendSource ?? "blended")}
         >
           <span>
-            AI: {Math.round(pick.aiLearnerScore * (pick.aiContributionWeight ?? 0.5) * 10) / 10}%
+            AI:{" "}
+            {Math.round(
+              pick.aiLearnerScore *
+                (pick.aiContributionWeight ?? PREDICTION_WEIGHTS.manualAi) *
+                10
+            ) / 10}
+            %
           </span>
           <span>|</span>
           <span>
             System:{" "}
-            {Math.round(pick.systemCalculationScore * (pick.systemContributionWeight ?? 0.5) * 10) /
-              10}
+            {Math.round(
+              pick.systemCalculationScore *
+                (pick.systemContributionWeight ?? PREDICTION_WEIGHTS.apiDb) *
+                10
+            ) / 10}
             %
           </span>
           <span style={{ opacity: 0.8 }}>

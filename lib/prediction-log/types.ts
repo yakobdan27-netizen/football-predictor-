@@ -386,16 +386,18 @@ export interface RecommendedPick extends MarketPrediction {
   dataSampleSize?: number;
   /** Frozen signal math captured at generation time. */
   mathSnapshot?: RecommendedPickMathSnapshot;
-  /** AI learner component (0–100) for 50/50 hybrid. */
+  /** AI learner / Manual+AI component (0–100) for 60/40 hybrid. */
   aiLearnerScore?: number;
-  /** System calculation component (0–100), typically pFinal. */
+  /** System / API-DB calculation component (0–100), typically pFinal. */
   systemCalculationScore?: number;
-  /** (AI × 0.5) + (system × 0.5). */
+  /** (API-DB × 0.6) + (Manual/AI × 0.4), or single-source fallback. */
   hybridConfidence?: number;
   /** STRONG ≥65, MODERATE ≥55, else WEAK. */
   hybridRecommendation?: "STRONG" | "MODERATE" | "WEAK";
   aiContributionWeight?: number;
   systemContributionWeight?: number;
+  /** How hybridConfidence was produced (blended | api_only | manual_ai_only). */
+  blendSource?: "blended" | "api_only" | "manual_ai_only";
 }
 
 export interface RecommendedMatch {

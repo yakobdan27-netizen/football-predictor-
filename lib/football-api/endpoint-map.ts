@@ -124,6 +124,7 @@ export async function confirmLeaguesAndSeason(
             "Serie A",
             "Bundesliga",
             "Ligue 1",
+            "UEFA Champions League",
           ].includes(name)
         )
         .map(([name, expectedId]) => ({
@@ -158,15 +159,16 @@ export async function confirmLeaguesAndSeason(
       : msg;
   }
 
-  const domestic: Array<[string, number]> = [
+  const competitions: Array<[string, number]> = [
     ["Premier League", LEAGUE_API_IDS["Premier League"]],
     ["La Liga", LEAGUE_API_IDS["La Liga"]],
     ["Serie A", LEAGUE_API_IDS["Serie A"]],
     ["Bundesliga", LEAGUE_API_IDS.Bundesliga],
     ["Ligue 1", LEAGUE_API_IDS["Ligue 1"]],
+    ["UEFA Champions League", LEAGUE_API_IDS["UEFA Champions League"]],
   ];
 
-  for (const [name, expectedId] of domestic) {
+  for (const [name, expectedId] of competitions) {
     try {
       const rows = await apiFootballGet<LeagueApiRow[]>("/leagues", {
         id: expectedId,

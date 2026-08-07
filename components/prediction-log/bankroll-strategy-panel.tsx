@@ -242,7 +242,10 @@ export function BankrollStrategyPanel({ settings, onChange }: BankrollStrategyPa
 
         <div>
           <label className="label">Tier stake multipliers</label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}
+            className="mobile-1col-grid"
+          >
             {(["safe", "balanced", "aggressive"] as const).map((tier) => (
               <div key={tier}>
                 <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>{tier}</span>

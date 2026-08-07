@@ -168,8 +168,8 @@ export function HshApp() {
       ) : predictions.length === 0 ? (
         <p className="page-sub">This batch has no matches.</p>
       ) : (
-        <div className="card" style={{ overflowX: "auto", marginBottom: "1.5rem" }}>
-          <table className="table" style={{ width: "100%", fontSize: "0.8125rem" }}>
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <table className="table mobile-stack-table" style={{ width: "100%", fontSize: "0.8125rem" }}>
             <thead>
               <tr>
                 <th>Match</th>
@@ -241,7 +241,7 @@ function DefenceConcededPanel({
           profiles.
         </p>
       ) : (
-        <div className="card" style={{ overflowX: "auto", marginBottom: "1.25rem" }}>
+        <div className="card table-wrap" style={{ marginBottom: "1.25rem" }}>
           <table className="data-table" style={{ minWidth: "52rem", fontSize: "0.8125rem" }}>
             <thead>
               <tr>
@@ -295,7 +295,7 @@ function DefenceConcededPanel({
           <h3 style={{ fontSize: "0.95rem", fontWeight: 700, margin: "0 0 0.5rem" }}>
             Match conceded lean (0.5 scored + 0.5 conceded)
           </h3>
-          <div className="card" style={{ overflowX: "auto" }}>
+          <div className="card table-wrap">
             <table className="data-table" style={{ minWidth: "44rem", fontSize: "0.8125rem" }}>
               <thead>
                 <tr>
@@ -384,25 +384,29 @@ function PredictionRow({
 }) {
   return (
     <>
-      <tr onClick={onToggle} style={{ cursor: "pointer" }} title="Click for detail">
-        <td>
+      <tr
+        onClick={onToggle}
+        style={{ cursor: "pointer", minHeight: "2.75rem" }}
+        title="Tap for detail"
+      >
+        <td data-label="Match">
           {p.homeTeam} vs {p.awayTeam}
         </td>
-        <td>{p.lambda1h.toFixed(2)}</td>
-        <td>{p.lambda2h.toFixed(2)}</td>
-        <td>{pct(p.p1h)}</td>
-        <td>{pct(p.p2h)}</td>
-        <td>{pct(p.pTie)}</td>
-        <td>
+        <td data-label="λ 1H">{p.lambda1h.toFixed(2)}</td>
+        <td data-label="λ 2H">{p.lambda2h.toFixed(2)}</td>
+        <td data-label="P(1H)">{pct(p.p1h)}</td>
+        <td data-label="P(2H)">{pct(p.p2h)}</td>
+        <td data-label="P(Tie)">{pct(p.pTie)}</td>
+        <td data-label="E[D]">
           {p.expectedDiff.toFixed(2)}
           <span style={{ color: "var(--muted)", marginLeft: "0.25rem" }}>
             ±{p.seDiff.toFixed(2)}
           </span>
         </td>
-        <td>
+        <td data-label="Recommendation">
           <strong>{p.recommended}</strong>
         </td>
-        <td>
+        <td data-label="Confidence">
           <span className="badge" style={confidenceStyle(p.confidence)}>
             {p.confidence}
           </span>

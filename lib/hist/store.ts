@@ -180,6 +180,7 @@ export async function upsertHistFixture(
       .set({
         leagueId: row.leagueId,
         season: row.season,
+        compType: row.compType ?? existing.compType ?? "league",
         round: row.round ?? existing.round,
         dateUtc: row.dateUtc,
         homeId: row.homeId ?? existing.homeId,

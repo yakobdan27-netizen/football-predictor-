@@ -28,7 +28,31 @@ function parseOdd(v: unknown): number | null {
   return Number.isFinite(n) && n > 1 ? n : null;
 }
 
-function mapAfBetToMarkets(
+function mapOuLine(
+  label: string,
+  odd: number | null,
+  prefix: "" | "1H_" | "2H_"
+): Array<{ marketType: string; selectionLabel: string; odd: number | null }> {
+  const out: Array<{
+    marketType: string;
+    selectionLabel: string;
+    odd: number | null;
+  }> = [];
+  const lines = ["0.5", "1.5", "2.5", "3.5", "4.5"] as const;
+  for (const line of lines) {
+    const mt = `${prefix}OU_${line.replace(".", "_")}`;
+    if (new RegExp(`over\\s*${line.replace(".", "\\.")}`, "i").test(label)) {
+      out.push({ marketType: mt, selectionLabel: "Over", odd });
+    } else if (
+      new RegExp(`under\\s*${line.replace(".", "\\.")}`, "i").test(label)
+    ) {
+      out.push({ marketType: mt, selectionLabel: "Under", odd });
+    }
+  }
+  return out;
+}
+
+export function mapAfBetToMarkets(
   bet: AfBet
 ): Array<{ marketType: string; selectionLabel: string; odd: number | null }> {
   const name = (bet.name ?? "").toLowerCase();
@@ -39,7 +63,11 @@ function mapAfBetToMarkets(
     odd: number | null;
   }> = [];
 
-  const push = (marketType: string, selectionLabel: string, odd: number | null) => {
+  const push = (
+    marketType: string,
+    selectionLabel: string,
+    odd: number | null
+  ) => {
     out.push({ marketType, selectionLabel, odd });
   };
 
@@ -58,12 +86,36 @@ function mapAfBetToMarkets(
     return out;
   }
 
-  if (name.includes("goals over/under") || name.includes("over/under")) {
+  if (name.includes("double chance")) {
     for (const v of values) {
       const label = (v.value ?? "").trim();
       const odd = parseOdd(v.odd);
-      if (/over\s*2\.5/i.test(label)) push("OU_2_5", "Over", odd);
-      else if (/under\s*2\.5/i.test(label)) push("OU_2_5", "Under", odd);
+      if (/home\/draw|1x/i.test(label)) push("DC", "1X", odd);
+      else if (/home\/away|12/i.test(label)) push("DC", "12", odd);
+      else if (/draw\/away|x2/i.test(label)) push("DC", "X2", odd);
+    }
+    return out;
+  }
+
+  if (name.includes("draw no bet")) {
+    for (const v of values) {
+      const label = (v.value ?? "").trim();
+      const odd = parseOdd(v.odd);
+      if (/^home$/i.test(label) || label === "1") push("DNB", "Home", odd);
+      else if (/^away$/i.test(label) || label === "2") push("DNB", "Away", odd);
+    }
+    return out;
+  }
+
+  if (
+    (name.includes("goals over/under") || name.includes("over/under")) &&
+    !name.includes("1st half") &&
+    !name.includes("first half") &&
+    !name.includes("2nd half") &&
+    !name.includes("second half")
+  ) {
+    for (const v of values) {
+      out.push(...mapOuLine((v.value ?? "").trim(), parseOdd(v.odd), ""));
     }
     return out;
   }
@@ -78,13 +130,104 @@ function mapAfBetToMarkets(
     return out;
   }
 
-  if (name.includes("double chance")) {
+  if (
+    name.includes("1st half winner") ||
+    name.includes("first half winner") ||
+    name === "1st half 1x2"
+  ) {
     for (const v of values) {
       const label = (v.value ?? "").trim();
       const odd = parseOdd(v.odd);
-      if (/home\/draw|1x/i.test(label)) push("DC", "1X", odd);
-      else if (/home\/away|12/i.test(label)) push("DC", "12", odd);
-      else if (/draw\/away|x2/i.test(label)) push("DC", "X2", odd);
+      if (/^home$/i.test(label) || label === "1") push("1H_1X2", "Home", odd);
+      else if (/^draw$/i.test(label) || label === "X") push("1H_1X2", "Draw", odd);
+      else if (/^away$/i.test(label) || label === "2") push("1H_1X2", "Away", odd);
+    }
+    return out;
+  }
+
+  if (
+    name.includes("1st half") ||
+    name.includes("first half goals") ||
+    (name.includes("first half") && name.includes("over"))
+  ) {
+    for (const v of values) {
+      out.push(...mapOuLine((v.value ?? "").trim(), parseOdd(v.odd), "1H_"));
+    }
+    if (out.length) return out;
+  }
+
+  if (
+    name.includes("2nd half") ||
+    name.includes("second half goals") ||
+    (name.includes("second half") && name.includes("over"))
+  ) {
+    for (const v of values) {
+      out.push(...mapOuLine((v.value ?? "").trim(), parseOdd(v.odd), "2H_"));
+    }
+    if (out.length) return out;
+  }
+
+  if (
+    name.includes("which half will have more goals") ||
+    name.includes("highest scoring half")
+  ) {
+    for (const v of values) {
+      const label = (v.value ?? "").trim();
+      const odd = parseOdd(v.odd);
+      if (/1st|first/i.test(label)) push("HALF_MOST_GOALS", "1H", odd);
+      else if (/2nd|second/i.test(label)) push("HALF_MOST_GOALS", "2H", odd);
+      else if (/equal|draw|same/i.test(label)) {
+        push("HALF_MOST_GOALS", "Equal", odd);
+      }
+    }
+    return out;
+  }
+
+  if (
+    name.includes("result/both teams score") ||
+    name.includes("result / both teams to score") ||
+    (name.includes("result") && name.includes("btts"))
+  ) {
+    for (const v of values) {
+      const label = (v.value ?? "").trim();
+      const odd = parseOdd(v.odd);
+      const m = label.match(
+        /^(home|draw|away)\s*[+/]\s*(yes|no)$/i
+      );
+      if (m) {
+        const side =
+          m[1]!.toLowerCase() === "home"
+            ? "Home"
+            : m[1]!.toLowerCase() === "away"
+              ? "Away"
+              : "Draw";
+        const btts = /^yes$/i.test(m[2]!) ? "Yes" : "No";
+        push("RESULT_BTTS", `${side}/${btts}`, odd);
+      }
+    }
+    return out;
+  }
+
+  if (
+    name.includes("result/total goals") ||
+    (name.includes("result") && name.includes("over/under"))
+  ) {
+    for (const v of values) {
+      const label = (v.value ?? "").trim();
+      const odd = parseOdd(v.odd);
+      const m = label.match(
+        /^(home|draw|away)\s*[+/&]\s*(over|under)\s*2\.5$/i
+      );
+      if (m) {
+        const side =
+          m[1]!.toLowerCase() === "home"
+            ? "Home"
+            : m[1]!.toLowerCase() === "away"
+              ? "Away"
+              : "Draw";
+        const ou = /^over$/i.test(m[2]!) ? "Over" : "Under";
+        push("RESULT_OU_2_5", `${side}/${ou}`, odd);
+      }
     }
     return out;
   }
@@ -131,14 +274,13 @@ export async function fetchAndCacheOddsForFixture(
 
     let bookmakers = rows?.[0]?.bookmakers ?? [];
     if (!bookmakers.length) {
-      // Retry without bookmaker filter
       const all = await apiFootballGet<AfOddsRow[]>("/odds", {
         fixture: apiFixtureId,
       });
       bookmakers = all?.[0]?.bookmakers ?? [];
     }
 
-    let bookie =
+    const bookie =
       bookmakers.find((b) => b.id === AF_PREFERRED_BOOKMAKER_ID) ??
       bookmakers[0];
 
@@ -160,7 +302,6 @@ export async function fetchAndCacheOddsForFixture(
       mapped.push(...mapAfBetToMarkets(bet));
     }
 
-    // Dedupe by market+label (keep first)
     const seen = new Set<string>();
     const unique = mapped.filter((m) => {
       const k = `${m.marketType}::${m.selectionLabel}`;

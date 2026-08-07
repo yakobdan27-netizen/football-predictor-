@@ -1,3 +1,8 @@
+/**
+ * WEIGHTING-EXEMPT: Batch merge / row settlement must NOT call weightedEstimate.
+ * Keep Decision Maker aggregation and user-market evaluation math unchanged.
+ * Reco-sourced confidences may already reflect the 60/40 hybrid upstream.
+ */
 import { LOG_MARKET_MAP, pickOptionsForMarket } from "../markets-config";
 import { matchLeague } from "../match-league";
 import { getBatchDisplayId, getSelectedPickForMatch } from "../snapshot-readers";

@@ -1,16 +1,43 @@
 /**
  * Season window for hist_* backfill: previous 11 completed + current.
+ * Single source of truth for competitions — iterate HIST_LEAGUES everywhere.
  */
 import { LEAGUE_API_IDS, apiSeasonFromDate } from "@/lib/football-api/leagues";
 import type { LeagueOption } from "@/lib/prediction-log/markets-config";
 
-export const HIST_BIG5_LEAGUES: Array<{ name: LeagueOption; id: number }> = [
-  { name: "Premier League", id: LEAGUE_API_IDS["Premier League"] },
-  { name: "La Liga", id: LEAGUE_API_IDS["La Liga"] },
-  { name: "Serie A", id: LEAGUE_API_IDS["Serie A"] },
-  { name: "Bundesliga", id: LEAGUE_API_IDS.Bundesliga },
-  { name: "Ligue 1", id: LEAGUE_API_IDS["Ligue 1"] },
-];
+export type HistCompType = "league" | "cup";
+
+export type HistLeagueDef = {
+  name: LeagueOption;
+  id: number;
+  type: HistCompType;
+};
+
+/** Config-driven competition list — add/remove here only. */
+export const HIST_LEAGUES: readonly HistLeagueDef[] = [
+  {
+    name: "Premier League",
+    id: LEAGUE_API_IDS["Premier League"],
+    type: "league",
+  },
+  { name: "La Liga", id: LEAGUE_API_IDS["La Liga"], type: "league" },
+  { name: "Serie A", id: LEAGUE_API_IDS["Serie A"], type: "league" },
+  { name: "Bundesliga", id: LEAGUE_API_IDS.Bundesliga, type: "league" },
+  { name: "Ligue 1", id: LEAGUE_API_IDS["Ligue 1"], type: "league" },
+  {
+    name: "UEFA Champions League",
+    id: LEAGUE_API_IDS["UEFA Champions League"],
+    type: "cup",
+  },
+] as const;
+
+/** Domestic leagues only (exclude cups from intensity / BETA / priors). */
+export const HIST_DOMESTIC_LEAGUES: HistLeagueDef[] = HIST_LEAGUES.filter(
+  (l) => l.type === "league"
+);
+
+/** @deprecated Use HIST_LEAGUES or HIST_DOMESTIC_LEAGUES. */
+export const HIST_BIG5_LEAGUES = HIST_DOMESTIC_LEAGUES;
 
 /** Completed seasons in the permanent reference window (plus current when included). */
 export const HIST_COMPLETED_SEASON_COUNT = 11;
@@ -60,22 +87,33 @@ export function histWindowMinSeason(today?: Date): number {
   return current - HIST_COMPLETED_SEASON_COUNT;
 }
 
+export function histCompType(leagueId: number): HistCompType {
+  const hit = HIST_LEAGUES.find((l) => l.id === leagueId);
+  return hit?.type ?? "league";
+}
+
+export function histLeagueName(leagueId: number): string {
+  return HIST_LEAGUES.find((l) => l.id === leagueId)?.name ?? `League ${leagueId}`;
+}
+
 export type HistJobKey = {
   leagueId: number;
   leagueName: string;
   season: number;
+  compType: HistCompType;
 };
 
-/** All league × season cells for the backfill window. */
+/** All competition × season cells for the backfill window. */
 export function histJobKeys(opts?: { today?: Date }): HistJobKey[] {
   const seasons = histSeasonYears({ today: opts?.today });
   const keys: HistJobKey[] = [];
-  for (const league of HIST_BIG5_LEAGUES) {
+  for (const league of HIST_LEAGUES) {
     for (const season of seasons) {
       keys.push({
         leagueId: league.id,
         leagueName: league.name,
         season,
+        compType: league.type,
       });
     }
   }

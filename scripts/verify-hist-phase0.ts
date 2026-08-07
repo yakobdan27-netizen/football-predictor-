@@ -1,5 +1,5 @@
 /**
- * Phase 0 preconditions: API key, /status quota, Big-5 league IDs, 11 completed seasons.
+ * Phase 0 preconditions: API key, /status quota, six competition IDs, 11 completed seasons.
  * Run: npx tsx scripts/verify-hist-phase0.ts
  */
 import { readFileSync, existsSync } from "node:fs";
@@ -31,12 +31,13 @@ function loadEnvFile(name: string) {
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
-const EXPECTED: Array<{ name: string; id: number }> = [
-  { name: "Premier League", id: 39 },
-  { name: "La Liga", id: 140 },
-  { name: "Serie A", id: 135 },
-  { name: "Bundesliga", id: 78 },
-  { name: "Ligue 1", id: 61 },
+const EXPECTED: Array<{ name: string; id: number; type: string }> = [
+  { name: "Premier League", id: 39, type: "league" },
+  { name: "La Liga", id: 140, type: "league" },
+  { name: "Serie A", id: 135, type: "league" },
+  { name: "Bundesliga", id: 78, type: "league" },
+  { name: "Ligue 1", id: 61, type: "league" },
+  { name: "UEFA Champions League", id: 2, type: "cup" },
 ];
 
 async function main() {
@@ -44,13 +45,15 @@ async function main() {
   const { confirmLeaguesAndSeason } = await import(
     "../lib/football-api/endpoint-map"
   );
-  const { histSeasonYears } = await import("../lib/hist/seasons");
+  const { histSeasonYears, HIST_LEAGUES, histJobKeys } = await import(
+    "../lib/hist/seasons"
+  );
   const { normalizeFootballStatus } = await import(
     "../lib/football-api/status"
   );
   const { apiFootballGet } = await import("../lib/football-api/client");
 
-  console.log("=== Phase 0 — Preconditions ===");
+  console.log("=== Phase 0 — Preconditions (6 competitions) ===");
 
   try {
     getApiFootballKey();
@@ -87,6 +90,11 @@ async function main() {
     process.exit(1);
   }
 
+  if (HIST_LEAGUES.length !== 6) {
+    console.error(`FAIL HIST_LEAGUES length: expected 6, got ${HIST_LEAGUES.length}`);
+    process.exit(1);
+  }
+
   const confirm = await confirmLeaguesAndSeason();
   let leagueFail = 0;
   for (const exp of EXPECTED) {
@@ -99,9 +107,11 @@ async function main() {
         exp.name.split(" ")[0]!.toLowerCase()
       ) ||
       (exp.name === "Premier League" &&
-        /premier|epl/i.test(row.apiName ?? ""));
+        /premier|epl/i.test(row.apiName ?? "")) ||
+      (exp.name === "UEFA Champions League" &&
+        /champion/i.test(row.apiName ?? ""));
     if (ok && nameOk) {
-      console.log(`PASS league ${exp.id}: ${resolved}`);
+      console.log(`PASS league ${exp.id} (${exp.type}): ${resolved}`);
     } else {
       leagueFail += 1;
       console.error(
@@ -121,8 +131,17 @@ async function main() {
     process.exit(1);
   }
 
+  const keys = histJobKeys();
   console.log(
-    `Phase 0 summary: PASS plan=${plan} remaining=${remaining ?? "?"} leagues=5/5 seasons=${seasons.length}`
+    `PASS job keys: ${keys.length} (expect 6×12=${6 * 12} with current)`
+  );
+  if (keys.length !== 72) {
+    console.error(`FAIL job keys: expected 72, got ${keys.length}`);
+    process.exit(1);
+  }
+
+  console.log(
+    `Phase 0 summary: PASS plan=${plan} remaining=${remaining ?? "?"} leagues=6/6 seasons=${seasons.length} jobs=${keys.length}`
   );
 }
 

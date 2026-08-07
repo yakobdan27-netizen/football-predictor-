@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ensureSchema } from "@/lib/db/init";
 import { readHistMeta } from "@/lib/hist/preflight";
 import { ensureHistJobs, histJobsSummary } from "@/lib/hist/store";
-import { histSeasonYears, HIST_BIG5_LEAGUES } from "@/lib/hist/seasons";
+import { histSeasonYears, HIST_LEAGUES } from "@/lib/hist/seasons";
 
 export const maxDuration = 30;
 export const runtime = "nodejs";
@@ -20,7 +20,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       seasons: histSeasonYears(),
-      leagues: HIST_BIG5_LEAGUES,
+      leagues: HIST_LEAGUES,
       byStatus: summary.byStatus,
       fixtures: summary.fixtures,
       goals: summary.goals,

@@ -10,7 +10,7 @@ import type {
   CachedTeamHalfProfile,
   VenueSide,
 } from "@/lib/prediction-log/two-h-heavy/types";
-import { HIST_BIG5_LEAGUES } from "./seasons";
+import { HIST_DOMESTIC_LEAGUES } from "./seasons";
 import { computeTeamHalfFromHist } from "./team-half-intensities";
 
 function teamKey(name: string): string {
@@ -31,7 +31,7 @@ export async function persistTeamHalfStatsFromHist(): Promise<PersistTeamHalfSta
   let thinData = 0;
   const teamSet = new Set<string>();
 
-  for (const league of HIST_BIG5_LEAGUES) {
+  for (const league of HIST_DOMESTIC_LEAGUES) {
     const rows = await db
       .select({
         homeTeam: histFixtures.homeTeam,

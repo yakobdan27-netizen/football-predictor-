@@ -7,7 +7,7 @@ import { histFixtures, histMeta } from "@/lib/db/schema";
 import { BETA_2H } from "@/lib/prediction-log/two-h-heavy/config";
 import { setBeta2hCache, beta2hFor as beta2hFromCache } from "./beta-cache";
 import {
-  HIST_BIG5_LEAGUES,
+  HIST_DOMESTIC_LEAGUES,
   HIST_COMPLETED_SEASON_COUNT,
   currentHistSeason,
   histSeasonWeight,
@@ -39,7 +39,7 @@ export async function recomputeLeagueBetas(): Promise<{
   const stored: Record<string, number> = {};
   const changes: Array<{ league: string; old: number; new: number }> = [];
 
-  for (const league of HIST_BIG5_LEAGUES) {
+  for (const league of HIST_DOMESTIC_LEAGUES) {
     const oldBeta = previous[league.name] ?? BETA_2H;
     const rows = await db
       .select({
@@ -53,6 +53,7 @@ export async function recomputeLeagueBetas(): Promise<{
       .where(
         and(
           eq(histFixtures.leagueId, league.id),
+          eq(histFixtures.compType, "league"),
           isNotNull(histFixtures.htHome),
           isNotNull(histFixtures.htAway),
           isNotNull(histFixtures.ftHome),

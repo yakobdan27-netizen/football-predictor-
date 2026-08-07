@@ -169,8 +169,8 @@ export function CornersApp() {
           ) : predictions.length === 0 ? (
             <p className="page-sub">This batch has no matches.</p>
           ) : (
-            <div className="card" style={{ overflowX: "auto" }}>
-              <table className="table" style={{ width: "100%", fontSize: "0.8125rem" }}>
+            <div className="card">
+              <table className="table mobile-stack-table" style={{ width: "100%", fontSize: "0.8125rem" }}>
                 <thead>
                   <tr>
                     <th>Match</th>
@@ -248,7 +248,7 @@ export function CornersApp() {
             </p>
           </div>
 
-          <div className="card" style={{ overflowX: "auto" }}>
+          <div className="card table-wrap">
             <table className="table" style={{ width: "100%", fontSize: "0.8125rem" }}>
               <thead>
                 <tr>
@@ -295,23 +295,27 @@ function PredictionRow({
 }) {
   return (
     <>
-      <tr onClick={onToggle} style={{ cursor: "pointer" }} title="Click for detail">
-        <td>
+      <tr
+        onClick={onToggle}
+        style={{ cursor: "pointer", minHeight: "2.75rem" }}
+        title="Tap for detail"
+      >
+        <td data-label="Match">
           {p.homeTeam} vs {p.awayTeam}
         </td>
-        <td>{p.lambdaHome.toFixed(2)}</td>
-        <td>{p.lambdaAway.toFixed(2)}</td>
-        <td>{p.expectedTotal.toFixed(2)}</td>
-        <td>{pctProb(p.pOver95)}</td>
-        <td>{pctProb(p.pOver105)}</td>
-        <td>
+        <td data-label="λ Home">{p.lambdaHome.toFixed(2)}</td>
+        <td data-label="λ Away">{p.lambdaAway.toFixed(2)}</td>
+        <td data-label="E[total]">{p.expectedTotal.toFixed(2)}</td>
+        <td data-label="P(O9.5)">{pctProb(p.pOver95)}</td>
+        <td data-label="P(O10.5)">{pctProb(p.pOver105)}</td>
+        <td data-label="Lean">
           <strong>
             {p.lean === "lean_none" && p.unavailableReason
               ? p.unavailableReason
               : leanLabel(p.lean)}
           </strong>
         </td>
-        <td>
+        <td data-label="Confidence">
           <span className="badge" style={confidenceStyle(p.confidence)}>
             {p.confidence}
           </span>

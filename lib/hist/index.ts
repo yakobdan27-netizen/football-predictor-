@@ -3,10 +3,15 @@ export {
   histJobKeys,
   histSeasonWeight,
   histWindowMinSeason,
+  histCompType,
+  histLeagueName,
+  HIST_LEAGUES,
+  HIST_DOMESTIC_LEAGUES,
   HIST_BIG5_LEAGUES,
   HIST_COMPLETED_SEASON_COUNT,
   HIST_SEASON_DECAY_BASE,
 } from "./seasons";
+export type { HistCompType, HistLeagueDef, HistJobKey } from "./seasons";
 export { runHistPreflight, readHistMeta } from "./preflight";
 export { runHistBackfillChunk } from "./backfill";
 export type { HistBackfillChunkSummary } from "./backfill";
@@ -27,6 +32,7 @@ export {
   auditHistCoverage,
   formatCoverageTable,
   gapQueueFromCoverage,
+  hasEmptyCompetition,
 } from "./coverage-audit";
 export type { HistCoverageReport, HistCoverageBucket } from "./coverage-audit";
 export {

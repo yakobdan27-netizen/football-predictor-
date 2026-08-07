@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetState
 import { TRACKING_BANNER, QUICK_MARKET_DEFS } from "@/lib/bets/constants";
 import type { BetFeedLeagueGroup } from "@/lib/bets/feed";
 import { LIVE_SYNC_LEAGUES, type LiveSyncLeague } from "@/lib/live/constants";
+import { MatchMarketView } from "./match-market-view";
 
 type Tab = "live" | "pre" | "open" | "settled";
 type SlipMode = "SINGLE" | "MULTI";
@@ -164,6 +165,7 @@ export function BetCouponApp() {
   const [editingOdd, setEditingOdd] = useState<Record<number, string>>({});
   const [league, setLeague] = useState<LiveSyncLeague>("Premier League");
   const [loadMsg, setLoadMsg] = useState<string | null>(null);
+  const [marketEvent, setMarketEvent] = useState<FeedEvent | null>(null);
 
   const loadQuota = useCallback(async () => {
     try {
@@ -379,9 +381,14 @@ export function BetCouponApp() {
     });
   }
 
-  async function saveManualOdd(marketId: number) {
+  async function saveManualOdd(marketId: number, oddOverride?: number | null) {
     const raw = editingOdd[marketId];
-    const odd = raw == null || raw === "" ? null : parseFloat(raw);
+    const odd =
+      oddOverride !== undefined
+        ? oddOverride
+        : raw == null || raw === ""
+          ? null
+          : parseFloat(raw);
     if (odd != null && (!Number.isFinite(odd) || odd <= 1)) {
       setPlaceMsg("Odd must be > 1");
       return;
@@ -398,6 +405,11 @@ export function BetCouponApp() {
     }
     if (tab === "pre" || tab === "live") void loadFeed(tab);
   }
+
+  const selectedKeys = useMemo(
+    () => new Set(picks.map((p) => p.key)),
+    [picks]
+  );
 
   async function refreshOdds(fixtureId: number) {
     setPlaceMsg("Refreshing odds…");
@@ -504,7 +516,7 @@ export function BetCouponApp() {
         display: "grid",
         gridTemplateColumns: "minmax(0, 1fr)",
         gap: "1rem",
-        paddingBottom: picks.length ? "14rem" : "5rem",
+        paddingBottom: picks.length ? "calc(14rem + var(--nav-height))" : "5rem",
       }}
       className="bets-layout"
     >
@@ -746,8 +758,9 @@ export function BetCouponApp() {
                           editingOdd={editingOdd}
                           setEditingOdd={setEditingOdd}
                           onToggle={togglePick}
-                          onSaveOdd={saveManualOdd}
+                          onSaveOdd={(id) => void saveManualOdd(id)}
                           onRefreshOdds={refreshOdds}
+                          onOpenMarkets={() => setMarketEvent(ev)}
                         />
                       ))}
                     </div>
@@ -805,13 +818,13 @@ export function BetCouponApp() {
 
       {/* Mobile sticky slip */}
       <div
-        className="bets-slip-mobile"
+        className="bets-slip-mobile sticky-above-nav"
         style={{
           position: "fixed",
           left: 0,
           right: 0,
           bottom: 0,
-          zIndex: 60,
+          zIndex: 45,
           background: "var(--surface)",
           borderTop: "1px solid var(--border)",
           boxShadow: "0 -8px 24px rgba(0,0,0,0.2)",
@@ -886,6 +899,28 @@ export function BetCouponApp() {
           </div>
         )}
       </div>
+
+      {marketEvent && (
+        <MatchMarketView
+          event={{
+            betEventId: marketEvent.betEventId,
+            apiFixtureId: marketEvent.apiFixtureId,
+            home: marketEvent.home,
+            away: marketEvent.away,
+            kickoffUtc: marketEvent.kickoffUtc,
+            status: marketEvent.status,
+            minute: marketEvent.minute,
+            homeScore: marketEvent.homeScore,
+            awayScore: marketEvent.awayScore,
+          }}
+          selectedKeys={selectedKeys}
+          onClose={() => setMarketEvent(null)}
+          onToggle={(m) => togglePick(marketEvent, m)}
+          onSaveOdd={async (marketId, odd) => {
+            await saveManualOdd(marketId, odd);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -899,6 +934,7 @@ function EventCard({
   onToggle,
   onSaveOdd,
   onRefreshOdds,
+  onOpenMarkets,
 }: {
   ev: FeedEvent;
   live: boolean;
@@ -908,6 +944,7 @@ function EventCard({
   onToggle: (ev: FeedEvent, m: MarketDto) => void;
   onSaveOdd: (id: number) => void;
   onRefreshOdds: (fixtureId: number) => void;
+  onOpenMarkets: () => void;
 }) {
   const markets = quickMarkets(ev.markets);
   return (
@@ -923,8 +960,18 @@ function EventCard({
         style={{
           display: "flex",
           justifyContent: "space-between",
+          alignItems: "stretch",
           gap: "0.5rem",
-          marginBottom: "0.35rem",
+          marginBottom: "0.5rem",
+          minHeight: "2.75rem",
+          cursor: "pointer",
+          touchAction: "manipulation",
+        }}
+        onClick={onOpenMarkets}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") onOpenMarkets();
         }}
       >
         <div>
@@ -953,12 +1000,18 @@ function EventCard({
               {kickoffLocal(ev.kickoffUtc)}
             </div>
           )}
+          <div style={{ fontSize: "0.75rem", color: "var(--accent)", fontWeight: 600 }}>
+            Tap for all markets →
+          </div>
         </div>
         <button
           type="button"
           className="btn btn-secondary"
-          style={{ fontSize: "0.65rem", alignSelf: "start" }}
-          onClick={() => onRefreshOdds(ev.apiFixtureId)}
+          style={{ fontSize: "0.75rem", alignSelf: "center", minHeight: "2.75rem" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRefreshOdds(ev.apiFixtureId);
+          }}
         >
           Odds
         </button>
@@ -979,19 +1032,24 @@ function EventCard({
             <div key={m.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <button
                 type="button"
-                onClick={() => onToggle(ev, m)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggle(ev, m);
+                }}
                 style={{
-                  minWidth: "3.5rem",
-                  padding: "0.4rem 0.5rem",
-                  borderRadius: 6,
+                  minWidth: "3.75rem",
+                  minHeight: "2.75rem",
+                  padding: "0.5rem 0.55rem",
+                  borderRadius: 8,
                   border: selected
                     ? "2px solid var(--accent)"
                     : "1px solid var(--border)",
                   background: selected ? "var(--accent)" : "var(--surface2)",
                   color: selected ? "#fff" : "inherit",
                   cursor: "pointer",
-                  fontSize: "0.75rem",
+                  fontSize: "0.8125rem",
                   fontWeight: 600,
+                  touchAction: "manipulation",
                 }}
               >
                 <div>{displayLabel(m)}</div>
@@ -1014,14 +1072,16 @@ function EventCard({
                       }))
                     }
                     style={{
-                      width: "3.5rem",
-                      fontSize: "0.65rem",
-                      padding: "0.15rem",
+                      width: "4.25rem",
+                      minHeight: "2.5rem",
+                      fontSize: "0.875rem",
+                      padding: "0.35rem 0.4rem",
                     }}
                   />
                   <button
                     type="button"
-                    style={{ fontSize: "0.6rem" }}
+                    className="btn btn-secondary"
+                    style={{ minHeight: "2.5rem", fontSize: "0.75rem", padding: "0.35rem 0.55rem" }}
                     onClick={() => onSaveOdd(m.id)}
                   >
                     Set

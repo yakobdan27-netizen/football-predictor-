@@ -9,6 +9,7 @@ import type {
   NewHistTeam,
 } from "@/lib/db/schema";
 import type { LiveApiEvent, LiveApiFixture } from "@/lib/live/types";
+import { histCompType, type HistCompType } from "./seasons";
 
 export type HistCompleteness = "full" | "partial" | "core-only";
 
@@ -71,7 +72,8 @@ export function mapFixtureCore(
   raw: LiveApiFixture,
   seasonFallback: number,
   completeness: HistCompleteness,
-  importedAt: Date = new Date()
+  importedAt: Date = new Date(),
+  compTypeOverride?: HistCompType
 ): NewHistFixture | null {
   const f = raw as AfScoreFixture;
   const fixtureId = f.fixture?.id;
@@ -97,6 +99,7 @@ export function mapFixtureCore(
     fixtureId,
     leagueId,
     season: f.league?.season ?? seasonFallback,
+    compType: compTypeOverride ?? histCompType(leagueId),
     round: f.league?.round?.trim() || null,
     dateUtc,
     homeId: asIntOrNull(f.teams.home.id),
@@ -180,6 +183,10 @@ export function mapStatistics(
       sot: findStat(stats, "Shots on Goal") ?? findStat(stats, "Shots on Target"),
       possession: findStat(stats, "Ball Possession"),
       corners: findStat(stats, "Corner"),
+      htCorners:
+        findStat(stats, "Corner Kicks 1st Half") ??
+        findStat(stats, "1st Half Corners") ??
+        null,
       yellow: findStat(stats, "Yellow Cards"),
       red: findStat(stats, "Red Cards"),
       fouls: findStat(stats, "Fouls"),
@@ -206,16 +213,30 @@ export function mapLineups(
   return out;
 }
 
+/**
+ * full = FT + HT scores + goals enrichment + stats rows present (corners attempted).
+ * Corners value may still be NULL (sparse UCL) → still full if stats row exists + HT.
+ * No stats → core-only (or partial if goals only).
+ */
 export function inferCompleteness(opts: {
   hasGoals: boolean;
   hasStats: boolean;
   hasLineups: boolean;
+  hasHt?: boolean;
+  hasFt?: boolean;
+  /** True when at least one stats row has a non-null corners value. */
+  hasCornersValue?: boolean;
 }): HistCompleteness {
-  const n =
-    (opts.hasGoals ? 1 : 0) +
-    (opts.hasStats ? 1 : 0) +
-    (opts.hasLineups ? 1 : 0);
-  if (n >= 3) return "full";
-  if (n === 0) return "core-only";
-  return "partial";
+  const hasFt = opts.hasFt !== false;
+  const hasHt = opts.hasHt === true;
+  if (!hasFt) return "core-only";
+
+  if (opts.hasGoals && opts.hasStats && hasHt) {
+    // Stats attempted (corners field may be NULL on sparse seasons)
+    return "full";
+  }
+  if (opts.hasGoals || opts.hasStats || opts.hasLineups || hasHt) {
+    return "partial";
+  }
+  return "core-only";
 }

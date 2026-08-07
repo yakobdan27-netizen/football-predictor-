@@ -79,6 +79,7 @@ export async function computeTeamHalfFromHist(
     .where(
       and(
         eq(histFixtures.leagueId, leagueId),
+        eq(histFixtures.compType, "league"),
         gte(histFixtures.season, minSeason),
         or(
           eq(histFixtures.homeTeam, standardizeTeamName(team)),
@@ -237,6 +238,7 @@ export async function leagueGoalAverageFromHist(
     .where(
       and(
         eq(histFixtures.leagueId, leagueId),
+        eq(histFixtures.compType, "league"),
         isNotNull(histFixtures.ftHome),
         isNotNull(histFixtures.ftAway),
         gte(histFixtures.season, minSeason)

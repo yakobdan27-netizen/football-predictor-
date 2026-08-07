@@ -76,10 +76,10 @@ async function main() {
   }
 
   const confirm = await confirmLeaguesAndSeason();
-  const leagueOk = confirm.leagues.filter((l) => l.ok).length >= 5;
+  const leagueOk = confirm.leagues.filter((l) => l.ok).length >= 6;
   if (
     !check(
-      "five league IDs resolve",
+      "six competition IDs resolve",
       leagueOk,
       confirm.leagues.map((l) => `${l.expectedId}:${l.apiName ?? l.name}`).join(", ")
     )
@@ -92,8 +92,8 @@ async function main() {
   console.log(formatCoverageTable(coverage));
   if (
     !check(
-      "post-backfill coverage table",
-      coverage.summary.total === 35,
+      "post-backfill coverage table (6×11)",
+      coverage.summary.total === 66,
       `full=${coverage.summary.full} partial=${coverage.summary.partial} missing=${coverage.summary.missing}`
     )
   ) {

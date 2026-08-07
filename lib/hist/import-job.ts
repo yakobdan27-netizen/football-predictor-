@@ -306,10 +306,19 @@ export async function processHistJobChunk(opts: {
     const hasG = goalsOk || (await hasHistGoals(id));
     const hasS = statsOk || (await hasHistStats(id));
     const hasL = lineupsOk || (await hasHistLineups(id));
+    const f = fx as {
+      score?: { halftime?: { home?: number | null; away?: number | null } };
+      goals?: { home?: number | null; away?: number | null };
+    };
+    const hasHt =
+      f.score?.halftime?.home != null && f.score?.halftime?.away != null;
+    const hasFt = f.goals?.home != null && f.goals?.away != null;
     const completeness = inferCompleteness({
       hasGoals: hasG,
       hasStats: hasS,
       hasLineups: hasL,
+      hasHt,
+      hasFt,
     });
 
     const core = mapFixtureCore(fx, season, completeness);

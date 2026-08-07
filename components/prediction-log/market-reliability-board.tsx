@@ -14,7 +14,7 @@ export function MarketReliabilityBoard({ top, weakest }: MarketReliabilityBoardP
       <p style={{ margin: "0 0 0.75rem", fontSize: "0.8125rem", color: "var(--muted)" }}>
         Where your logged picks are strongest and weakest (min sample required).
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }} className="mobile-1col-grid">
         <div>
           <div style={{ fontWeight: 600, fontSize: "0.8125rem", marginBottom: "0.35rem", color: "var(--accent)" }}>
             Strongest

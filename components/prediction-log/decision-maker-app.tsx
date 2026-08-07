@@ -13,6 +13,7 @@ import {
   type UserMarketEvaluation,
 } from "@/lib/prediction-log/decision-maker";
 import type { ComboCandidate } from "@/lib/prediction-log/combo-selection";
+import { blendBadgeLabel, blendBadgeTitle } from "@/lib/prediction-log/prediction-weights";
 import {
   getBatchDisplayId,
   resolveBatchByQuery,
@@ -89,6 +90,12 @@ function MarketCell({ market }: { market: ScoredDecisionMarket }) {
         {market.prediction}
       </div>
       <ConfidenceBar confidence={market.confidence} />
+      <div
+        style={{ fontSize: "0.6rem", marginTop: 2, opacity: 0.75, fontWeight: 600 }}
+        title={blendBadgeTitle("blended")}
+      >
+        {blendBadgeLabel("blended")}
+      </div>
       <div style={{ fontSize: "0.65rem", marginTop: 4, opacity: 0.8 }}>
         {market.pageLabel}
       </div>

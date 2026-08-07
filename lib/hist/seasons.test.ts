@@ -5,15 +5,24 @@ import assert from "node:assert/strict";
 import {
   HIST_COMPLETED_SEASON_COUNT,
   HIST_SEASON_DECAY_BASE,
+  HIST_LEAGUES,
+  HIST_DOMESTIC_LEAGUES,
   histSeasonWeight,
   histSeasonYears,
   histJobKeys,
   histWindowMinSeason,
+  histCompType,
   currentHistSeason,
 } from "./seasons";
 
 assert.equal(HIST_COMPLETED_SEASON_COUNT, 11);
 assert.equal(HIST_SEASON_DECAY_BASE, 0.8);
+assert.equal(HIST_LEAGUES.length, 6);
+assert.equal(HIST_DOMESTIC_LEAGUES.length, 5);
+assert.ok(HIST_LEAGUES.some((l) => l.id === 2 && l.type === "cup"));
+assert.ok(HIST_LEAGUES.some((l) => l.id === 61 && l.type === "league"));
+assert.equal(histCompType(2), "cup");
+assert.equal(histCompType(39), "league");
 
 const today = new Date("2026-08-04T12:00:00.000Z");
 const completed = histSeasonYears({ today, includeCurrent: false });
@@ -32,6 +41,7 @@ assert.ok(Math.abs(histSeasonWeight(2025, 2026) - 0.8) < 1e-9);
 assert.ok(Math.abs(histSeasonWeight(2015, 2026) - Math.pow(0.8, 11)) < 1e-9);
 
 const keys = histJobKeys({ today });
-assert.equal(keys.length, 5 * 12); // 11 completed + current
+assert.equal(keys.length, 6 * 12); // 11 completed + current
+assert.equal(keys.filter((k) => k.compType === "cup").length, 12);
 
 console.log("hist seasons tests passed");

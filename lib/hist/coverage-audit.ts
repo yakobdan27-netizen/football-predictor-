@@ -1,5 +1,5 @@
 /**
- * Read-only hist_* coverage audit for 5 leagues × 11 completed seasons (55 buckets).
+ * Read-only hist_* coverage audit for all HIST_LEAGUES × 11 completed seasons.
  * Never calls API-Football. Uses batched SQL for speed.
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -11,7 +11,7 @@ import {
   histLineups,
   histStats,
 } from "@/lib/db/schema";
-import { HIST_BIG5_LEAGUES, histSeasonYears } from "./seasons";
+import { HIST_LEAGUES, histSeasonYears } from "./seasons";
 
 export type BucketCompleteness =
   | "full"
@@ -23,11 +23,13 @@ export type HistCoverageBucket = {
   leagueId: number;
   leagueName: string;
   season: number;
+  compType: "league" | "cup";
   expected_fixtures: number;
   stored_fixtures: number;
   with_ht_score: number;
   with_goal_timings: number;
   with_match_stats: number;
+  with_corners: number;
   with_lineups: number;
   completeness: BucketCompleteness;
 };
@@ -42,6 +44,15 @@ export type HistCoverageReport = {
     missing: number;
     total: number;
   };
+  /** Per-competition stored fixture totals (all seasons in window). */
+  perCompetition: Array<{
+    leagueId: number;
+    leagueName: string;
+    compType: "league" | "cup";
+    stored: number;
+    withCorners: number;
+    withHt: number;
+  }>;
 };
 
 function rollupCompleteness(b: {
@@ -76,10 +87,8 @@ export async function auditHistCoverage(opts?: {
     today: opts?.today,
     includeCurrent: false,
   });
-  const leagueIds = HIST_BIG5_LEAGUES.map((l) => l.id);
-  const leagueNameById = new Map(
-    HIST_BIG5_LEAGUES.map((l) => [l.id, l.name] as const)
-  );
+  const leagueIds = HIST_LEAGUES.map((l) => l.id);
+  const leagueById = new Map(HIST_LEAGUES.map((l) => [l.id, l] as const));
   const db = await getDb();
 
   const jobs = await db
@@ -133,6 +142,7 @@ export async function auditHistCoverage(opts?: {
       leagueId: histFixtures.leagueId,
       season: histFixtures.season,
       n: sql<number>`count(distinct ${histStats.fixtureId})::int`,
+      withCorners: sql<number>`count(distinct ${histStats.fixtureId}) filter (where ${histStats.corners} is not null)::int`,
     })
     .from(histStats)
     .innerJoin(histFixtures, eq(histStats.fixtureId, histFixtures.fixtureId))
@@ -171,21 +181,23 @@ export async function auditHistCoverage(opts?: {
     goalRows.map((r) => [key(r.leagueId, r.season), Number(r.n)] as const)
   );
   const statsMap = new Map(
-    statsRows.map((r) => [key(r.leagueId, r.season), Number(r.n)] as const)
+    statsRows.map((r) => [key(r.leagueId, r.season), r] as const)
   );
   const lineupMap = new Map(
     lineupRows.map((r) => [key(r.leagueId, r.season), Number(r.n)] as const)
   );
 
   const buckets: HistCoverageBucket[] = [];
-  for (const league of HIST_BIG5_LEAGUES) {
+  for (const league of HIST_LEAGUES) {
     for (const season of seasons) {
       const k = key(league.id, season);
       const fx = fxMap.get(k);
       const stored = Number(fx?.stored ?? 0);
       const withHt = Number(fx?.withHt ?? 0);
       const withGoals = goalMap.get(k) ?? 0;
-      const withStats = statsMap.get(k) ?? 0;
+      const st = statsMap.get(k);
+      const withStats = Number(st?.n ?? 0);
+      const withCorners = Number(st?.withCorners ?? 0);
       const withLineups = lineupMap.get(k) ?? 0;
       const jobTotal = Number(jobMap.get(k) ?? 0);
       const expected = jobTotal > 0 ? jobTotal : stored;
@@ -198,18 +210,32 @@ export async function auditHistCoverage(opts?: {
       });
       buckets.push({
         leagueId: league.id,
-        leagueName: leagueNameById.get(league.id) ?? league.name,
+        leagueName: leagueById.get(league.id)?.name ?? league.name,
         season,
+        compType: league.type,
         expected_fixtures: expected,
         stored_fixtures: stored,
         with_ht_score: withHt,
         with_goal_timings: withGoals,
         with_match_stats: withStats,
+        with_corners: withCorners,
         with_lineups: withLineups,
         completeness,
       });
     }
   }
+
+  const perCompetition = HIST_LEAGUES.map((league) => {
+    const leagueBuckets = buckets.filter((b) => b.leagueId === league.id);
+    return {
+      leagueId: league.id,
+      leagueName: league.name,
+      compType: league.type as "league" | "cup",
+      stored: leagueBuckets.reduce((a, b) => a + b.stored_fixtures, 0),
+      withCorners: leagueBuckets.reduce((a, b) => a + b.with_corners, 0),
+      withHt: leagueBuckets.reduce((a, b) => a + b.with_ht_score, 0),
+    };
+  });
 
   const summary = {
     full: buckets.filter((b) => b.completeness === "full").length,
@@ -219,27 +245,36 @@ export async function auditHistCoverage(opts?: {
     total: buckets.length,
   };
 
-  return { seasons, buckets, summary };
+  return { seasons, buckets, summary, perCompetition };
 }
 
 export function formatCoverageTable(report: HistCoverageReport): string {
   const lines: string[] = [];
   lines.push(
-    "league\tseason\texpected\tstored\tht\tgoals\tstats\tlineups\tcompleteness"
+    "league\tcomp\tseason\texpected\tstored\tht\tgoals\tstats\tcorners\tlineups\tcompleteness"
   );
   for (const b of report.buckets) {
     lines.push(
       [
         b.leagueName,
+        b.compType,
         b.season,
         b.expected_fixtures,
         b.stored_fixtures,
         b.with_ht_score,
         b.with_goal_timings,
         b.with_match_stats,
+        b.with_corners,
         b.with_lineups,
         b.completeness,
       ].join("\t")
+    );
+  }
+  lines.push("");
+  lines.push("PER COMPETITION (completed window):");
+  for (const c of report.perCompetition) {
+    lines.push(
+      `${c.leagueName}\t${c.compType}\tfixtures=${c.stored}\tht=${c.withHt}\tcorners=${c.withCorners}`
     );
   }
   const s = report.summary;
@@ -247,6 +282,11 @@ export function formatCoverageTable(report: HistCoverageReport): string {
     `SUMMARY: ${s.full} of ${s.total} buckets full, ${s.partial} partial, ${s.coreOnly} core-only, ${s.missing} missing`
   );
   return lines.join("\n");
+}
+
+/** True if any competition has zero fixtures across the completed window. */
+export function hasEmptyCompetition(report: HistCoverageReport): boolean {
+  return report.perCompetition.some((c) => c.stored === 0);
 }
 
 /** Gap queue: missing → core-only → partial. Skip full. */

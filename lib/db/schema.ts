@@ -348,6 +348,69 @@ export type NewBetSlip = typeof betSlips.$inferInsert;
 export type BetSelection = typeof betSelections.$inferSelect;
 export type NewBetSelection = typeof betSelections.$inferInsert;
 
+/** External coupon users — isolated from personal bet_slips. */
+export const extUsers = pgTable(
+  "ext_users",
+  {
+    id: serial("id").primaryKey(),
+    phone: text("phone").notNull().unique(),
+    displayName: text("display_name"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    phoneIdx: index("ext_users_phone_idx").on(t.phone),
+  })
+);
+
+export const extSlips = pgTable(
+  "ext_slips",
+  {
+    id: serial("id").primaryKey(),
+    extUserId: integer("ext_user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    slipType: text("slip_type").notNull().default("MULTI"),
+    stake: real("stake").notNull(),
+    totalOdd: real("total_odd").notNull(),
+    potentialReturn: real("potential_return").notNull(),
+    note: text("note"),
+    status: text("status").notNull().default("SUBMITTED"),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => ({
+    userIdx: index("ext_slips_user_idx").on(t.extUserId),
+    statusIdx: index("ext_slips_status_idx").on(t.status),
+    createdIdx: index("ext_slips_created_idx").on(t.createdAt),
+  })
+);
+
+export const extSelections = pgTable(
+  "ext_selections",
+  {
+    id: serial("id").primaryKey(),
+    extSlipId: integer("ext_slip_id").notNull(),
+    betEventId: integer("bet_event_id"),
+    marketId: integer("market_id"),
+    eventLabel: text("event_label").notNull(),
+    marketLabel: text("market_label").notNull(),
+    chosenLabel: text("chosen_label").notNull(),
+    chosenOdd: real("chosen_odd").notNull(),
+    result: text("result").notNull().default("PENDING"),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (t) => ({
+    slipIdx: index("ext_selections_slip_idx").on(t.extSlipId),
+    eventIdx: index("ext_selections_event_idx").on(t.betEventId),
+  })
+);
+
+export type ExtUser = typeof extUsers.$inferSelect;
+export type NewExtUser = typeof extUsers.$inferInsert;
+export type ExtSlip = typeof extSlips.$inferSelect;
+export type NewExtSlip = typeof extSlips.$inferInsert;
+export type ExtSelection = typeof extSelections.$inferSelect;
+export type NewExtSelection = typeof extSelections.$inferInsert;
+
 /**
  * Historical AF seed tables — read-only reference for models.
  * Writers live only under lib/hist/. Never touch live_, bet_, match_stats, or pred-log.
@@ -358,6 +421,8 @@ export const histFixtures = pgTable(
     fixtureId: integer("fixture_id").primaryKey(),
     leagueId: integer("league_id").notNull(),
     season: integer("season").notNull(),
+    /** league | cup — cup excluded from domestic intensity / BETA / priors. */
+    compType: text("comp_type").notNull().default("league"),
     round: text("round"),
     dateUtc: timestamp("date_utc", { withTimezone: true }).notNull(),
     homeId: integer("home_id"),
@@ -379,6 +444,7 @@ export const histFixtures = pgTable(
       t.season
     ),
     dateIdx: index("hist_fixtures_date_idx").on(t.dateUtc),
+    compTypeIdx: index("hist_fixtures_comp_type_idx").on(t.compType),
   })
 );
 
@@ -409,6 +475,8 @@ export const histStats = pgTable(
     sot: integer("sot"),
     possession: integer("possession"),
     corners: integer("corners"),
+    /** Half-split corners only if API exposes them — else NULL. */
+    htCorners: integer("ht_corners"),
     yellow: integer("yellow"),
     red: integer("red"),
     fouls: integer("fouls"),
