@@ -13,6 +13,7 @@ import { matchLeague } from "../match-league";
 import { getSelectedPickForMatch } from "../snapshot-readers";
 import type { LogMarketKey } from "../types";
 import { bandToConfidence, clampConfidence } from "./confidence";
+import { eventProbPctFromScoreGrid } from "../goal-distribution";
 import { categoryForLogMarket } from "./market-category";
 import type {
   DecisionFetchContext,
@@ -37,21 +38,27 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
   const selected = getSelectedPickForMatch(rm);
   if (!selected) return [];
   const { marketKey, pick } = selected;
+  const label = predictionLabel(
+    marketKey,
+    pick.prediction,
+    pick.line,
+    ctx.match.homeTeam,
+    ctx.match.awayTeam
+  );
+  const grid = pick.mathSnapshot?.statLayer?.scoreGrid;
+  const distPct =
+    grid != null
+      ? eventProbPctFromScoreGrid(marketKey, label, pick.line, grid)
+      : null;
   const conf = clampConfidence(
-    pick.hybridConfidence ?? pick.pFinal ?? pick.confidence ?? 0
+    distPct ?? pick.hybridConfidence ?? pick.pFinal ?? pick.confidence ?? 0
   );
   const def = LOG_MARKET_MAP[marketKey];
   return [
     {
       marketKey,
       label: def?.label ?? marketKey,
-      prediction: predictionLabel(
-        marketKey,
-        pick.prediction,
-        pick.line,
-        ctx.match.homeTeam,
-        ctx.match.awayTeam
-      ),
+      prediction: label,
       confidence: conf,
       category: categoryForLogMarket(marketKey),
       pageId: "recommendation",

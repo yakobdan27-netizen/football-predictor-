@@ -321,3 +321,6 @@ export const PHONE_STORAGE_NOTICE =
 
 export const ADMIN_SLIPS_UNGUARDED_NOTICE =
   "This link is unguarded — anyone with it sees all submissions. Do not share it.";
+
+export const ADMIN_USERS_UNGUARDED_NOTICE =
+  "This link is unguarded — anyone with it sees all user identities and histories. Do not share it.";

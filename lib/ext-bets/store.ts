@@ -2,7 +2,7 @@
  * Postgres store for ext_* tables only.
  * Never writes bet_slips / prediction-log / manual-results.
  */
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   betEvents,
@@ -14,7 +14,12 @@ import {
   type ExtSlip,
   type ExtUser,
 } from "@/lib/db/schema";
+import { LEAGUE_API_IDS } from "@/lib/football-api/leagues";
 import { normalizePhoneOrCode } from "./phone";
+
+const LEAGUE_NAME_BY_ID = Object.fromEntries(
+  Object.entries(LEAGUE_API_IDS).map(([name, id]) => [id, name])
+) as Record<number, string>;
 
 export async function upsertExtUser(input: {
   phone: string;
@@ -388,4 +393,203 @@ export async function listOpenExtApiFixtureIdsWithPending(): Promise<number[]> {
       )
     );
   return [...new Set(rows.map((r) => r.apiFixtureId))];
+}
+
+export type AdminUserFilters = {
+  q?: string;
+  from?: Date;
+  to?: Date;
+  /** Filter on last_seen_at (default) or first_seen_at */
+  dateField?: "lastSeen" | "firstSeen";
+  minSlipCount?: number;
+};
+
+export type ExtUserAdminRow = {
+  id: number;
+  phone: string;
+  displayName: string | null;
+  firstSeenAt: Date;
+  lastSeenAt: Date;
+  totalSlips: number;
+  submitted: number;
+  won: number;
+  lost: number;
+  voided: number;
+  /** sum(potential_return for WON) − sum(stake for LOST) */
+  netResult: number;
+};
+
+export async function listExtUsersForAdmin(
+  filters: AdminUserFilters = {}
+): Promise<ExtUserAdminRow[]> {
+  const db = await getDb();
+  const dateCol =
+    filters.dateField === "firstSeen"
+      ? extUsers.firstSeenAt
+      : extUsers.lastSeenAt;
+
+  const conditions = [];
+  if (filters.from) {
+    conditions.push(gte(dateCol, filters.from));
+  }
+  if (filters.to) {
+    conditions.push(lte(dateCol, filters.to));
+  }
+  const q = filters.q?.trim();
+  if (q) {
+    const pattern = `%${q}%`;
+    conditions.push(
+      or(ilike(extUsers.phone, pattern), ilike(extUsers.displayName, pattern))
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: extUsers.id,
+      phone: extUsers.phone,
+      displayName: extUsers.displayName,
+      firstSeenAt: extUsers.firstSeenAt,
+      lastSeenAt: extUsers.lastSeenAt,
+      totalSlips: sql<number>`coalesce(count(${extSlips.id}), 0)::int`,
+      submitted: sql<number>`coalesce(sum(case when ${extSlips.status} = 'SUBMITTED' then 1 else 0 end), 0)::int`,
+      won: sql<number>`coalesce(sum(case when ${extSlips.status} = 'WON' then 1 else 0 end), 0)::int`,
+      lost: sql<number>`coalesce(sum(case when ${extSlips.status} = 'LOST' then 1 else 0 end), 0)::int`,
+      voided: sql<number>`coalesce(sum(case when ${extSlips.status} = 'VOID' then 1 else 0 end), 0)::int`,
+      netResult: sql<number>`coalesce(
+        sum(case when ${extSlips.status} = 'WON' then ${extSlips.potentialReturn} else 0 end)
+        - sum(case when ${extSlips.status} = 'LOST' then ${extSlips.stake} else 0 end)
+      , 0)::float`,
+    })
+    .from(extUsers)
+    .leftJoin(extSlips, eq(extSlips.extUserId, extUsers.id))
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(
+      extUsers.id,
+      extUsers.phone,
+      extUsers.displayName,
+      extUsers.firstSeenAt,
+      extUsers.lastSeenAt
+    )
+    .orderBy(desc(extUsers.lastSeenAt));
+
+  const min = filters.minSlipCount ?? 0;
+  return rows
+    .map((r) => ({
+      id: r.id,
+      phone: r.phone,
+      displayName: r.displayName,
+      firstSeenAt: r.firstSeenAt,
+      lastSeenAt: r.lastSeenAt,
+      totalSlips: r.totalSlips ?? 0,
+      submitted: r.submitted ?? 0,
+      won: r.won ?? 0,
+      lost: r.lost ?? 0,
+      voided: r.voided ?? 0,
+      netResult: Number(r.netResult ?? 0),
+    }))
+    .filter((r) => r.totalSlips >= min);
+}
+
+export type ExtUserAdminDetail = {
+  user: ExtUser;
+  stats: {
+    totalSlips: number;
+    submitted: number;
+    won: number;
+    lost: number;
+    voided: number;
+    winRate: number | null;
+    avgStake: number;
+    netResult: number;
+    topLeagues: Array<{ label: string; count: number }>;
+    topMarkets: Array<{ label: string; count: number }>;
+  };
+  slips: Array<{ slip: ExtSlip; selections: ExtSelection[] }>;
+};
+
+export async function getExtUserAdminDetail(
+  userId: number,
+  filters: { status?: string; from?: Date; to?: Date } = {}
+): Promise<ExtUserAdminDetail | null> {
+  const user = await getExtUserById(userId);
+  if (!user) return null;
+
+  let slips = await listExtSlipsForUser(userId);
+  if (filters.status) {
+    slips = slips.filter((r) => r.slip.status === filters.status);
+  }
+  if (filters.from) {
+    const from = filters.from;
+    slips = slips.filter((r) => r.slip.createdAt >= from);
+  }
+  if (filters.to) {
+    const to = filters.to;
+    slips = slips.filter((r) => r.slip.createdAt <= to);
+  }
+
+  const totalSlips = slips.length;
+  const submitted = slips.filter((r) => r.slip.status === "SUBMITTED").length;
+  const won = slips.filter((r) => r.slip.status === "WON").length;
+  const lost = slips.filter((r) => r.slip.status === "LOST").length;
+  const voided = slips.filter((r) => r.slip.status === "VOID").length;
+  const decided = won + lost;
+  const winRate = decided > 0 ? won / decided : null;
+  const avgStake =
+    totalSlips > 0
+      ? slips.reduce((sum, r) => sum + r.slip.stake, 0) / totalSlips
+      : 0;
+  const netResult =
+    slips
+      .filter((r) => r.slip.status === "WON")
+      .reduce((sum, r) => sum + r.slip.potentialReturn, 0) -
+    slips
+      .filter((r) => r.slip.status === "LOST")
+      .reduce((sum, r) => sum + r.slip.stake, 0);
+
+  const marketCounts = new Map<string, number>();
+  const leagueCounts = new Map<string, number>();
+  const db = await getDb();
+
+  for (const { selections } of slips) {
+    for (const sel of selections) {
+      const mKey = sel.marketLabel.trim() || "Unknown";
+      marketCounts.set(mKey, (marketCounts.get(mKey) ?? 0) + 1);
+
+      if (sel.betEventId != null) {
+        const [ev] = await db
+          .select({ leagueId: betEvents.leagueId })
+          .from(betEvents)
+          .where(eq(betEvents.id, sel.betEventId))
+          .limit(1);
+        if (ev) {
+          const label =
+            LEAGUE_NAME_BY_ID[ev.leagueId] ?? `League ${ev.leagueId}`;
+          leagueCounts.set(label, (leagueCounts.get(label) ?? 0) + 1);
+        }
+      }
+    }
+  }
+
+  const topN = (m: Map<string, number>, n = 5) =>
+    [...m.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n)
+      .map(([label, count]) => ({ label, count }));
+
+  return {
+    user,
+    stats: {
+      totalSlips,
+      submitted,
+      won,
+      lost,
+      voided,
+      winRate,
+      avgStake,
+      netResult,
+      topLeagues: topN(leagueCounts),
+      topMarkets: topN(marketCounts),
+    },
+    slips,
+  };
 }

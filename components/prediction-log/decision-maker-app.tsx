@@ -19,7 +19,9 @@ import {
   resolveBatchByQuery,
 } from "@/lib/prediction-log/snapshot-readers";
 import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
+import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { MatchPerTeamLines } from "./match-per-team-lines";
 
 function toneStyle(confidence: number): CSSProperties {
   const tone = confidenceTone(confidence);
@@ -193,20 +195,25 @@ function UserMarketEvalCell({ evalRow }: { evalRow: UserMarketEvaluation }) {
 
 function DecisionRow({
   row,
-  batchDate,
+  batch,
+  allBatches,
   expanded,
   onToggle,
   highlight,
 }: {
   row: MatchDecisionRow;
-  batchDate: string;
+  batch: PredictionBatch;
+  allBatches: PredictionBatch[];
   expanded: boolean;
   onToggle: () => void;
   highlight?: boolean;
 }) {
   const [m1, m2, m3] = row.markets;
-  const dateTime = row.match.matchDate ?? batchDate;
+  const dateTime = row.match.matchDate ?? batch.date;
   const rowRef = useRef<HTMLTableRowElement | null>(null);
+  const showPerTeam =
+    expanded ||
+    row.markets.some((m) => m.marketKey === "corners_ou" || m.marketKey === "hsh");
 
   useEffect(() => {
     if (highlight && rowRef.current) {
@@ -264,6 +271,18 @@ function DecisionRow({
           </div>
         </td>
       </tr>
+      {showPerTeam ? (
+        <tr className="dm-desktop-row">
+          <td colSpan={9} style={{ paddingTop: 0 }}>
+            <MatchPerTeamLines
+              match={row.match}
+              batch={batch}
+              allBatches={allBatches}
+              compact
+            />
+          </td>
+        </tr>
+      ) : null}
 
       <tr className="dm-mobile-row">
         <td colSpan={9} style={{ padding: "0.5rem 0" }}>
@@ -311,6 +330,12 @@ function DecisionRow({
                 {m3 && <MarketCell market={m3} />}
                 <CombinedOddCell combo={row.bestCombined} />
                 <UserMarketEvalCell evalRow={row.userMarketEval} />
+                <MatchPerTeamLines
+                  match={row.match}
+                  batch={batch}
+                  allBatches={allBatches}
+                  compact
+                />
               </div>
             )}
           </button>
@@ -504,7 +529,8 @@ export function DecisionMakerApp() {
                   <DecisionRow
                     key={row.match.id}
                     row={row}
-                    batchDate={batch.date}
+                    batch={batch}
+                    allBatches={batches}
                     expanded={!!expanded[row.match.id]}
                     highlight={
                       focusFixtureId != null &&

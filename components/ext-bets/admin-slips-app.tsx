@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ADMIN_SLIPS_UNGUARDED_NOTICE } from "@/lib/bets/constants";
 import { LIVE_SYNC_LEAGUES } from "@/lib/live/constants";
@@ -33,7 +34,14 @@ type Summary = {
   settled: number;
 };
 
-export function AdminSlipsApp({ slug }: { slug: string }) {
+export function AdminSlipsApp({
+  slug,
+  usersAdminBase,
+}: {
+  slug: string;
+  /** When ADMIN_USERS_SLUG is set: `/admin-users/<usersSlug>` */
+  usersAdminBase?: string;
+}) {
   const [slips, setSlips] = useState<AdminSlip[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [phone, setPhone] = useState("");
@@ -239,7 +247,17 @@ export function AdminSlipsApp({ slug }: { slug: string }) {
             >
               <div>
                 <strong>
-                  #{s.id} · {s.phone}
+                  #{s.id} ·{" "}
+                  {usersAdminBase ? (
+                    <Link
+                      href={`${usersAdminBase}?phone=${encodeURIComponent(s.phone)}`}
+                      style={{ color: "inherit", textDecoration: "underline" }}
+                    >
+                      {s.phone}
+                    </Link>
+                  ) : (
+                    s.phone
+                  )}
                   {s.displayName ? ` (${s.displayName})` : ""}
                 </strong>
                 <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>

@@ -23,6 +23,8 @@ import {
 } from "@/lib/prediction-log/prediction-weights";
 import { scoreMarket } from "@/lib/prediction-log/score-market";
 import { CorrectScoreOneLiner } from "./correct-score-panel";
+import { MatchPerTeamLines } from "./match-per-team-lines";
+import { usePredictionLogData } from "./use-prediction-log-data";
 import type { LogMarketKey, LogMatch, PredictionBatch, ScoreResult } from "@/lib/prediction-log/types";
 
 function hybridBadgeTitle(pick: {
@@ -242,7 +244,12 @@ export function RecommendationBatchLayout({
                         </div>
                         {expanded && (
                           <div className="reco-row-expand reco-row-expand-desktop">
-                            <ExpandReasoning row={row} cs={cs} />
+                            <ExpandReasoning
+                              row={row}
+                              cs={cs}
+                              batch={batch}
+                              sourceBatch={sourceBatch}
+                            />
                           </div>
                         )}
                       </td>
@@ -361,7 +368,12 @@ export function RecommendationBatchLayout({
                   </div>
                   {expanded && (
                     <div className="reco-row-expand">
-                      <ExpandReasoning row={row} cs={cs} />
+                      <ExpandReasoning
+                        row={row}
+                        cs={cs}
+                        batch={batch}
+                        sourceBatch={sourceBatch}
+                      />
                     </div>
                   )}
                 </button>
@@ -424,10 +436,15 @@ export function RecommendationBatchLayout({
 function ExpandReasoning({
   row,
   cs,
+  batch,
+  sourceBatch,
 }: {
   row: ReturnType<typeof buildMatchSummaryRows>[number];
   cs: { home: number; away: number; probPct: number } | undefined;
+  batch: PredictionBatch;
+  sourceBatch?: PredictionBatch | null;
 }) {
+  const { batches } = usePredictionLogData();
   const comment = row.pickComment;
   const commentColor =
     comment?.label === "good"
@@ -437,6 +454,11 @@ function ExpandReasoning({
         : comment?.label === "avoid"
           ? "var(--danger)"
           : "var(--muted)";
+
+  const entryBatch = sourceBatch ?? batch;
+  const match =
+    entryBatch.matches.find((m) => m.id === row.matchId) ??
+    batch.matches.find((m) => m.id === row.matchId);
 
   return (
     <div className="reco-reasoning">
@@ -451,6 +473,14 @@ function ExpandReasoning({
         <div style={{ color: "var(--muted)" }}>No extra reasoning stored for this pick.</div>
       )}
       {cs ? <CorrectScoreOneLiner snapshot={cs} /> : null}
+      {match ? (
+        <MatchPerTeamLines
+          match={match}
+          batch={entryBatch}
+          allBatches={batches.length ? batches : [entryBatch]}
+          compact
+        />
+      ) : null}
     </div>
   );
 }

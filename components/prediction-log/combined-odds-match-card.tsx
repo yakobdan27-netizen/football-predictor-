@@ -3,6 +3,8 @@
 import Link from "next/link";
 import type { MatchComboResult } from "@/lib/prediction-log/combo-selection";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
+import { MatchPerTeamLines } from "./match-per-team-lines";
+import { usePredictionLogData } from "./use-prediction-log-data";
 
 interface CombinedOddsMatchCardProps {
   batch: PredictionBatch;
@@ -19,7 +21,9 @@ export function CombinedOddsMatchCard({
   comboOdds,
   onOddsChange,
 }: CombinedOddsMatchCardProps) {
+  const { batches } = usePredictionLogData();
   const selected = match.selected;
+  const logMatch = batch.matches.find((m) => m.id === match.matchId);
 
   return (
     <div
@@ -111,6 +115,14 @@ export function CombinedOddsMatchCard({
           ) : null}
         </div>
       )}
+      {logMatch ? (
+        <MatchPerTeamLines
+          match={logMatch}
+          batch={batch}
+          allBatches={batches.length ? batches : [batch]}
+          compact
+        />
+      ) : null}
     </div>
   );
 }

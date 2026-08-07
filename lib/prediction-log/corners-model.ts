@@ -2,7 +2,6 @@
  * Corners analysis — both-club won × conceded interaction + Poisson O/U.
  * Advisory only; never blocks picks. Does not alter Recommendation corners_ou.
  */
-import { poissonPmf } from "@/lib/predictor/poisson";
 import { standardizeTeamName } from "@/lib/data/team-names";
 import {
   blendSeedAndLive,
@@ -20,6 +19,7 @@ import {
   LEAGUE_PRIOR_FULL_SAMPLE,
   shrinkTowardLeaguePrior,
 } from "./league-priors";
+import { poissonOverLine } from "./poisson-ou";
 import type { LogMatch, PredictionBatch } from "./types";
 
 export type CornersConfidence = CornersSeedConfidence;
@@ -67,7 +67,6 @@ export interface CornersMatchPrediction {
   };
 }
 
-const POISSON_GRID_MAX = 25;
 const DEFAULT_LEAGUE_BASE = 5.2;
 
 function teamKey(name: string): string {
@@ -216,20 +215,6 @@ export async function loadClubCornersRatesAsync(
     // DB unavailable — keep static path
   }
   return base;
-}
-
-function poissonCdfAtOrBelow(k: number, lambda: number): number {
-  let sum = 0;
-  const max = Math.min(POISSON_GRID_MAX, Math.max(0, Math.floor(k)));
-  for (let i = 0; i <= max; i++) sum += poissonPmf(i, Math.max(0, lambda));
-  // Tail mass for k >= grid is negligible for typical corner lambdas
-  return Math.min(1, Math.max(0, sum));
-}
-
-function poissonOverLine(line: number, lambda: number): number {
-  // Over n.5 → P(X >= n+1) = 1 - P(X <= n)
-  const threshold = Math.floor(line);
-  return 1 - poissonCdfAtOrBelow(threshold, lambda);
 }
 
 export function matchConfidence(

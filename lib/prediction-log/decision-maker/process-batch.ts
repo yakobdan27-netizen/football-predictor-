@@ -21,6 +21,7 @@ import {
   aggregateMatchData,
   generateTopThreeMarkets,
 } from "./decision-engine";
+import { applyCoherentMarketConfidences } from "./coherent-confidence";
 import { categoryForLogMarket } from "./market-category";
 import { clampConfidence } from "./confidence";
 import type { DecisionMarketCandidate, MatchDecisionRow } from "./types";
@@ -139,6 +140,11 @@ export function processBatchDecisions(params: {
       fallbacksFromMatch(batch, match),
       { leagueName: league, leaguePriors }
     );
+    result.markets = applyCoherentMarketConfidences(result.markets, {
+      batch,
+      match,
+      caches,
+    });
 
     const topKeys = result.markets.map((m) => m.marketKey);
     const comboRow = caches.comboByMatchId.get(match.id) ?? null;

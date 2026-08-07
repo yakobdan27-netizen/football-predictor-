@@ -14,9 +14,11 @@ import {
   type ConcededHalfTeamStats,
 } from "@/lib/prediction-log/conceded-half-model";
 import { matchLeague } from "@/lib/prediction-log/match-league";
+import { leanLabel, predictCornersMatch } from "@/lib/prediction-log/corners-model";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHshPredictions } from "./use-hsh-predictions";
 import { useConcededHalfPredictions, useConcededHalfStats } from "./use-conceded-half-stats";
+import { PerTeamLinesPanel } from "./per-team-lines-panel";
 
 function pct(p: number): string {
   return `${Math.round(p * 100)}%`;
@@ -67,6 +69,23 @@ export function HshApp() {
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
   const { predictions, loading, error: predError } = useHshPredictions(batch, batches, {});
+
+  const cornersByMatch = useMemo(() => {
+    if (!batch) return new Map<string, ReturnType<typeof predictCornersMatch>>();
+    return new Map(
+      batch.matches.map((match) => [
+        match.id,
+        predictCornersMatch({
+          matchId: match.id,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          league: matchLeague(match, batch.league),
+          batches,
+          beforeDate: batch.date,
+        }),
+      ])
+    );
+  }, [batch, batches]);
 
   const batchLeague = useMemo(() => {
     if (!batch?.matches.length) return batch?.league ?? null;
@@ -188,6 +207,7 @@ export function HshApp() {
                 <PredictionRow
                   key={p.matchId}
                   prediction={p}
+                  corners={cornersByMatch.get(p.matchId) ?? null}
                   expanded={expandedId === p.matchId}
                   onToggle={() =>
                     setExpandedId((id) => (id === p.matchId ? null : p.matchId))
@@ -375,10 +395,12 @@ function ConcededPredictionRow({
 
 function PredictionRow({
   prediction: p,
+  corners,
   expanded,
   onToggle,
 }: {
   prediction: HshPrediction;
+  corners: ReturnType<typeof predictCornersMatch> | null;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -415,7 +437,7 @@ function PredictionRow({
       {expanded && (
         <tr>
           <td colSpan={9} style={{ background: "var(--surface2)", padding: "1rem" }}>
-            <DetailPanel prediction={p} />
+            <DetailPanel prediction={p} corners={corners} />
           </td>
         </tr>
       )}
@@ -423,7 +445,13 @@ function PredictionRow({
   );
 }
 
-function DetailPanel({ prediction: p }: { prediction: HshPrediction }) {
+function DetailPanel({
+  prediction: p,
+  corners,
+}: {
+  prediction: HshPrediction;
+  corners: ReturnType<typeof predictCornersMatch> | null;
+}) {
   const d = p.detail;
   const lowSeedHint =
     (d.seedHome != null && !d.seedHome.includes("live")) ||
@@ -505,6 +533,22 @@ function DetailPanel({ prediction: p }: { prediction: HshPrediction }) {
           only; no market odds comparison in v1.
         </p>
       )}
+      <PerTeamLinesPanel
+        cornersTotal={
+          corners
+            ? {
+                text:
+                  corners.lean === "lean_none"
+                    ? `No lean · P(O9.5) ${pct(corners.pOver95)}`
+                    : `${leanLabel(corners.lean)} (${pct(corners.topProbability)})`,
+                confidence: corners.confidence,
+              }
+            : null
+        }
+        corners={corners}
+        hsh={p}
+        showHtTotal
+      />
     </div>
   );
 }

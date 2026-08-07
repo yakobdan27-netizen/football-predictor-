@@ -224,3 +224,124 @@ test("incomplete when fewer than 2 sources provide data", () => {
   assert.equal(result.incomplete, true);
   assert.equal(result.sourceCount, 1);
 });
+
+test("binary exclusivity: Over and Under 2.5 cannot both appear in top-3", () => {
+  const scored = [
+    mk({
+      marketKey: "total_goals_ou",
+      prediction: "Over 2.5",
+      category: "goals",
+      confidence: 81,
+      totalScore: 40,
+      line: 2.5,
+    }),
+    mk({
+      marketKey: "total_goals_ou",
+      prediction: "Under 2.5",
+      category: "goals",
+      confidence: 75,
+      totalScore: 38,
+      line: 2.5,
+    }),
+    mk({
+      marketKey: "corners_ou",
+      prediction: "Over 9.5",
+      category: "corners",
+      confidence: 70,
+      totalScore: 20,
+      line: 9.5,
+    }),
+    mk({
+      marketKey: "hsh",
+      prediction: "2H",
+      category: "specialized",
+      confidence: 65,
+      totalScore: 15,
+    }),
+  ];
+  const top = selectDiverseTopThree(scored);
+  const goalsOu = top.filter((m) => m.marketKey === "total_goals_ou");
+  assert.equal(goalsOu.length, 1, "exactly one total_goals_ou side");
+  assert.equal(goalsOu[0]!.prediction, "Over 2.5");
+});
+
+test("binary exclusivity: BTTS Yes and No cannot both appear", () => {
+  const scored = [
+    mk({
+      marketKey: "btts",
+      prediction: "BTTS Yes",
+      category: "goals",
+      confidence: 70,
+      totalScore: 30,
+    }),
+    mk({
+      marketKey: "btts",
+      prediction: "No",
+      category: "goals",
+      confidence: 68,
+      totalScore: 28,
+    }),
+    mk({
+      marketKey: "corners_ou",
+      prediction: "Under 9.5",
+      category: "corners",
+      confidence: 60,
+      totalScore: 12,
+    }),
+    mk({
+      marketKey: "hsh",
+      prediction: "1H",
+      category: "specialized",
+      confidence: 55,
+      totalScore: 10,
+    }),
+  ];
+  const top = selectDiverseTopThree(scored);
+  assert.equal(top.filter((m) => m.marketKey === "btts").length, 1);
+});
+
+test("ensureThreeMarkets fallbacks respect binary mutex", () => {
+  const one = [
+    mk({
+      marketKey: "total_goals_ou",
+      prediction: "Over 2.5",
+      category: "goals",
+      confidence: 81,
+      line: 2.5,
+    }),
+  ];
+  const fallbacks: DecisionMarketCandidate[] = [
+    {
+      marketKey: "total_goals_ou",
+      label: "Total goals",
+      prediction: "Under 2.5",
+      confidence: 75,
+      category: "goals",
+      pageId: "prediction-log",
+      pageLabel: "Log",
+      line: 2.5,
+    },
+    {
+      marketKey: "corners_ou",
+      label: "Corners",
+      prediction: "Over 9.5",
+      confidence: 60,
+      category: "corners",
+      pageId: "prediction-log",
+      pageLabel: "Log",
+      line: 9.5,
+    },
+    {
+      marketKey: "hsh",
+      label: "HSH",
+      prediction: "2H",
+      confidence: 55,
+      category: "specialized",
+      pageId: "prediction-log",
+      pageLabel: "Log",
+    },
+  ];
+  const out = ensureThreeMarkets(one, fallbacks);
+  assert.equal(out.filter((m) => m.marketKey === "total_goals_ou").length, 1);
+  assert.ok(out.some((m) => m.marketKey === "corners_ou"));
+});

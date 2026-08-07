@@ -14,11 +14,15 @@ export {
 } from "./types";
 export { bandToConfidence, clampConfidence, confidenceTone } from "./confidence";
 export {
+  binaryMarketGroupKey,
   categoryForLogMarket,
   categoryForMarketKey,
   categoryIcon,
+  isBinaryMarketKey,
   marketIdentity,
+  normalizePredictionToken,
 } from "./market-category";
+export { applyCoherentMarketConfidences } from "./coherent-confidence";
 export {
   RESULT_PAGE_REGISTRY,
   listRegisteredResultPages,

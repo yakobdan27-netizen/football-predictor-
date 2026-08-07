@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
-import { getAdminSlipsSlug } from "@/lib/ext-bets/admin-auth";
+import {
+  getAdminSlipsSlug,
+  getAdminUsersSlug,
+} from "@/lib/ext-bets/admin-auth";
 import { AdminSlipsApp } from "@/components/ext-bets/admin-slips-app";
 
 export default async function AdminSlipsPage({
@@ -24,5 +27,9 @@ export default async function AdminSlipsPage({
   if (slug !== expected) {
     notFound();
   }
-  return <AdminSlipsApp slug={slug} />;
+  const usersSlug = getAdminUsersSlug();
+  const usersAdminBase = usersSlug
+    ? `/admin-users/${usersSlug}`
+    : undefined;
+  return <AdminSlipsApp slug={slug} usersAdminBase={usersAdminBase} />;
 }

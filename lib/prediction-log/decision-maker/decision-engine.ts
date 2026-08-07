@@ -4,7 +4,7 @@
  * (60/40 API↔Manual). Market % may inherit hybridConfidence from recommendation
  * sources; aggregation math here is intentionally unchanged.
  */
-import { marketIdentity } from "./market-category";
+import { binaryMarketGroupKey, marketIdentity } from "./market-category";
 import type {
   AggregatedMatchData,
   DecisionMarketCandidate,
@@ -164,19 +164,26 @@ export function selectDiverseTopThree(
 
   const picked: ScoredDecisionMarket[] = [];
   const used = new Set<string>();
+  const usedBinaryGroups = new Set<string>();
+
+  const isBlocked = (m: ScoredDecisionMarket) => {
+    const id = marketIdentity(m);
+    if (used.has(id)) return true;
+    const group = binaryMarketGroupKey(m);
+    if (group && usedBinaryGroups.has(group)) return true;
+    return false;
+  };
 
   const take = (m: ScoredDecisionMarket | undefined) => {
-    if (!m) return;
-    const id = marketIdentity(m);
-    if (used.has(id)) return;
-    used.add(id);
+    if (!m || isBlocked(m)) return;
+    used.add(marketIdentity(m));
+    const group = binaryMarketGroupKey(m);
+    if (group) usedBinaryGroups.add(group);
     picked.push(m);
   };
 
   const bestOf = (cat: ScoredDecisionMarket["category"]) => {
-    const candidates = pool.filter(
-      (m) => m.category === cat && !used.has(marketIdentity(m))
-    );
+    const candidates = pool.filter((m) => m.category === cat && !isBlocked(m));
     if (candidates.length === 0) return undefined;
     return [...candidates].sort((a, b) => {
       const scoreDiff = b.totalScore - a.totalScore;
@@ -210,12 +217,18 @@ export function ensureThreeMarkets(
 ): ScoredDecisionMarket[] {
   const out = [...markets];
   const used = new Set(out.map(marketIdentity));
+  const usedBinaryGroups = new Set(
+    out.map(binaryMarketGroupKey).filter((g): g is string => g != null)
+  );
 
   for (const f of fallbacks) {
     if (out.length >= 3) break;
     const id = marketIdentity(f);
     if (used.has(id)) continue;
+    const group = binaryMarketGroupKey(f);
+    if (group && usedBinaryGroups.has(group)) continue;
     used.add(id);
+    if (group) usedBinaryGroups.add(group);
     out.push({
       ...f,
       totalScore: f.confidence * 0.01,

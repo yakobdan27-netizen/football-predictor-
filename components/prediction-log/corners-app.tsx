@@ -13,6 +13,8 @@ import {
   type CornersMatchPrediction,
 } from "@/lib/prediction-log/corners-model";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { useHshPredictions } from "./use-hsh-predictions";
+import { PerTeamLinesPanel } from "./per-team-lines-panel";
 
 const KNOWN_SEASONS = availableSeedSeasons();
 
@@ -69,6 +71,11 @@ export function CornersApp() {
   }, [sortedBatches, batchId]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
+  const { predictions: hshPredictions } = useHshPredictions(batch, batches, {});
+  const hshByMatch = useMemo(() => {
+    const m = new Map(hshPredictions.map((p) => [p.matchId, p]));
+    return m;
+  }, [hshPredictions]);
 
   const predictions = useMemo(() => {
     if (!batch) return [] as CornersMatchPrediction[];
@@ -188,6 +195,7 @@ export function CornersApp() {
                     <PredictionRow
                       key={p.matchId}
                       prediction={p}
+                      hsh={hshByMatch.get(p.matchId) ?? null}
                       expanded={expandedId === p.matchId}
                       onToggle={() =>
                         setExpandedId((id) => (id === p.matchId ? null : p.matchId))
@@ -286,10 +294,12 @@ export function CornersApp() {
 
 function PredictionRow({
   prediction: p,
+  hsh,
   expanded,
   onToggle,
 }: {
   prediction: CornersMatchPrediction;
+  hsh: import("@/lib/prediction-log/hsh-model").HshPrediction | null;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -324,7 +334,7 @@ function PredictionRow({
       {expanded && (
         <tr>
           <td colSpan={8} style={{ background: "var(--surface2)", padding: "1rem" }}>
-            <DetailPanel prediction={p} />
+            <DetailPanel prediction={p} hsh={hsh} />
           </td>
         </tr>
       )}
@@ -332,8 +342,18 @@ function PredictionRow({
   );
 }
 
-function DetailPanel({ prediction: p }: { prediction: CornersMatchPrediction }) {
+function DetailPanel({
+  prediction: p,
+  hsh,
+}: {
+  prediction: CornersMatchPrediction;
+  hsh: import("@/lib/prediction-log/hsh-model").HshPrediction | null;
+}) {
   const d = p.detail;
+  const totalText =
+    p.lean === "lean_none"
+      ? `No lean · P(O9.5) ${pctProb(p.pOver95)}`
+      : `${leanLabel(p.lean)} (${pctProb(p.topProbability)})`;
   return (
     <div style={{ display: "grid", gap: "0.5rem", fontSize: "0.8125rem" }}>
       <strong>
@@ -352,7 +372,7 @@ function DetailPanel({ prediction: p }: { prediction: CornersMatchPrediction }) 
         {pctProb(p.pOver105)} · P(U10.5) {pctProb(p.pUnder105)}
       </div>
       <div>
-        Team O4.5: {p.homeTeam} {pctProb(p.pHomeOver45)} · {p.awayTeam}{" "}
+        Team O4.5 (legacy): {p.homeTeam} {pctProb(p.pHomeOver45)} · {p.awayTeam}{" "}
         {pctProb(p.pAwayOver45)}
       </div>
       {(d.seedHome || d.seedAway) && (
@@ -369,6 +389,12 @@ function DetailPanel({ prediction: p }: { prediction: CornersMatchPrediction }) 
           Low confidence — thin or single-season seed. Confirm if you still want this market.
         </p>
       )}
+      <PerTeamLinesPanel
+        cornersTotal={{ text: totalText, confidence: p.confidence }}
+        corners={p}
+        hsh={hsh}
+        showHtTotal
+      />
     </div>
   );
 }
