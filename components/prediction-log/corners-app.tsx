@@ -8,10 +8,10 @@ import {
   availableSeedSeasons,
   leanLabel,
   listSeedClubRows,
-  predictCornersMatch,
   type CornersConfidence,
   type CornersMatchPrediction,
 } from "@/lib/prediction-log/corners-model";
+import { canonicalCornersMatch } from "@/lib/prediction-log/canonical-probability";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHshPredictions } from "./use-hsh-predictions";
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
@@ -79,16 +79,22 @@ export function CornersApp() {
 
   const predictions = useMemo(() => {
     if (!batch) return [] as CornersMatchPrediction[];
-    return batch.matches.map((match) =>
-      predictCornersMatch({
+    return batch.matches.map((match) => {
+      const { prediction, canonical } = canonicalCornersMatch({
         matchId: match.id,
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
         league: matchLeague(match, batch.league),
         batches,
         beforeDate: batch.date,
-      })
-    );
+      });
+      // Keep lean/side fields from engine; Over 9.5 from canonical entry.
+      return {
+        ...prediction,
+        pOver95: canonical.prob,
+        pUnder95: 1 - canonical.prob,
+      };
+    });
   }, [batch, batches]);
 
   const clubRows = useMemo(

@@ -32,6 +32,10 @@ export interface HalfProbResult {
   expected_2h: number;
 }
 
+/**
+ * @deprecated Display/ranking for Survival Ladder and HSH must use
+ * `canonicalProbability` / HSH Stage A+B. Kept for unit tests of the legacy μ path.
+ */
 export function computeHalfMus(
   home: Pick<TeamHalfProfile, "sc_1h" | "sc_2h" | "conc_1h" | "conc_2h">,
   away: Pick<TeamHalfProfile, "sc_1h" | "sc_2h" | "conc_1h" | "conc_2h">,

@@ -23,16 +23,20 @@ export interface LadderMatch {
   tier: ConfTier;
   /** Kickoff datetime string, or FILL_FROM_DB when missing. */
   kickoff: string;
-  /** Model P(2H>1H), or null when missing/non-finite. */
+  /** Canonical model P(2H>1H), or null when missing/non-finite. */
   p2h_gt_1h: number | null;
-  /** Display string for probability. */
+  /** Display string for model probability. */
   p2h_display: string;
+  /** Ladder rank confidence (sort key factor) — not the model probability. */
   confidence: number | null;
   confidence_display: string;
+  /** Internal rank score p×conf — not shown as unlabeled model %. */
   survival: number | null;
   /** Drop-order letter: A = weakest (dropped first). */
   letter: string;
   apiFixtureId?: number;
+  /** Blend provenance from canonicalProbability. */
+  sourceBreakdown?: "blended" | "api_only" | "manual_ai_only";
 }
 
 export interface LadderRound {
@@ -359,6 +363,9 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
     const c = Number.isFinite(r.confidence) ? r.confidence : null;
     const survival = p != null && c != null ? p * c : null;
     const log = logById[r.matchId];
+    const withBlend = r as TwoHHeavyResult & {
+      sourceBreakdown?: LadderMatch["sourceBreakdown"];
+    };
     return {
       matchId: r.matchId,
       homeTeam: r.homeTeam || log?.homeTeam || FILL_FROM_DB,
@@ -373,6 +380,7 @@ export function buildLadder(params: BuildLadderOpts): LadderResult {
       survival,
       letter: letterById.get(r.matchId)!,
       apiFixtureId: log?.apiFixtureId,
+      sourceBreakdown: withBlend.sourceBreakdown ?? "api_only",
     };
   });
 

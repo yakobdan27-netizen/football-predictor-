@@ -2,12 +2,17 @@
 
 import { useMemo } from "react";
 import { matchLeague } from "@/lib/prediction-log/match-league";
-import { predictHighestScoringHalf, type HshPrediction } from "@/lib/prediction-log/hsh-model";
+import {
+  computeCanonicalHshPrediction,
+  canonicalProbabilityFromHsh,
+} from "@/lib/prediction-log/canonical-probability";
 import {
   loadClubHalfAttackDefence,
   loadLeagueAfBaselines,
 } from "@/lib/prediction-log/hsh-half-rates";
 import { estimateTempoProfile } from "@/lib/prediction-log/half-tempo";
+import type { HshPrediction } from "@/lib/prediction-log/hsh-model";
+import type { BlendSource } from "@/lib/prediction-log/prediction-weights";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
 export interface HshOverride {
@@ -15,12 +20,24 @@ export interface HshOverride {
   lambda2h?: number;
 }
 
+export type HshPredictionWithBlend = HshPrediction & {
+  sourceBreakdown: BlendSource;
+};
+
+/**
+ * Half-Time Ranking predictions via canonical half engine
+ * (predictHighestScoringHalf / Stage A+B only).
+ */
 export function useHshPredictions(
   batch: PredictionBatch | null,
   allBatches: PredictionBatch[],
   overrides: Record<string, HshOverride> = {}
-): { predictions: HshPrediction[]; loading: boolean; error: string | null } {
-  const predictions = useMemo<HshPrediction[]>(() => {
+): {
+  predictions: HshPredictionWithBlend[];
+  loading: boolean;
+  error: string | null;
+} {
+  const predictions = useMemo<HshPredictionWithBlend[]>(() => {
     if (!batch) return [];
 
     return batch.matches.map((match) => {
@@ -40,7 +57,7 @@ export function useHshPredictions(
       });
       const override = overrides[match.id];
 
-      return predictHighestScoringHalf({
+      const pred = computeCanonicalHshPrediction({
         matchId: match.id,
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
@@ -54,6 +71,8 @@ export function useHshPredictions(
         manualLambda1h: override?.lambda1h,
         manualLambda2h: override?.lambda2h,
       });
+      const canon = canonicalProbabilityFromHsh(pred, "hsh_2h_gt_1h");
+      return { ...pred, sourceBreakdown: canon.sourceBreakdown };
     });
   }, [batch, allBatches, overrides]);
 

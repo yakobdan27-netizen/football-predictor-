@@ -290,6 +290,10 @@ export interface LiveMatchContext {
   elapsed_2h_minutes?: number | null;
 }
 
+/**
+ * @deprecated Prefer canonical half engine (`computeCanonicalHshPrediction` /
+ * `hshPredictionToLadderResult`). Ladder UI no longer calls this for display.
+ */
 export function predictTwoHHeavy(params: {
   match: LogMatch;
   batchLeague: string;

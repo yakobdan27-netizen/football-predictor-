@@ -50,9 +50,9 @@ import {
 import {
   PREDICTION_WEIGHTS,
   blendBadgeLabel,
-  weightedEstimate,
   type BlendSource,
 } from "./prediction-weights";
+import { canonicalProbability } from "./canonical-probability";
 import { seasonForDate } from "./season";
 import type { LearnerStatsStore, LogMarketKey, RecommendedPick } from "./types";
 
@@ -328,17 +328,18 @@ export function calculateHybridRecommendation(
 ): HybridRecommendationResult {
   const systemCalculationScore = clampScore(systemScore);
   const aiLearnerScore = clampScore(aiScore);
-  // weightedEstimate(apiDerived, manualAi) — API-DB first
-  const blend =
-    weightedEstimate(systemCalculationScore, aiLearnerScore) ?? {
-      value: systemCalculationScore,
-      source: "api_only" as const,
-      apiWeight: 1,
-      manualAiWeight: 0,
-    };
-  const hybridConfidence = clampScore(blend.value);
-  const aiContribution = clampScore(aiLearnerScore * blend.manualAiWeight);
-  const systemContribution = clampScore(systemCalculationScore * blend.apiWeight);
+  // Route final blend through canonicalProbability (ft_event) — same 60/40 rule.
+  const canon = canonicalProbability({
+    market: "ft_event",
+    apiProb: systemCalculationScore / 100,
+    manualAiProb: aiLearnerScore / 100,
+    scale: "unit",
+  });
+  const hybridConfidence = clampScore(canon.prob * 100);
+  const aiContribution = clampScore(aiLearnerScore * canon.manualAiWeight);
+  const systemContribution = clampScore(
+    systemCalculationScore * canon.apiWeight
+  );
   const aiNeutral = opts?.aiNeutral ?? false;
   const aiSamples = opts?.aiSamples ?? 0;
 
@@ -348,9 +349,9 @@ export function calculateHybridRecommendation(
     hybridConfidence,
     aiContribution,
     systemContribution,
-    aiContributionWeight: blend.manualAiWeight,
-    systemContributionWeight: blend.apiWeight,
-    blendSource: blend.source,
+    aiContributionWeight: canon.manualAiWeight,
+    systemContributionWeight: canon.apiWeight,
+    blendSource: canon.sourceBreakdown,
     recommendation: hybridRecommendationLevel(hybridConfidence),
     confidenceBand: confidenceBand(hybridConfidence),
     aiSamples,

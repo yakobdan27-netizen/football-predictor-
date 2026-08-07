@@ -14,9 +14,17 @@ import {
   type ConcededHalfTeamStats,
 } from "@/lib/prediction-log/conceded-half-model";
 import { matchLeague } from "@/lib/prediction-log/match-league";
-import { leanLabel, predictCornersMatch } from "@/lib/prediction-log/corners-model";
+import { leanLabel, type CornersMatchPrediction } from "@/lib/prediction-log/corners-model";
+import { canonicalCornersMatch } from "@/lib/prediction-log/canonical-probability";
+import {
+  blendBadgeLabel,
+  blendBadgeTitle,
+} from "@/lib/prediction-log/prediction-weights";
 import { usePredictionLogData } from "./use-prediction-log-data";
-import { useHshPredictions } from "./use-hsh-predictions";
+import {
+  useHshPredictions,
+  type HshPredictionWithBlend,
+} from "./use-hsh-predictions";
 import { useConcededHalfPredictions, useConcededHalfStats } from "./use-conceded-half-stats";
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
 
@@ -71,19 +79,26 @@ export function HshApp() {
   const { predictions, loading, error: predError } = useHshPredictions(batch, batches, {});
 
   const cornersByMatch = useMemo(() => {
-    if (!batch) return new Map<string, ReturnType<typeof predictCornersMatch>>();
+    if (!batch) return new Map<string, CornersMatchPrediction>();
     return new Map(
-      batch.matches.map((match) => [
-        match.id,
-        predictCornersMatch({
+      batch.matches.map((match) => {
+        const { prediction, canonical } = canonicalCornersMatch({
           matchId: match.id,
           homeTeam: match.homeTeam,
           awayTeam: match.awayTeam,
           league: matchLeague(match, batch.league),
           batches,
           beforeDate: batch.date,
-        }),
-      ])
+        });
+        return [
+          match.id,
+          {
+            ...prediction,
+            pOver95: canonical.prob,
+            pUnder95: 1 - canonical.prob,
+          },
+        ] as const;
+      })
     );
   }, [batch, batches]);
 
@@ -399,8 +414,8 @@ function PredictionRow({
   expanded,
   onToggle,
 }: {
-  prediction: HshPrediction;
-  corners: ReturnType<typeof predictCornersMatch> | null;
+  prediction: HshPredictionWithBlend | HshPrediction;
+  corners: CornersMatchPrediction | null;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -449,8 +464,8 @@ function DetailPanel({
   prediction: p,
   corners,
 }: {
-  prediction: HshPrediction;
-  corners: ReturnType<typeof predictCornersMatch> | null;
+  prediction: HshPredictionWithBlend | HshPrediction;
+  corners: CornersMatchPrediction | null;
 }) {
   const d = p.detail;
   const lowSeedHint =
@@ -515,6 +530,14 @@ function DetailPanel({
       )}
       <div>
         Probabilities: P(1H) {pct(p.p1h)} · P(2H) {pct(p.p2h)} · P(Tie) {pct(p.pTie)}
+        {"sourceBreakdown" in p && p.sourceBreakdown ? (
+          <>
+            {" · "}
+            <span title={blendBadgeTitle(p.sourceBreakdown)}>
+              {blendBadgeLabel(p.sourceBreakdown)}
+            </span>
+          </>
+        ) : null}
       </div>
       <div>
         Recommendation: <strong>{p.recommended}</strong> ({p.confidence}) —{" "}

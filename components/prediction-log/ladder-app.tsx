@@ -395,8 +395,9 @@ export function LadderApp() {
               </tbody>
             </table>
             <p className="ladder-footnote">
-              Top {LADDER_CONFIG.LADDER_SIZE} by p×confidence, then spread across leagues. Risky =
-              P(2H&gt;1H) below 55%. {INDEPENDENCE_NOTE}
+              Model % is canonical P(2H&gt;1H) (same as Half-Time Ranking). Ranked by
+              p×ladder-confidence, then spread across leagues. Risky = P(2H&gt;1H) below 55%.{" "}
+              {INDEPENDENCE_NOTE}
             </p>
           </div>
 
@@ -558,9 +559,15 @@ function LegList({
             <span className="ladder-leg-meta">
               <strong style={{ fontVariantNumeric: "tabular-nums" }}>{leg.p2h_display}</strong>
               {" · "}
-              conf {leg.confidence_display}
+              <span title="Ladder rank confidence (sort key) — not the model probability">
+                ladder conf {leg.confidence_display}
+              </span>
               {" · "}
-              <span title={blendBadgeTitle("api_only")}>{blendBadgeLabel("api_only")}</span>
+              <span
+                title={blendBadgeTitle(leg.sourceBreakdown ?? "api_only")}
+              >
+                {blendBadgeLabel(leg.sourceBreakdown ?? "api_only")}
+              </span>
               {" · "}
               {leg.kickoff}
             </span>
