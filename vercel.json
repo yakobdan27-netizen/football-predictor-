@@ -21,6 +21,22 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/hist-backfill",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/hist-backfill",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/hist-backfill",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron/hist-backfill",
+      "schedule": "0 21 * * *"
+    },
+    {
       "path": "/api/cron/live-prematch",
       "schedule": "0 15 * * *"
     }

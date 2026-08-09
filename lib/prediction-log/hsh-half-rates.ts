@@ -11,6 +11,7 @@ import {
   seasonFromDate,
 } from "./half-goals-baselines";
 import { matchLeague } from "./match-league";
+import { SHRINKAGE_K } from "./model-config";
 import type { LogMatch, PredictionBatch } from "./types";
 
 export interface ClubHalfAttackDefence {
@@ -31,7 +32,8 @@ export interface LeagueAfBaselines {
   lgAf2: number;
 }
 
-const SHRINK_K = 15;
+/** @deprecated Use SHRINKAGE_K from model-config (k=10). */
+const SHRINK_K = SHRINKAGE_K;
 
 function teamKey(name: string): string {
   return standardizeTeamName(name).trim().toLowerCase();

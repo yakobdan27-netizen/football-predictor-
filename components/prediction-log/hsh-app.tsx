@@ -14,12 +14,16 @@ import {
   type ConcededHalfTeamStats,
 } from "@/lib/prediction-log/conceded-half-model";
 import { matchLeague } from "@/lib/prediction-log/match-league";
-import { leanLabel, type CornersMatchPrediction } from "@/lib/prediction-log/corners-model";
-import { canonicalCornersMatch } from "@/lib/prediction-log/canonical-probability";
+import {
+  leanLabel,
+  predictCornersMatch,
+  type CornersMatchPrediction,
+} from "@/lib/prediction-log/corners-model";
 import {
   blendBadgeLabel,
   blendBadgeTitle,
 } from "@/lib/prediction-log/prediction-weights";
+import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import {
   useHshPredictions,
@@ -27,6 +31,8 @@ import {
 } from "./use-hsh-predictions";
 import { useConcededHalfPredictions, useConcededHalfStats } from "./use-conceded-half-stats";
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
+import { FixtureEstimateDiagnostics } from "./fixture-estimate-diagnostics";
+import { HistCoverageBadge } from "./hist-coverage-badge";
 
 function pct(p: number): string {
   return `${Math.round(p * 100)}%`;
@@ -76,13 +82,50 @@ export function HshApp() {
   }, [sortedBatches, batchId]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
-  const { predictions, loading, error: predError } = useHshPredictions(batch, batches, {});
+  const {
+    predictions,
+    loading,
+    error: predError,
+    estimatesById,
+  } = useHshPredictions(batch, batches, {});
+  const [diagEstimate, setDiagEstimate] = useState<CanonicalFixtureEstimate | null>(
+    null
+  );
+  const [diagMatchId, setDiagMatchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!expandedId || !batchId) {
+      setDiagEstimate(null);
+      setDiagMatchId(null);
+      return;
+    }
+    let cancelled = false;
+    setDiagMatchId(expandedId);
+    // Prefer client CFE; admin API adds server-fitted params when unlocked.
+    const local = estimatesById[expandedId] ?? null;
+    setDiagEstimate(local);
+    void fetch(
+      `/api/admin/fixture-estimate?batchId=${encodeURIComponent(batchId)}&matchId=${encodeURIComponent(expandedId)}`
+    )
+      .then(async (r) => {
+        if (!r.ok || cancelled) return;
+        const data = (await r.json()) as { estimate?: CanonicalFixtureEstimate };
+        if (!cancelled && data.estimate) setDiagEstimate(data.estimate);
+      })
+      .catch(() => {
+        /* keep local estimate */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedId, batchId, estimatesById]);
 
   const cornersByMatch = useMemo(() => {
     if (!batch) return new Map<string, CornersMatchPrediction>();
     return new Map(
       batch.matches.map((match) => {
-        const { prediction, canonical } = canonicalCornersMatch({
+        const est = estimatesById[match.id];
+        const prediction = predictCornersMatch({
           matchId: match.id,
           homeTeam: match.homeTeam,
           awayTeam: match.awayTeam,
@@ -94,13 +137,15 @@ export function HshApp() {
           match.id,
           {
             ...prediction,
-            pOver95: canonical.prob,
-            pUnder95: 1 - canonical.prob,
+            lambdaHome: est?.lambdas.home_corners ?? prediction.lambdaHome,
+            lambdaAway: est?.lambdas.away_corners ?? prediction.lambdaAway,
+            pOver95: est?.markets.cornersOver95 ?? prediction.pOver95,
+            pUnder95: est?.markets.cornersUnder95 ?? prediction.pUnder95,
           },
         ] as const;
       })
     );
-  }, [batch, batches]);
+  }, [batch, batches, estimatesById]);
 
   const batchLeague = useMemo(() => {
     if (!batch?.matches.length) return batch?.league ?? null;
@@ -140,6 +185,7 @@ export function HshApp() {
           Attack × defence λs with tempo nudges, then Dixon-Coles Stage B — plus defence / conceded
           half support. Advisory only, never blocks a pick.
         </p>
+        <HistCoverageBadge />
       </div>
 
       <div
@@ -223,6 +269,11 @@ export function HshApp() {
                   key={p.matchId}
                   prediction={p}
                   corners={cornersByMatch.get(p.matchId) ?? null}
+                  estimate={
+                    diagMatchId === p.matchId
+                      ? diagEstimate
+                      : p.estimate ?? estimatesById[p.matchId] ?? null
+                  }
                   expanded={expandedId === p.matchId}
                   onToggle={() =>
                     setExpandedId((id) => (id === p.matchId ? null : p.matchId))
@@ -411,11 +462,13 @@ function ConcededPredictionRow({
 function PredictionRow({
   prediction: p,
   corners,
+  estimate,
   expanded,
   onToggle,
 }: {
   prediction: HshPredictionWithBlend | HshPrediction;
   corners: CornersMatchPrediction | null;
+  estimate: CanonicalFixtureEstimate | null;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -452,7 +505,7 @@ function PredictionRow({
       {expanded && (
         <tr>
           <td colSpan={9} style={{ background: "var(--surface2)", padding: "1rem" }}>
-            <DetailPanel prediction={p} corners={corners} />
+            <DetailPanel prediction={p} corners={corners} estimate={estimate} />
           </td>
         </tr>
       )}
@@ -463,9 +516,11 @@ function PredictionRow({
 function DetailPanel({
   prediction: p,
   corners,
+  estimate,
 }: {
   prediction: HshPredictionWithBlend | HshPrediction;
   corners: CornersMatchPrediction | null;
+  estimate: CanonicalFixtureEstimate | null;
 }) {
   const d = p.detail;
   const lowSeedHint =
@@ -571,6 +626,10 @@ function DetailPanel({
         corners={corners}
         hsh={p}
         showHtTotal
+      />
+      <FixtureEstimateDiagnostics
+        estimate={estimate}
+        title="Canonical fixture estimate (admin diagnostic)"
       />
     </div>
   );

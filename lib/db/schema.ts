@@ -7,6 +7,7 @@ import {
   timestamp,
   real,
   index,
+  uniqueIndex,
   primaryKey,
 } from "drizzle-orm/pg-core";
 
@@ -549,6 +550,8 @@ export const histMeta = pgTable("hist_meta", {
   lastSummary: text("last_summary"),
   beta2hJson: text("beta_2h_json"),
   leaguePriorsJson: text("league_priors_json"),
+  /** Fitted ρ, corner dispersion, model version — see lib/hist/model-params.ts */
+  modelParamsJson: text("model_params_json"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
@@ -598,3 +601,141 @@ export type HistMeta = typeof histMeta.$inferSelect;
 export type NewHistMeta = typeof histMeta.$inferInsert;
 export type TeamHalfStat = typeof teamHalfStats.$inferSelect;
 export type NewTeamHalfStat = typeof teamHalfStats.$inferInsert;
+
+/**
+ * Per-competition half-share + DIEH dependence (κ), fitted from hist_fixtures.
+ * Writers under lib/hist/ only — never hardcode shares/κ in model code.
+ */
+export const histLeagueHalfParams = pgTable(
+  "hist_league_half_params",
+  {
+    leagueId: integer("league_id").notNull(),
+    /** league | cup — cups fitted separately; never silently borrow domestic. */
+    compType: text("comp_type").notNull().default("league"),
+    leagueName: text("league_name").notNull(),
+    /** Combined first-half share of total goals. */
+    s1: real("s1").notNull(),
+    s1Home: real("s1_home").notNull(),
+    s1Away: real("s1_away").notNull(),
+    usedCombinedShareHome: integer("used_combined_share_home").notNull().default(0),
+    usedCombinedShareAway: integer("used_combined_share_away").notNull().default(0),
+    nValid: integer("n_valid").notNull(),
+    nHomeGoalsSample: integer("n_home_goals_sample").notNull().default(0),
+    nAwayGoalsSample: integer("n_away_goals_sample").notNull().default(0),
+    kappaRaw: real("kappa_raw").notNull(),
+    kappaAdj: real("kappa_adj").notNull(),
+    pD1Obs: real("p_d1_obs").notNull(),
+    pD2Obs: real("p_d2_obs").notNull(),
+    pD1d2Obs: real("p_d1d2_obs").notNull(),
+    /** Total-goals overdispersion diagnostics for NegBin switch. */
+    goalsMean: real("goals_mean"),
+    goalsVariance: real("goals_variance"),
+    goalsDispersion: real("goals_dispersion"),
+    goalsDistribution: text("goals_distribution").notNull().default("poisson"),
+    computedAt: timestamp("computed_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      columns: [t.leagueId, t.compType],
+      name: "hist_league_half_params_pk",
+    }),
+  })
+);
+
+export type HistLeagueHalfParam = typeof histLeagueHalfParams.$inferSelect;
+export type NewHistLeagueHalfParam = typeof histLeagueHalfParams.$inferInsert;
+
+/** Precomputed attack/defence ratings — refresh on backfill / result fill. */
+export const teamRatings = pgTable(
+  "team_ratings",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id"),
+    teamName: text("team_name").notNull(),
+    leagueId: integer("league_id").notNull(),
+    attackHome: real("attack_home").notNull(),
+    attackAway: real("attack_away").notNull(),
+    defenceHome: real("defence_home").notNull(),
+    defenceAway: real("defence_away").notNull(),
+    cornersIntensity: real("corners_intensity").notNull(),
+    lambda1h: real("lambda_1h").notNull(),
+    lambda2h: real("lambda_2h").notNull(),
+    ess: real("ess").notNull(),
+    seasonsUsed: integer("seasons_used").notNull(),
+    matchesUsed: integer("matches_used").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    teamLeagueUniq: uniqueIndex("team_ratings_team_league_uidx").on(
+      t.teamName,
+      t.leagueId
+    ),
+    leagueIdx: index("team_ratings_league_idx").on(t.leagueId),
+  })
+);
+
+export type TeamRating = typeof teamRatings.$inferSelect;
+export type NewTeamRating = typeof teamRatings.$inferInsert;
+
+/**
+ * Portfolio slip batches — probability-only selection.
+ * Never store bookmaker quotation or bankroll fields.
+ */
+export const slipBatches = pgTable(
+  "slip_batches",
+  {
+    id: serial("id").primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    preferencesJson: text("preferences_json").notNull(),
+    userNote: text("user_note"),
+    batchNumber: integer("batch_number").notNull(),
+    fixtureExclusionIds: text("fixture_exclusion_ids"),
+    partialReason: text("partial_reason"),
+    regeneratedFromId: integer("regenerated_from_id"),
+  },
+  (t) => ({
+    createdIdx: index("slip_batches_created_idx").on(t.createdAt),
+  })
+);
+
+export const slipBatchLegs = pgTable(
+  "slip_batch_legs",
+  {
+    id: serial("id").primaryKey(),
+    batchId: integer("batch_id").notNull(),
+    slipIndex: integer("slip_index").notNull(),
+    legOrder: integer("leg_order").notNull(),
+    fixtureId: text("fixture_id").notNull(),
+    batchIdSource: text("batch_id_source"),
+    competition: text("competition").notNull(),
+    kickoffUtc: timestamp("kickoff_utc", { withTimezone: true }),
+    marketFamily: text("market_family").notNull(),
+    selectionLabel: text("selection_label").notNull(),
+    selectionKey: text("selection_key").notNull(),
+    line: real("line"),
+    comboId: text("combo_id"),
+    pCalibrated: real("p_calibrated").notNull(),
+    pRaw: real("p_raw").notNull(),
+    nEffective: real("n_effective").notNull(),
+    calibrated: integer("calibrated").notNull().default(0),
+    meanRho: real("mean_rho"),
+    independenceUpper: real("independence_upper"),
+    bandLower: real("band_lower"),
+    bandUpper: real("band_upper"),
+    selectionSource: text("selection_source").notNull().default("machine"),
+    machineRank: integer("machine_rank"),
+    correlationContribution: real("correlation_contribution"),
+    homeTeam: text("home_team"),
+    awayTeam: text("away_team"),
+    outcome: text("outcome"),
+  },
+  (t) => ({
+    batchIdx: index("slip_batch_legs_batch_idx").on(t.batchId),
+    fixtureIdx: index("slip_batch_legs_fixture_idx").on(t.fixtureId),
+  })
+);
+
+export type SlipBatchRow = typeof slipBatches.$inferSelect;
+export type NewSlipBatchRow = typeof slipBatches.$inferInsert;
+export type SlipBatchLegRow = typeof slipBatchLegs.$inferSelect;
+export type NewSlipBatchLegRow = typeof slipBatchLegs.$inferInsert;

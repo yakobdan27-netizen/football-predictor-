@@ -36,6 +36,11 @@ import {
   type BlendSource,
 } from "@/lib/prediction-log/prediction-weights";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
+import {
+  resolveCfeLegProbability,
+  type CfeLegEstimateSlice,
+} from "@/lib/prediction-log/cfe-leg-probability";
+import type { MarketFamilyId } from "@/lib/slip-builder/types";
 
 export type CanonicalMarket =
   | "hsh_1h"
@@ -43,7 +48,8 @@ export type CanonicalMarket =
   | "hsh_tie"
   | "hsh_2h_gt_1h"
   | "corners_over"
-  | "ft_event";
+  | "ft_event"
+  | "cfe_leg";
 
 export type CanonicalProbabilityResult = {
   prob: number;
@@ -61,7 +67,10 @@ export type CanonicalProbabilityResult = {
 export type CanonicalHalfInput = {
   market: "hsh_1h" | "hsh_2h" | "hsh_tie" | "hsh_2h_gt_1h";
   ctx: HshMatchContext;
-  /** Optional manual/AI half probability (0–1) to 60/40-blend with model. */
+  /**
+   * @deprecated Probability-level blend removed. Manual/AI must blend at λ
+   * via canonicalFixtureEstimate.manualLambdas.
+   */
   manualAiProb?: number | null;
 };
 
@@ -88,10 +97,21 @@ export type CanonicalFtEventInput = {
   meta?: Record<string, unknown>;
 };
 
+export type CanonicalCfeLegInput = {
+  market: "cfe_leg";
+  estimate: CfeLegEstimateSlice;
+  family: MarketFamilyId;
+  selectionKey: string;
+  line?: number | null;
+  comboId?: string | null;
+  fixtureKey?: string;
+};
+
 export type CanonicalProbabilityInput =
   | CanonicalHalfInput
   | CanonicalCornersInput
-  | CanonicalFtEventInput;
+  | CanonicalFtEventInput
+  | CanonicalCfeLegInput;
 
 function assertUnitProb(prob: number, market: CanonicalMarket): void {
   if (!(prob >= 0 && prob <= 1) || !Number.isFinite(prob)) {
@@ -121,19 +141,17 @@ function packResult(params: {
   meta?: Record<string, unknown>;
   fixtureKey?: string;
 }): CanonicalProbabilityResult {
-  const hasManual =
-    params.manualAiProb != null && Number.isFinite(params.manualAiProb);
-  // Only invoke weightedEstimate when both sides can contribute — avoids
-  // warn spam on the common api-only half/corners path.
-  const blend = hasManual
-    ? weightedEstimate(params.apiProb, params.manualAiProb)
-    : {
-        value: params.apiProb,
-        source: "api_only" as const,
-        apiWeight: 1,
-        manualAiWeight: 0,
-      };
-  const prob = blend?.value ?? params.apiProb;
+  // Anti-pattern: never blend probabilities. 60/40 applies to λ inputs only
+  // (canonicalFixtureEstimate). manualAiProb is ignored for the returned prob.
+  void params.manualAiProb;
+  void weightedEstimate;
+  const blend = {
+    value: params.apiProb,
+    source: "api_only" as const,
+    apiWeight: 1,
+    manualAiWeight: 0,
+  };
+  const prob = blend.value;
   assertUnitProb(prob, params.market);
   const computedAt = new Date().toISOString();
   const result: CanonicalProbabilityResult = {
@@ -202,6 +220,38 @@ export function canonicalProbabilityFromHsh(
 export function canonicalProbability(
   input: CanonicalProbabilityInput
 ): CanonicalProbabilityResult {
+  if (input.market === "cfe_leg") {
+    const resolved = resolveCfeLegProbability({
+      estimate: input.estimate,
+      family: input.family,
+      selectionKey: input.selectionKey,
+      line: input.line,
+      comboId: input.comboId,
+    });
+    if (!resolved.available) {
+      throw new Error(
+        `canonicalProbability(cfe_leg): ${resolved.reason ?? "unavailable"}`
+      );
+    }
+    return packResult({
+      market: "cfe_leg",
+      apiProb: resolved.prob,
+      lambdaH: input.estimate.lambdas.home,
+      lambdaA: input.estimate.lambdas.away,
+      sampleSize: resolved.nEffective,
+      fixtureKey: input.fixtureKey,
+      meta: {
+        family: input.family,
+        selectionKey: input.selectionKey,
+        line: input.line ?? null,
+        comboId: input.comboId ?? null,
+        rawProb: resolved.prob,
+        coherenceOk: resolved.coherenceOk,
+        nEffective: resolved.nEffective,
+      },
+    });
+  }
+
   if (input.market === "ft_event") {
     const scale = input.scale ?? "auto";
     const api = toUnit(input.apiProb, scale);

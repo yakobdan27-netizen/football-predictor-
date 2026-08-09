@@ -8,14 +8,14 @@ type Body = { gapPriority?: boolean };
 
 /**
  * POST /api/hist/backfill
- * Public manual kick (same work as cron hist-backfill).
- * Body `{ "gapPriority": true }` drains incomplete coverage buckets first.
+ * Manual kick (same work as cron hist-backfill).
+ * Gap-priority is ON by default; pass `{ "gapPriority": false }` for legacy job order.
  */
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Body;
     const summary = await runHistBackfillChunk({
-      gapPriority: body.gapPriority === true,
+      gapPriority: body.gapPriority !== false,
     });
     return NextResponse.json(summary, {
       status: summary.ok ? 200 : 503,

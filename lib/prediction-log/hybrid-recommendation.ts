@@ -52,7 +52,6 @@ import {
   blendBadgeLabel,
   type BlendSource,
 } from "./prediction-weights";
-import { canonicalProbability } from "./canonical-probability";
 import { seasonForDate } from "./season";
 import type { LearnerStatsStore, LogMarketKey, RecommendedPick } from "./types";
 
@@ -328,17 +327,18 @@ export function calculateHybridRecommendation(
 ): HybridRecommendationResult {
   const systemCalculationScore = clampScore(systemScore);
   const aiLearnerScore = clampScore(aiScore);
-  // Route final blend through canonicalProbability (ft_event) — same 60/40 rule.
-  const canon = canonicalProbability({
-    market: "ft_event",
-    apiProb: systemCalculationScore / 100,
-    manualAiProb: aiLearnerScore / 100,
-    scale: "unit",
-  });
-  const hybridConfidence = clampScore(canon.prob * 100);
-  const aiContribution = clampScore(aiLearnerScore * canon.manualAiWeight);
+  /**
+   * Anti-pattern removed: do NOT blend probabilities / confidence scores.
+   * 60/40 applies to λ inputs inside canonicalFixtureEstimate only.
+   * Displayed hybridConfidence = system (API-DB) market confidence;
+   * AI score is retained as a separate advisory field.
+   */
+  const hybridConfidence = systemCalculationScore;
+  const aiContributionWeight = PREDICTION_WEIGHTS.manualAi;
+  const systemContributionWeight = PREDICTION_WEIGHTS.apiDb;
+  const aiContribution = clampScore(aiLearnerScore * aiContributionWeight);
   const systemContribution = clampScore(
-    systemCalculationScore * canon.apiWeight
+    systemCalculationScore * systemContributionWeight
   );
   const aiNeutral = opts?.aiNeutral ?? false;
   const aiSamples = opts?.aiSamples ?? 0;
@@ -349,14 +349,14 @@ export function calculateHybridRecommendation(
     hybridConfidence,
     aiContribution,
     systemContribution,
-    aiContributionWeight: canon.manualAiWeight,
-    systemContributionWeight: canon.apiWeight,
-    blendSource: canon.sourceBreakdown,
+    aiContributionWeight,
+    systemContributionWeight,
+    blendSource: "api_only",
     recommendation: hybridRecommendationLevel(hybridConfidence),
     confidenceBand: confidenceBand(hybridConfidence),
     aiSamples,
     aiNeutral,
-    breakdownLabel: `AI: ${aiContribution}% | System: ${systemContribution}%`,
+    breakdownLabel: `System market %: ${systemCalculationScore}% (AI advisory ${aiLearnerScore}% — λ blend ${Math.round(PREDICTION_WEIGHTS.apiDb * 100)}/${Math.round(PREDICTION_WEIGHTS.manualAi * 100)} in canonicalFixtureEstimate)`,
   };
 }
 

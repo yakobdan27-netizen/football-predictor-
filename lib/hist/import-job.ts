@@ -29,7 +29,11 @@ import {
   upsertHistTeams,
 } from "./store";
 
-export const HIST_MAX_ENRICH_PER_CHUNK = 20;
+/** Default 20; override via HIST_MAX_ENRICH_PER_CHUNK env for drain runs. */
+export const HIST_MAX_ENRICH_PER_CHUNK = Math.max(
+  1,
+  Math.min(100, Number(process.env.HIST_MAX_ENRICH_PER_CHUNK) || 20)
+);
 export const HIST_ENRICH_SLEEP_MS = 200;
 /** Per AF enrich call timeout (events/stats/lineups). */
 export const HIST_ENRICH_TIMEOUT_MS = 20_000;
@@ -329,12 +333,21 @@ export async function processHistJobChunk(opts: {
 
     enriched += 1;
     lastCursor = id;
-    await updateHistJob(leagueId, season, {
-      cursorFixtureId: id,
-      fixturesImported: await countFixturesForLeagueSeason(leagueId, season),
-      goalsImported,
-      statsImported,
-    });
+    try {
+      const imported = await countFixturesForLeagueSeason(leagueId, season);
+      await updateHistJob(leagueId, season, {
+        cursorFixtureId: id,
+        fixturesImported: imported,
+        goalsImported,
+        statsImported,
+      });
+    } catch (e) {
+      // Neon blips mid-chunk: keep cursor in memory; next chunk resumes.
+      console.warn(
+        `[hist] job cursor persist failed fixture=${id}`,
+        e instanceof Error ? e.message : e
+      );
+    }
 
     if (quotaAbort) {
       truncated = true;

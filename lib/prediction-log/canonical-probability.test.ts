@@ -81,7 +81,7 @@ test("complement: hsh_1h + hsh_2h + hsh_tie ≈ 1", () => {
   assert.ok(Math.abs(p1.prob + p2.prob + pt.prob - 1) < 1e-9);
 });
 
-test("ft_event routes through 60/40 metadata", () => {
+test("ft_event does not blend probabilities (λ blend is elsewhere)", () => {
   const r = canonicalProbability({
     market: "ft_event",
     apiProb: 0.7,
@@ -89,10 +89,11 @@ test("ft_event routes through 60/40 metadata", () => {
     scale: "unit",
     fixtureKey: "ft-test",
   });
-  assert.ok(Math.abs(r.prob - (0.6 * 0.7 + 0.4 * 0.5)) < 1e-9);
-  assert.equal(r.sourceBreakdown, "blended");
-  assert.equal(r.apiWeight, 0.6);
-  assert.equal(r.manualAiWeight, 0.4);
+  // Anti-pattern removed: returned prob is API/model only
+  assert.equal(r.prob, 0.7);
+  assert.equal(r.sourceBreakdown, "api_only");
+  assert.equal(r.apiWeight, 1);
+  assert.equal(r.manualAiWeight, 0);
 });
 
 test("ladder ranking hook source does not import computeHalfMus", () => {
@@ -105,8 +106,41 @@ test("ladder ranking hook source does not import computeHalfMus", () => {
   assert.equal(/import\s*\{[^}]*computeHalfMus/.test(src), false);
   assert.equal(/import\s*\{[^}]*predictTwoHHeavy/.test(src), false);
   assert.equal(/import\s*\{[^}]*predictBatchTwoHHeavy/.test(src), false);
-  assert.ok(src.includes("computeCanonicalHshPrediction"));
-  assert.ok(src.includes("hshPredictionToLadderResult"));
+  assert.ok(src.includes("estimateBatchCanonical"));
+  assert.ok(src.includes("ladderRanksFromBatchEstimates"));
+});
+
+test("cross-surface: CFE total goals O/U 2.5 matches cfeDisplayProbPct", async () => {
+  const {
+    estimateBatchCanonical,
+    cfeDisplayProbPct,
+    clearCanonicalFixtureCache,
+  } = await import("./canonical-fixture-estimate");
+  clearCanonicalFixtureCache();
+  const batch = {
+    id: "b-tg",
+    batchName: "tg",
+    date: "2026-08-01",
+    league: "Premier League",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    matches: [
+      {
+        id: "m-tg-1",
+        homeTeam: "Arsenal",
+        awayTeam: "Chelsea",
+        predictions: {},
+      },
+    ],
+  } as import("./types").PredictionBatch;
+  const [est] = estimateBatchCanonical(batch, [batch]);
+  assert.ok(est);
+  const overPct = cfeDisplayProbPct(est!, "total_goals_ou", "Over 2.5", 2.5);
+  const underPct = cfeDisplayProbPct(est!, "total_goals_ou", "Under 2.5", 2.5);
+  assert.ok(overPct != null && underPct != null);
+  assert.ok(Math.abs(overPct! / 100 - est!.markets.over25) < 1e-12);
+  assert.ok(Math.abs(underPct! / 100 - est!.markets.under25) < 1e-12);
+  assert.ok(Math.abs(overPct! + underPct! - 100) < 1e-9);
+  assert.equal(est!.markets.over25, est!.markets.totalGoals.lines[2.5].over);
 });
 
 test("named fixtures share identical canonical p2h across surfaces", () => {

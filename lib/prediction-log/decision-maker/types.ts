@@ -9,6 +9,7 @@ import type { TeamsQualityStore } from "../teams-quality-types";
 import type { MatchComboResult } from "../combo-selection";
 import type { HshPrediction } from "../hsh-model";
 import type { CornersMatchPrediction } from "../corners-model";
+import type { CanonicalFixtureEstimate } from "../canonical-fixture-estimate";
 
 /** Diversity buckets for top-3 selection. */
 export type DecisionMarketCategory = "goals" | "corners" | "specialized";
@@ -52,6 +53,8 @@ export interface DecisionBatchCaches {
   cornersByMatchId: Map<string, CornersMatchPrediction>;
   comboByMatchId: Map<string, MatchComboResult>;
   comboExtendedByMatchId: Map<string, MatchComboResult>;
+  /** Canonical fixture estimates — DIEH / total goals SoT. */
+  cfeByMatchId: Map<string, CanonicalFixtureEstimate>;
 }
 
 export interface ResultPageDefinition {

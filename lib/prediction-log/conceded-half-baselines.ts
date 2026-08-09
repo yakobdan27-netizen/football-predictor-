@@ -4,6 +4,10 @@
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
 import baselinesJson from "@/data/conceded-half-baselines.json";
+import {
+  SEED_SEASON_ORDER,
+  seedSeasonWeightRaw,
+} from "./seed-season-weights";
 
 export interface ConcededHalfBaselineRow {
   league: string;
@@ -35,14 +39,11 @@ export interface ConcededRecencyBlend {
 
 export type SeedConcededConfidence = "high" | "medium" | "low";
 
-const SEASON_ORDER = ["2021/22", "2022/23", "2023/24", "2024/25", "2025/26"] as const;
-const SEASON_WEIGHT: Record<string, number> = {
-  "2021/22": 1,
-  "2022/23": 2,
-  "2023/24": 3,
-  "2024/25": 4,
-  "2025/26": 5,
-};
+/** Cold-start only — prefer hist 11y rates when available. */
+const SEASON_ORDER = SEED_SEASON_ORDER;
+const SEASON_WEIGHT: Record<string, number> = Object.fromEntries(
+  SEED_SEASON_ORDER.map((s) => [s, seedSeasonWeightRaw(s)])
+);
 
 const RAW_ROWS = baselinesJson as ConcededHalfBaselineRow[];
 

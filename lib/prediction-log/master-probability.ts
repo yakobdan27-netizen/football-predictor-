@@ -26,6 +26,10 @@ import { computeBayesianMatchPrediction } from "./bayesian-predict";
 import { applyLeagueAdjustToPSignal } from "./league-character";
 import { computeLineupContextSignal } from "./lineup-context";
 import type { LeagueAdjustAudit } from "./types";
+import {
+  cfeDisplayProbPct,
+  type CanonicalFixtureEstimate,
+} from "./canonical-fixture-estimate";
 
 export interface SignalResult {
   value: number;
@@ -308,6 +312,20 @@ function resolveClubRecordByName(
   );
   if (!entry) return null;
   return ctx.clubRecords[entry.clubId] ?? null;
+}
+
+/**
+ * When a CanonicalFixtureEstimate is available, total_goals_ou / draw_one_half
+ * display percentages must come from CFE (byte-identical with analysis pages).
+ * Probability-level 60/40 blending is forbidden.
+ */
+export function masterProbPctFromCfeIfAvailable(
+  marketKey: LogMarketKey,
+  pick: MarketPrediction,
+  cfe: CanonicalFixtureEstimate | null | undefined
+): number | null {
+  if (!cfe) return null;
+  return cfeDisplayProbPct(cfe, marketKey, pick.prediction, pick.line);
 }
 
 export function computeMasterProbability(

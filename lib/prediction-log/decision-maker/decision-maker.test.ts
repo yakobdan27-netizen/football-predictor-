@@ -50,6 +50,8 @@ test("registry lists result pages; Half Goals only (no standalone Conceded Half)
   assert.ok(ids.has("corners-analysis"));
   assert.ok(ids.has("recommendation"));
   assert.ok(ids.has("highest-scoring-half"));
+  assert.ok(ids.has("total-goals-analysis"));
+  assert.ok(ids.has("draw-either-half-analysis"));
   assert.ok(ids.has("user-market-evaluation"));
   assert.ok(!ids.has("conceded-half"));
   assert.ok(!ids.has("combined-odds"));

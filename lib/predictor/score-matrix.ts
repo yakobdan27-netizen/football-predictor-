@@ -100,10 +100,12 @@ export function outcomeProbsFromMatrix(m: number[][]): {
   draw: number;
   away: number;
 } {
+  // trilSum(m, 0): i-j > 0 → home goals > away; triuSum(m, 0): away > home.
+  // (Previously used offset -1 / 1 which double-counted draws and undercounted away.)
   return {
-    home: trilSum(m, -1),
+    home: trilSum(m, 0),
     draw: trace(m),
-    away: triuSum(m, 1),
+    away: triuSum(m, 0),
   };
 }
 

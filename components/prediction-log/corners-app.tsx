@@ -8,10 +8,10 @@ import {
   availableSeedSeasons,
   leanLabel,
   listSeedClubRows,
+  predictCornersMatch,
   type CornersConfidence,
   type CornersMatchPrediction,
 } from "@/lib/prediction-log/corners-model";
-import { canonicalCornersMatch } from "@/lib/prediction-log/canonical-probability";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHshPredictions } from "./use-hsh-predictions";
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
@@ -71,7 +71,11 @@ export function CornersApp() {
   }, [sortedBatches, batchId]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
-  const { predictions: hshPredictions } = useHshPredictions(batch, batches, {});
+  const { predictions: hshPredictions, estimatesById } = useHshPredictions(
+    batch,
+    batches,
+    {}
+  );
   const hshByMatch = useMemo(() => {
     const m = new Map(hshPredictions.map((p) => [p.matchId, p]));
     return m;
@@ -80,22 +84,26 @@ export function CornersApp() {
   const predictions = useMemo(() => {
     if (!batch) return [] as CornersMatchPrediction[];
     return batch.matches.map((match) => {
-      const { prediction, canonical } = canonicalCornersMatch({
+      const league = matchLeague(match, batch.league);
+      const prediction = predictCornersMatch({
         matchId: match.id,
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
-        league: matchLeague(match, batch.league),
+        league,
         batches,
         beforeDate: batch.date,
       });
-      // Keep lean/side fields from engine; Over 9.5 from canonical entry.
+      const est = estimatesById[match.id];
+      // Display O/U 9.5 from canonicalFixtureEstimate (SoT).
       return {
         ...prediction,
-        pOver95: canonical.prob,
-        pUnder95: 1 - canonical.prob,
+        lambdaHome: est?.lambdas.home_corners ?? prediction.lambdaHome,
+        lambdaAway: est?.lambdas.away_corners ?? prediction.lambdaAway,
+        pOver95: est?.markets.cornersOver95 ?? prediction.pOver95,
+        pUnder95: est?.markets.cornersUnder95 ?? prediction.pUnder95,
       };
     });
-  }, [batch, batches]);
+  }, [batch, batches, estimatesById]);
 
   const clubRows = useMemo(
     () => listSeedClubRows(league || null, season === "all" ? null : season),

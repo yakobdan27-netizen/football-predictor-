@@ -269,6 +269,9 @@ export async function ensureSchema(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_league_season_idx ON hist_fixtures (league_id, season)`;
   await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_date_idx ON hist_fixtures (date_utc)`;
   await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_comp_type_idx ON hist_fixtures (comp_type)`;
+  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_home_id_idx ON hist_fixtures (home_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_away_id_idx ON hist_fixtures (away_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_status_idx ON hist_fixtures (status)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS hist_goals (
@@ -358,6 +361,7 @@ export async function ensureSchema(): Promise<void> {
   `;
   // Additive column for DBs created before league_priors_json
   await sql`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS league_priors_json text`;
+  await sql`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS model_params_json text`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS team_half_stats (
@@ -377,6 +381,55 @@ export async function ensureSchema(): Promise<void> {
   `;
   await sql`CREATE INDEX IF NOT EXISTS team_half_stats_team_league_venue_idx ON team_half_stats (team_name, league_id, venue)`;
   await sql`CREATE INDEX IF NOT EXISTS team_half_stats_league_idx ON team_half_stats (league_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS hist_league_half_params (
+      league_id integer NOT NULL,
+      comp_type text NOT NULL DEFAULT 'league',
+      league_name text NOT NULL,
+      s1 real NOT NULL,
+      s1_home real NOT NULL,
+      s1_away real NOT NULL,
+      used_combined_share_home integer NOT NULL DEFAULT 0,
+      used_combined_share_away integer NOT NULL DEFAULT 0,
+      n_valid integer NOT NULL,
+      n_home_goals_sample integer NOT NULL DEFAULT 0,
+      n_away_goals_sample integer NOT NULL DEFAULT 0,
+      kappa_raw real NOT NULL,
+      kappa_adj real NOT NULL,
+      p_d1_obs real NOT NULL,
+      p_d2_obs real NOT NULL,
+      p_d1d2_obs real NOT NULL,
+      goals_mean real,
+      goals_variance real,
+      goals_dispersion real,
+      goals_distribution text NOT NULL DEFAULT 'poisson',
+      computed_at timestamptz NOT NULL,
+      PRIMARY KEY (league_id, comp_type)
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS team_ratings (
+      id serial PRIMARY KEY,
+      team_id integer,
+      team_name text NOT NULL,
+      league_id integer NOT NULL,
+      attack_home real NOT NULL,
+      attack_away real NOT NULL,
+      defence_home real NOT NULL,
+      defence_away real NOT NULL,
+      corners_intensity real NOT NULL,
+      lambda_1h real NOT NULL,
+      lambda_2h real NOT NULL,
+      ess real NOT NULL,
+      seasons_used integer NOT NULL,
+      matches_used integer NOT NULL,
+      updated_at timestamptz NOT NULL,
+      UNIQUE (team_name, league_id)
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS team_ratings_league_idx ON team_ratings (league_id)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS matches (
@@ -480,6 +533,55 @@ export async function ensureSchema(): Promise<void> {
   await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_possession integer`;
   await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_possession integer`;
   await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS source_conflicts text`;
+
+  /** Portfolio slip builder — probability fields only. */
+  await sql`
+    CREATE TABLE IF NOT EXISTS slip_batches (
+      id serial PRIMARY KEY,
+      created_at timestamptz NOT NULL,
+      preferences_json text NOT NULL,
+      user_note text,
+      batch_number integer NOT NULL,
+      fixture_exclusion_ids text,
+      partial_reason text,
+      regenerated_from_id integer
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS slip_batches_created_idx ON slip_batches (created_at)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS slip_batch_legs (
+      id serial PRIMARY KEY,
+      batch_id integer NOT NULL,
+      slip_index integer NOT NULL,
+      leg_order integer NOT NULL,
+      fixture_id text NOT NULL,
+      batch_id_source text,
+      competition text NOT NULL,
+      kickoff_utc timestamptz,
+      market_family text NOT NULL,
+      selection_label text NOT NULL,
+      selection_key text NOT NULL,
+      line real,
+      combo_id text,
+      p_calibrated real NOT NULL,
+      p_raw real NOT NULL,
+      n_effective real NOT NULL,
+      calibrated integer NOT NULL DEFAULT 0,
+      mean_rho real,
+      independence_upper real,
+      band_lower real,
+      band_upper real,
+      selection_source text NOT NULL DEFAULT 'machine',
+      machine_rank integer,
+      correlation_contribution real,
+      home_team text,
+      away_team text,
+      outcome text
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS slip_batch_legs_batch_idx ON slip_batch_legs (batch_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS slip_batch_legs_fixture_idx ON slip_batch_legs (fixture_id)`;
 
   initialized = true;
 }

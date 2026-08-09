@@ -7,6 +7,8 @@ import {
   loadLeagueAfBaselines,
 } from "../hsh-half-rates";
 import { predictHighestScoringHalf } from "../hsh-model";
+import { estimateBatchCanonical } from "../canonical-fixture-estimate";
+import { getCachedHalfParams } from "@/lib/hist/half-params-types";
 import { matchLeague } from "../match-league";
 import type {
   AnalysisHistory,
@@ -46,7 +48,19 @@ export function buildDecisionBatchCaches(params: {
     cornersByMatchId: new Map(),
     comboByMatchId: new Map(),
     comboExtendedByMatchId: new Map(),
+    cfeByMatchId: new Map(),
   };
+
+  try {
+    const estimates = estimateBatchCanonical(batch, allBatches, {
+      halfParamsStore: getCachedHalfParams(),
+    });
+    for (let i = 0; i < batch.matches.length; i++) {
+      caches.cfeByMatchId.set(batch.matches[i]!.id, estimates[i]!);
+    }
+  } catch {
+    /* keep empty */
+  }
 
   try {
     for (const match of batch.matches) {

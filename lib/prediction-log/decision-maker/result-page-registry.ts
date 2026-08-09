@@ -14,6 +14,7 @@ import { getSelectedPickForMatch } from "../snapshot-readers";
 import type { LogMarketKey } from "../types";
 import { bandToConfidence, clampConfidence } from "./confidence";
 import { eventProbPctFromScoreGrid } from "../goal-distribution";
+import { cfeDisplayProbPct } from "../canonical-fixture-estimate";
 import { categoryForLogMarket } from "./market-category";
 import type {
   DecisionFetchContext,
@@ -45,13 +46,18 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
     ctx.match.homeTeam,
     ctx.match.awayTeam
   );
+  // Prefer CFE for total goals / DIEH so reco matches analysis pages.
+  const cfe = ctx.caches.cfeByMatchId.get(ctx.match.id);
+  const cfePct = cfe
+    ? cfeDisplayProbPct(cfe, marketKey, pick.prediction, pick.line)
+    : null;
   const grid = pick.mathSnapshot?.statLayer?.scoreGrid;
   const distPct =
     grid != null
       ? eventProbPctFromScoreGrid(marketKey, label, pick.line, grid)
       : null;
   const conf = clampConfidence(
-    distPct ?? pick.hybridConfidence ?? pick.pFinal ?? pick.confidence ?? 0
+    cfePct ?? distPct ?? pick.hybridConfidence ?? pick.pFinal ?? pick.confidence ?? 0
   );
   const def = LOG_MARKET_MAP[marketKey];
   return [
@@ -130,6 +136,49 @@ function fromHsh(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   ];
 }
 
+function fromDieh(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
+  const est = ctx.caches.cfeByMatchId.get(ctx.match.id);
+  const dieh = est?.markets.dieh;
+  if (!dieh || dieh.status !== "ok" || dieh.diehYes == null || dieh.diehNo == null) {
+    return [];
+  }
+  const yes = dieh.diehYes >= dieh.diehNo;
+  return [
+    {
+      marketKey: "draw_one_half",
+      label: "Draw in either half",
+      prediction: yes ? "Yes" : "No",
+      confidence: clampConfidence((yes ? dieh.diehYes : dieh.diehNo) * 100),
+      category: "specialized",
+      pageId: "draw-either-half-analysis",
+      pageLabel: "Draw Either Half",
+    },
+  ];
+}
+
+function fromTotalGoals(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
+  const est = ctx.caches.cfeByMatchId.get(ctx.match.id);
+  if (!est) return [];
+  const line = est.markets.totalGoals.lines[2.5];
+  // Byte-identical with Total Goals page / CFE markets.over25
+  const over = est.markets.over25;
+  const under = est.markets.under25;
+  void line;
+  const takeOver = over >= under;
+  return [
+    {
+      marketKey: "total_goals_ou",
+      label: "Total goals O/U",
+      prediction: takeOver ? "Over 2.5" : "Under 2.5",
+      confidence: clampConfidence((takeOver ? over : under) * 100),
+      category: "goals",
+      pageId: "total-goals-analysis",
+      pageLabel: "Total Goals",
+      line: 2.5,
+    },
+  ];
+}
+
 function fromLeagueAnalysis(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   const league = matchLeague(ctx.match, ctx.batch.league);
   const a = getLeagueMatchupAnalysis(ctx.match.homeTeam, ctx.match.awayTeam, league);
@@ -153,20 +202,7 @@ function fromLeagueAnalysis(ctx: DecisionFetchContext): DecisionMarketCandidate[
     pageLabel: "League Analysis",
   });
 
-  const ou =
-    a.overUnder25.over >= a.overUnder25.under
-      ? { pred: "Over 2.5", conf: a.overUnder25.over }
-      : { pred: "Under 2.5", conf: a.overUnder25.under };
-  out.push({
-    marketKey: "total_goals_ou",
-    label: "Total goals O/U",
-    prediction: ou.pred,
-    confidence: clampConfidence(ou.conf),
-    category: "goals",
-    pageId: "league-analysis",
-    pageLabel: "League Analysis",
-    line: 2.5,
-  });
+  // total_goals_ou now published by total-goals-analysis (CFE) — not league-analysis.
 
   const btts =
     a.bothTeamsToScore.yes >= a.bothTeamsToScore.no
@@ -224,10 +260,24 @@ export const RESULT_PAGE_REGISTRY: ResultPageDefinition[] = [
     fetchResults: fromHsh,
   },
   {
+    pageId: "total-goals-analysis",
+    pageLabel: "Total Goals",
+    href: "/total-goals-analysis",
+    baseWeight: 0.15,
+    fetchResults: fromTotalGoals,
+  },
+  {
+    pageId: "draw-either-half-analysis",
+    pageLabel: "Draw Either Half",
+    href: "/draw-either-half-analysis",
+    baseWeight: 0.1,
+    fetchResults: fromDieh,
+  },
+  {
     pageId: "league-analysis",
     pageLabel: "League Analysis",
     href: "/league-analysis",
-    baseWeight: 0.15,
+    baseWeight: 0.1,
     fetchResults: fromLeagueAnalysis,
   },
   /**

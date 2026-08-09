@@ -5,6 +5,7 @@ import { ensureSchema } from "@/lib/db/init";
 import {
   auditHistCoverage,
   gapQueueFromCoverage,
+  isProviderHoleReason as isProviderHoleSkip,
 } from "./coverage-audit";
 import { processHistJobChunk, HIST_MAX_ENRICH_PER_CHUNK } from "./import-job";
 import {
@@ -59,14 +60,18 @@ export type HistBackfillOpts = {
 /**
  * Re-open terminal jobs that still have coverage gaps so gap-priority can drain them.
  */
-async function reopenGapJobs(): Promise<number> {
-  const report = await auditHistCoverage();
-  const gaps = gapQueueFromCoverage(report);
+async function reopenGapJobs(
+  report: Awaited<ReturnType<typeof auditHistCoverage>>
+): Promise<number> {
+  // Only reopen the next few queue heads — avoids 66 DB writes + Neon pressure per chunk.
+  const gaps = gapQueueFromCoverage(report).slice(0, 8);
   let reopened = 0;
   for (const g of gaps) {
     const job = await getHistJob(g.leagueId, g.season);
     if (!job) continue;
     if (job.status === "pending" || job.status === "in_progress") continue;
+    // Do not spin forever on seasons the provider cannot serve.
+    if (job.status === "skipped" && isProviderHoleSkip(job.skipReason)) continue;
     await updateHistJob(g.leagueId, g.season, {
       status: "pending",
       cursorFixtureId: null,
@@ -78,14 +83,15 @@ async function reopenGapJobs(): Promise<number> {
   return reopened;
 }
 
-async function pickGapJob(): Promise<{
+async function pickGapJob(
+  report: Awaited<ReturnType<typeof auditHistCoverage>>
+): Promise<{
   leagueId: number;
   season: number;
   leagueName: string;
   cursorFixtureId: number | null;
   status: string;
 } | null> {
-  const report = await auditHistCoverage();
   const gaps = gapQueueFromCoverage(report);
   for (const g of gaps) {
     let job = await getHistJob(g.leagueId, g.season);
@@ -94,6 +100,9 @@ async function pickGapJob(): Promise<{
       job = await getHistJob(g.leagueId, g.season);
     }
     if (!job) continue;
+    if (job.status === "skipped" && isProviderHoleSkip(job.skipReason)) {
+      continue;
+    }
     if (job.status === "done" || job.status === "skipped") {
       await updateHistJob(g.leagueId, g.season, {
         status: "pending",
@@ -162,12 +171,14 @@ export async function runHistBackfillChunk(
     };
   }
 
-  if (gapPriority) {
-    await reopenGapJobs();
+  // One coverage audit per chunk (reopen + pick share it).
+  const gapReport = gapPriority ? await auditHistCoverage() : null;
+  if (gapReport) {
+    await reopenGapJobs(gapReport);
   }
 
   const job = gapPriority
-    ? await pickGapJob()
+    ? await pickGapJob(gapReport!)
     : ((await listActiveHistJobs())[0] ?? null);
 
   if (!job) {
@@ -210,14 +221,25 @@ export async function runHistBackfillChunk(
       needsCoverageCheck: job.status === "pending",
     });
 
-    const summary = await histJobsSummary();
-    const coverage = gapPriority ? await auditHistCoverage() : null;
-    const gapsLeft = coverage
-      ? gapQueueFromCoverage(coverage).length
-      : undefined;
-    const allJobsTerminal = terminalAll(summary.byStatus);
+    let gapsLeft: number | undefined;
+    let allJobsTerminal = false;
+    let progress = progressFrom(undefined, undefined);
+    try {
+      const summary = await histJobsSummary();
+      allJobsTerminal = terminalAll(summary.byStatus);
+      progress = progressFrom(summary.byStatus, summary.fixtures);
+      if (gapPriority) {
+        const coverage = await auditHistCoverage();
+        gapsLeft = gapQueueFromCoverage(coverage).length;
+      }
+    } catch (e) {
+      console.warn(
+        "[hist] post-chunk audit failed",
+        e instanceof Error ? e.message : e
+      );
+    }
     const note = `${result.leagueName} ${result.season}: enriched=${result.enriched} status=${result.status}${gapPriority ? " [gap]" : ""}`;
-    await updateHistMetaSummary(note);
+    await updateHistMetaSummary(note).catch(() => undefined);
 
     return {
       ok: true,
@@ -239,13 +261,13 @@ export async function runHistBackfillChunk(
       allJobsTerminal,
       gapPriority,
       gapsRemaining: gapsLeft,
-      progress: progressFrom(summary.byStatus, summary.fixtures),
+      progress,
       warning: result.skipReason,
       error: result.error,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await updateHistMetaSummary(`chunk error: ${msg}`);
+    await updateHistMetaSummary(`chunk error: ${msg}`).catch(() => undefined);
     return {
       ok: false,
       preflight,

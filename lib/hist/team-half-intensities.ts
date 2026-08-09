@@ -13,6 +13,10 @@ import type {
   TeamHalfProfile,
   VenueSide,
 } from "@/lib/prediction-log/two-h-heavy/types";
+import {
+  effectiveSampleSize,
+  normalizeWeights,
+} from "./decay-weights";
 import { currentHistSeason, histSeasonWeight, histWindowMinSeason } from "./seasons";
 
 function teamKey(name: string): string {
@@ -45,18 +49,35 @@ async function htFromGoals(
   return { htHome, htAway };
 }
 
+export type TeamHalfFromHistResult = TeamHalfProfile & {
+  ess: number;
+  seasonsUsed: number;
+  /** Optional recent-form window (does not replace full-history base). */
+  recentFormN?: number;
+};
+
+/**
+ * Full-window hist half rates (all seasons ≥ histWindowMinSeason).
+ * Recency via normalized 0.8^ago weights — never by truncating the sample.
+ * `opts.recentFormLimit` is an optional extra feature only.
+ */
 export async function computeTeamHalfFromHist(
   team: string,
   venue: VenueSide,
   league: string,
-  opts?: { limit?: number; minMatches?: number }
-): Promise<TeamHalfProfile | null> {
+  opts?: {
+    /** @deprecated Ignored for base rates — full window always used. */
+    limit?: number;
+    minMatches?: number;
+    /** Optional last-N form overlay size (not used as sole input). */
+    recentFormLimit?: number;
+  }
+): Promise<TeamHalfFromHistResult | null> {
   const leagueId = apiLeagueId(league);
   if (leagueId == null) return null;
 
   const db = await getDb();
   const key = teamKey(team);
-  const limit = opts?.limit ?? 40;
   const minMatches = opts?.minMatches ?? MIN_MATCHES;
   const current = currentHistSeason();
   const minSeason = histWindowMinSeason();
@@ -91,15 +112,15 @@ export async function computeTeamHalfFromHist(
         isNotNull(histFixtures.ftAway)
       )
     )
-    .orderBy(desc(histFixtures.dateUtc))
-    .limit(limit * 3);
+    .orderBy(desc(histFixtures.dateUtc));
 
   type Sample = {
     sc1: number;
     sc2: number;
     conc1: number;
     conc2: number;
-    w: number;
+    wRaw: number;
+    season: number;
     date: string;
   };
   const samples: Sample[] = [];
@@ -120,7 +141,7 @@ export async function computeTeamHalfFromHist(
     }
     const ftH = row.ftHome!;
     const ftA = row.ftAway!;
-    const w = histSeasonWeight(row.season, current);
+    const wRaw = histSeasonWeight(row.season, current);
     const date =
       row.dateUtc instanceof Date
         ? row.dateUtc.toISOString().slice(0, 10)
@@ -132,7 +153,8 @@ export async function computeTeamHalfFromHist(
         sc2: Math.max(0, ftH - htH),
         conc1: htA,
         conc2: Math.max(0, ftA - htA),
-        w,
+        wRaw,
+        season: row.season,
         date,
       });
     } else {
@@ -141,40 +163,46 @@ export async function computeTeamHalfFromHist(
         sc2: Math.max(0, ftA - htA),
         conc1: htH,
         conc2: Math.max(0, ftH - htH),
-        w,
+        wRaw,
+        season: row.season,
         date,
       });
     }
-    if (samples.length >= limit) break;
   }
 
   if (samples.length < minMatches) return null;
 
-  let wSum = 0;
+  const wNorm = normalizeWeights(samples.map((s) => s.wRaw));
   let sc1 = 0;
   let sc2 = 0;
   let conc1 = 0;
   let conc2 = 0;
-  for (const s of samples) {
-    wSum += s.w;
-    sc1 += s.sc1 * s.w;
-    sc2 += s.sc2 * s.w;
-    conc1 += s.conc1 * s.w;
-    conc2 += s.conc2 * s.w;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i]!;
+    const w = wNorm[i]!;
+    sc1 += s.sc1 * w;
+    sc2 += s.sc2 * w;
+    conc1 += s.conc1 * w;
+    conc2 += s.conc2 * w;
   }
-  if (wSum <= 0) return null;
+
+  const seasonsUsed = new Set(samples.map((s) => s.season)).size;
+  const ess = effectiveSampleSize(wNorm);
 
   return {
     team: standardizeTeamName(team),
     venue,
-    sc_1h: sc1 / wSum,
-    sc_2h: sc2 / wSum,
-    conc_1h: conc1 / wSum,
-    conc_2h: conc2 / wSum,
+    sc_1h: sc1,
+    sc_2h: sc2,
+    conc_1h: conc1,
+    conc_2h: conc2,
     n_matches: samples.length,
     last_match_date: samples[0]?.date ?? null,
     source: "hist",
     formation: null,
+    ess,
+    seasonsUsed,
+    recentFormN: opts?.recentFormLimit,
   };
 }
 

@@ -32,7 +32,30 @@ export type HistCoverageBucket = {
   with_corners: number;
   with_lineups: number;
   completeness: BucketCompleteness;
+  /**
+   * Inventory gate: stored >= 0.98 × expected, or honest provider hole
+   * (job skipped — season not available on the API plan).
+   */
+  inventoryPass: boolean;
+  /** True when AF reports no coverage / plan exclusion for this bucket. */
+  providerHole: boolean;
+  providerHoleReason: string | null;
+  /** HT missing share of stored (null if no stored) */
+  htMissingPct: number | null;
+  /** Corners missing share of stored */
+  cornersMissingPct: number | null;
 };
+
+export function isProviderHoleReason(
+  reason: string | null | undefined
+): boolean {
+  if (!reason) return false;
+  return (
+    reason.includes("no /leagues coverage") ||
+    reason.includes("no coverage") ||
+    /not available|plan does not include|subscription/i.test(reason)
+  );
+}
 
 export type HistCoverageReport = {
   seasons: number[];
@@ -43,6 +66,8 @@ export type HistCoverageReport = {
     coreOnly: number;
     missing: number;
     total: number;
+    inventoryPass: number;
+    providerHoles: number;
   };
   /** Per-competition stored fixture totals (all seasons in window). */
   perCompetition: Array<{
@@ -96,6 +121,8 @@ export async function auditHistCoverage(opts?: {
       leagueId: histJobs.leagueId,
       season: histJobs.season,
       fixturesTotal: histJobs.fixturesTotal,
+      status: histJobs.status,
+      skipReason: histJobs.skipReason,
     })
     .from(histJobs)
     .where(
@@ -172,7 +199,7 @@ export async function auditHistCoverage(opts?: {
 
   const key = (leagueId: number, season: number) => `${leagueId}:${season}`;
   const jobMap = new Map(
-    jobs.map((j) => [key(j.leagueId, j.season), j.fixturesTotal] as const)
+    jobs.map((j) => [key(j.leagueId, j.season), j] as const)
   );
   const fxMap = new Map(
     fxRows.map((r) => [key(r.leagueId, r.season), r] as const)
@@ -192,6 +219,7 @@ export async function auditHistCoverage(opts?: {
     for (const season of seasons) {
       const k = key(league.id, season);
       const fx = fxMap.get(k);
+      const job = jobMap.get(k);
       const stored = Number(fx?.stored ?? 0);
       const withHt = Number(fx?.withHt ?? 0);
       const withGoals = goalMap.get(k) ?? 0;
@@ -199,15 +227,26 @@ export async function auditHistCoverage(opts?: {
       const withStats = Number(st?.n ?? 0);
       const withCorners = Number(st?.withCorners ?? 0);
       const withLineups = lineupMap.get(k) ?? 0;
-      const jobTotal = Number(jobMap.get(k) ?? 0);
-      const expected = jobTotal > 0 ? jobTotal : stored;
+      const jobTotal = Number(job?.fixturesTotal ?? 0);
+      // Never treat stored as expected — that false-passes inventory at any N.
+      const expected = jobTotal > 0 ? jobTotal : 0;
       const completeness = rollupCompleteness({
         stored,
-        expected,
+        expected: expected > 0 ? expected : stored,
         withHt,
         withGoals,
         withStats,
       });
+      const providerHole =
+        stored === 0 &&
+        job?.status === "skipped" &&
+        isProviderHoleReason(job.skipReason);
+      const fillPass = expected > 0 && stored / expected >= 0.98;
+      const inventoryPass = fillPass || providerHole;
+      const htMissingPct =
+        stored > 0 ? (1 - withHt / stored) * 100 : null;
+      const cornersMissingPct =
+        stored > 0 ? (1 - withCorners / stored) * 100 : null;
       buckets.push({
         leagueId: league.id,
         leagueName: leagueById.get(league.id)?.name ?? league.name,
@@ -221,6 +260,11 @@ export async function auditHistCoverage(opts?: {
         with_corners: withCorners,
         with_lineups: withLineups,
         completeness,
+        inventoryPass,
+        providerHole,
+        providerHoleReason: providerHole ? job?.skipReason ?? null : null,
+        htMissingPct,
+        cornersMissingPct,
       });
     }
   }
@@ -243,6 +287,8 @@ export async function auditHistCoverage(opts?: {
     coreOnly: buckets.filter((b) => b.completeness === "core-only").length,
     missing: buckets.filter((b) => b.completeness === "missing").length,
     total: buckets.length,
+    inventoryPass: buckets.filter((b) => b.inventoryPass).length,
+    providerHoles: buckets.filter((b) => b.providerHole).length,
   };
 
   return { seasons, buckets, summary, perCompetition };
@@ -289,21 +335,35 @@ export function hasEmptyCompetition(report: HistCoverageReport): boolean {
   return report.perCompetition.some((c) => c.stored === 0);
 }
 
-/** Gap queue: missing → core-only → partial. Skip full. */
+/**
+ * Gap queue for inventory gate:
+ * 1) Finish buckets already started (highest fill < 0.98 first)
+ * 2) Then empty/missing (domestics before cups, older seasons first)
+ * Skip full + honest provider holes.
+ */
 export function gapQueueFromCoverage(
   report: HistCoverageReport
 ): HistCoverageBucket[] {
-  const rank = (c: BucketCompleteness): number => {
-    if (c === "missing") return 0;
-    if (c === "core-only") return 1;
-    if (c === "partial") return 2;
-    return 9;
-  };
+  const cupRank = (t: "league" | "cup"): number => (t === "league" ? 0 : 1);
+  const fillOf = (b: HistCoverageBucket): number =>
+    b.expected_fixtures > 0
+      ? b.stored_fixtures / b.expected_fixtures
+      : b.stored_fixtures > 0
+        ? 1
+        : 0;
+
   return report.buckets
-    .filter((b) => b.completeness !== "full")
+    .filter((b) => !b.inventoryPass && !b.providerHole)
     .sort((a, b) => {
-      const r = rank(a.completeness) - rank(b.completeness);
-      if (r !== 0) return r;
+      const aFill = fillOf(a);
+      const bFill = fillOf(b);
+      const aStarted = a.stored_fixtures > 0 ? 0 : 1;
+      const bStarted = b.stored_fixtures > 0 ? 0 : 1;
+      if (aStarted !== bStarted) return aStarted - bStarted;
+      // Among started: closest to 0.98 first (finish seasons).
+      if (aStarted === 0 && aFill !== bFill) return bFill - aFill;
+      const c = cupRank(a.compType) - cupRank(b.compType);
+      if (c !== 0) return c;
       if (a.leagueId !== b.leagueId) return a.leagueId - b.leagueId;
       return a.season - b.season;
     });

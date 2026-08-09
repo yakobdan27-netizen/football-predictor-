@@ -7,7 +7,8 @@ import { resolveLeagueId } from "./league-registry";
 import type { League, LeagueCharacterProfile, LeagueProfilesStore, LogMarketKey } from "./types";
 
 /** Match samples at which prior weight reaches ~0 (research §4.3). */
-export const LEAGUE_PRIOR_FULL_SAMPLE = 8;
+/** Align with SHRINKAGE_K / brief k=10. */
+export const LEAGUE_PRIOR_FULL_SAMPLE = 10;
 
 /** Neutral late-goal share (% of matches with a late goal) used as baseline. */
 export const LATE_GOAL_SHARE_NEUTRAL = 28;

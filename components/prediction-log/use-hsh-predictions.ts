@@ -1,11 +1,15 @@
 "use client";
 
 import { useMemo } from "react";
-import { matchLeague } from "@/lib/prediction-log/match-league";
+import {
+  estimateBatchCanonical,
+  type CanonicalFixtureEstimate,
+} from "@/lib/prediction-log/canonical-fixture-estimate";
 import {
   computeCanonicalHshPrediction,
   canonicalProbabilityFromHsh,
 } from "@/lib/prediction-log/canonical-probability";
+import { matchLeague } from "@/lib/prediction-log/match-league";
 import {
   loadClubHalfAttackDefence,
   loadLeagueAfBaselines,
@@ -22,11 +26,12 @@ export interface HshOverride {
 
 export type HshPredictionWithBlend = HshPrediction & {
   sourceBreakdown: BlendSource;
+  estimate?: CanonicalFixtureEstimate;
 };
 
 /**
- * Half-Time Ranking predictions via canonical half engine
- * (predictHighestScoringHalf / Stage A+B only).
+ * Half-Time Ranking via canonicalFixtureEstimate markets (Stage B identity).
+ * Manual λ overrides still go through computeCanonicalHshPrediction.
  */
 export function useHshPredictions(
   batch: PredictionBatch | null,
@@ -36,11 +41,19 @@ export function useHshPredictions(
   predictions: HshPredictionWithBlend[];
   loading: boolean;
   error: string | null;
+  estimatesById: Record<string, CanonicalFixtureEstimate>;
 } {
-  const predictions = useMemo<HshPredictionWithBlend[]>(() => {
-    if (!batch) return [];
+  const { predictions, estimatesById } = useMemo(() => {
+    const emptyEst: Record<string, CanonicalFixtureEstimate> = {};
+    if (!batch) return { predictions: [] as HshPredictionWithBlend[], estimatesById: emptyEst };
 
-    return batch.matches.map((match) => {
+    const estimates = estimateBatchCanonical(batch, allBatches);
+    const byId: Record<string, CanonicalFixtureEstimate> = {};
+    for (let i = 0; i < batch.matches.length; i++) {
+      byId[batch.matches[i]!.id] = estimates[i]!;
+    }
+
+    const predictions = batch.matches.map((match, i) => {
       const league = matchLeague(match, batch.league);
       const homeRates = loadClubHalfAttackDefence(match.homeTeam, league, allBatches, {
         beforeDate: batch.date,
@@ -56,6 +69,7 @@ export function useHshPredictions(
         beforeDate: batch.date,
       });
       const override = overrides[match.id];
+      const est = estimates[i]!;
 
       const pred = computeCanonicalHshPrediction({
         matchId: match.id,
@@ -71,10 +85,35 @@ export function useHshPredictions(
         manualLambda1h: override?.lambda1h,
         manualLambda2h: override?.lambda2h,
       });
+
+      // Without half overrides, display probs are CFE markets (SoT).
+      if (!override?.lambda1h && !override?.lambda2h) {
+        const aligned: HshPredictionWithBlend = {
+          ...pred,
+          p1h: est.markets.p1h,
+          p2h: est.markets.p2h,
+          pTie: est.markets.pTie,
+          topProbability: Math.max(
+            est.markets.p1h,
+            est.markets.p2h,
+            est.markets.pTie
+          ),
+          sourceBreakdown: est.provenance.sourceBreakdown,
+          estimate: est,
+        };
+        return aligned;
+      }
+
       const canon = canonicalProbabilityFromHsh(pred, "hsh_2h_gt_1h");
-      return { ...pred, sourceBreakdown: canon.sourceBreakdown };
+      return {
+        ...pred,
+        sourceBreakdown: canon.sourceBreakdown,
+        estimate: est,
+      };
     });
+
+    return { predictions, estimatesById: byId };
   }, [batch, allBatches, overrides]);
 
-  return { predictions, loading: false, error: null };
+  return { predictions, loading: false, error: null, estimatesById };
 }

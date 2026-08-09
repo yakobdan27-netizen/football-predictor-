@@ -12,20 +12,20 @@ import { emptyLearnerStats } from "./ai-learner";
 import { PREDICTION_WEIGHTS, blendBadgeLabel } from "./prediction-weights";
 import type { RecommendedPick } from "./types";
 
-test("60/40 weighting is mathematically correct", () => {
+test("hybrid confidence is system score (no probability-level blend)", () => {
   const r = calculateHybridRecommendation(68, 60);
-  // 0.6*68 + 0.4*60 = 40.8 + 24 = 64.8
-  assert.equal(r.hybridConfidence, 64.8);
-  assert.equal(r.aiContribution, 24);
-  assert.equal(r.systemContribution, 40.8);
+  // Anti-pattern removed: displayed % is system, not 0.6*68+0.4*60
+  assert.equal(r.hybridConfidence, 68);
+  assert.equal(r.aiLearnerScore, 60);
+  assert.equal(r.systemCalculationScore, 68);
   assert.equal(r.aiContributionWeight, PREDICTION_WEIGHTS.manualAi);
   assert.equal(r.systemContributionWeight, PREDICTION_WEIGHTS.apiDb);
-  assert.equal(r.blendSource, "blended");
-  assert.equal(r.recommendation, "MODERATE");
-  assert.equal(r.breakdownLabel, "AI: 24% | System: 40.8%");
+  assert.equal(r.blendSource, "api_only");
+  assert.equal(r.recommendation, "STRONG");
+  assert.ok(r.breakdownLabel.includes("System market %"));
 });
 
-test("insufficient AI samples defaults to neutral 50", () => {
+test("insufficient AI samples defaults to neutral 50 (advisory only)", () => {
   const stats = emptyLearnerStats();
   stats.totalScoredPicks = HYBRID_AI_MIN_SAMPLES - 1;
   const ai = getAILearnerScore(stats, 1.85);
@@ -36,8 +36,7 @@ test("insufficient AI samples defaults to neutral 50", () => {
     aiSamples: ai.samples,
     aiNeutral: ai.aiNeutral,
   });
-  // (80*0.6) + (50*0.4) = 48 + 20 = 68
-  assert.equal(hybrid.hybridConfidence, 68);
+  assert.equal(hybrid.hybridConfidence, 80);
   assert.equal(hybrid.recommendation, "STRONG");
 });
 
@@ -47,7 +46,7 @@ test("recommendation levels map thresholds", () => {
   assert.equal(hybridRecommendationLevel(54.9), "WEAK");
 });
 
-test("applyHybridToRecommendedPick sets hybrid fields from pFinal", () => {
+test("applyHybridToRecommendedPick sets hybrid fields from pFinal (system)", () => {
   const stats = emptyLearnerStats();
   stats.totalScoredPicks = 25;
   stats.oddsRanges = [
@@ -71,11 +70,11 @@ test("applyHybridToRecommendedPick sets hybrid fields from pFinal", () => {
   const out = applyHybridToRecommendedPick(pick, stats);
   assert.equal(out.systemCalculationScore, 68);
   assert.equal(out.aiLearnerScore, 60);
-  assert.equal(out.hybridConfidence, 64.8);
-  assert.equal(out.confidence, 64.8);
-  assert.equal(out.hybridRecommendation, "MODERATE");
-  assert.equal(out.blendSource, "blended");
-  assert.ok(out.confidenceBreakdown?.includes(blendBadgeLabel("blended")));
+  assert.equal(out.hybridConfidence, 68);
+  assert.equal(out.confidence, 68);
+  assert.equal(out.hybridRecommendation, "STRONG");
+  assert.equal(out.blendSource, "api_only");
+  assert.ok(out.confidenceBreakdown?.includes(blendBadgeLabel("api_only")));
 });
 
 test("remove picks are left unchanged", () => {

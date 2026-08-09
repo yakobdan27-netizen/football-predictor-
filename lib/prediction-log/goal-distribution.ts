@@ -83,7 +83,7 @@ export function bttsYesNo(matrix: number[][]): [number, number] {
   return [yes, no];
 }
 
-/** Univariate Poisson O/U (corners, per-team HT). */
+/** Univariate Poisson O/U (corners, per-team HT). Half-lines: O+U=1. */
 export function overUnderFromLambda(
   lambda: number,
   line: number
@@ -92,6 +92,35 @@ export function overUnderFromLambda(
   const under = 1 - over;
   assertNearOne(over + under, `univariate O/U line ${line}`);
   return [over, under];
+}
+
+/**
+ * Whole-number lines: explicit push mass.
+ * P(over)+P(under)+P(push)=1.
+ */
+export function overUnderPushFromPmf(
+  pmf: number[],
+  line: number
+): { over: number; under: number; push: number } {
+  const isWhole = Number.isInteger(line);
+  let over = 0;
+  let under = 0;
+  let push = 0;
+  for (let k = 0; k < pmf.length; k++) {
+    const p = pmf[k] ?? 0;
+    if (isWhole && k === line) push += p;
+    else if (k > line) over += p;
+    else under += p;
+  }
+  const total = over + under + push;
+  if (total <= 0) return { over: 0, under: 1, push: 0 };
+  const out = {
+    over: over / total,
+    under: under / total,
+    push: push / total,
+  };
+  assertNearOne(out.over + out.under + out.push, `O/U/P line ${line}`);
+  return out;
 }
 
 function isOverPrediction(prediction: string): boolean {

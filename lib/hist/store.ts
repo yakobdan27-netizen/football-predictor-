@@ -138,23 +138,22 @@ export async function upsertHistTeams(teams: NewHistTeam[]): Promise<void> {
       .from(histTeams)
       .where(eq(histTeams.teamId, team.teamId))
       .limit(1);
-    if (existing) {
-      const first =
-        existing.firstSeenSeason != null && team.firstSeenSeason != null
-          ? Math.min(existing.firstSeenSeason, team.firstSeenSeason)
-          : (existing.firstSeenSeason ?? team.firstSeenSeason ?? null);
-      await db
-        .update(histTeams)
-        .set({
+    const first =
+      existing?.firstSeenSeason != null && team.firstSeenSeason != null
+        ? Math.min(existing.firstSeenSeason, team.firstSeenSeason)
+        : (existing?.firstSeenSeason ?? team.firstSeenSeason ?? null);
+    await db
+      .insert(histTeams)
+      .values({ ...team, firstSeenSeason: first })
+      .onConflictDoUpdate({
+        target: histTeams.teamId,
+        set: {
           name: team.name,
-          logo: team.logo ?? existing.logo,
-          country: team.country ?? existing.country,
+          logo: team.logo ?? existing?.logo ?? null,
+          country: team.country ?? existing?.country ?? null,
           firstSeenSeason: first,
-        })
-        .where(eq(histTeams.teamId, team.teamId));
-    } else {
-      await db.insert(histTeams).values(team);
-    }
+        },
+      });
   }
 }
 
@@ -163,45 +162,45 @@ export async function upsertHistFixture(
 ): Promise<"inserted" | "updated" | "skipped"> {
   const existing = await getHistFixture(row.fixtureId);
   const incomingCompleteness = row.dataCompleteness ?? "core-only";
-  if (existing) {
-    if (
-      completenessRank(existing.dataCompleteness) >
+  if (
+    existing &&
+    completenessRank(existing.dataCompleteness) >
       completenessRank(incomingCompleteness)
-    ) {
-      return "skipped";
-    }
-    const mergedCompleteness = richerCompleteness(
-      existing.dataCompleteness,
-      incomingCompleteness
-    );
-    const db = await getDb();
-    await db
-      .update(histFixtures)
-      .set({
-        leagueId: row.leagueId,
-        season: row.season,
-        compType: row.compType ?? existing.compType ?? "league",
-        round: row.round ?? existing.round,
-        dateUtc: row.dateUtc,
-        homeId: row.homeId ?? existing.homeId,
-        awayId: row.awayId ?? existing.awayId,
-        homeTeam: row.homeTeam,
-        awayTeam: row.awayTeam,
-        venue: row.venue ?? existing.venue,
-        htHome: row.htHome ?? existing.htHome,
-        htAway: row.htAway ?? existing.htAway,
-        ftHome: row.ftHome ?? existing.ftHome,
-        ftAway: row.ftAway ?? existing.ftAway,
-        status: row.status,
-        dataCompleteness: mergedCompleteness,
-        importedAt: row.importedAt,
-      })
-      .where(eq(histFixtures.fixtureId, row.fixtureId));
-    return "updated";
+  ) {
+    return "skipped";
   }
+  const mergedCompleteness = richerCompleteness(
+    existing?.dataCompleteness ?? "core-only",
+    incomingCompleteness
+  );
   const db = await getDb();
-  await db.insert(histFixtures).values(row);
-  return "inserted";
+  const patch = {
+    leagueId: row.leagueId,
+    season: row.season,
+    compType: row.compType ?? existing?.compType ?? "league",
+    round: row.round ?? existing?.round ?? null,
+    dateUtc: row.dateUtc,
+    homeId: row.homeId ?? existing?.homeId ?? null,
+    awayId: row.awayId ?? existing?.awayId ?? null,
+    homeTeam: row.homeTeam,
+    awayTeam: row.awayTeam,
+    venue: row.venue ?? existing?.venue ?? null,
+    htHome: row.htHome ?? existing?.htHome ?? null,
+    htAway: row.htAway ?? existing?.htAway ?? null,
+    ftHome: row.ftHome ?? existing?.ftHome ?? null,
+    ftAway: row.ftAway ?? existing?.ftAway ?? null,
+    status: row.status,
+    dataCompleteness: mergedCompleteness,
+    importedAt: row.importedAt,
+  };
+  await db
+    .insert(histFixtures)
+    .values({ ...row, ...patch, dataCompleteness: mergedCompleteness })
+    .onConflictDoUpdate({
+      target: histFixtures.fixtureId,
+      set: patch,
+    });
+  return existing ? "updated" : "inserted";
 }
 
 export async function replaceHistGoals(

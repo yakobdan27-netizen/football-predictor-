@@ -4,6 +4,7 @@
  * - attach Dixon-Coles / seed score grids when missing
  */
 import { scoreGridForMatch } from "./correct-score-freeze";
+import { estimateBatchCanonical } from "./canonical-fixture-estimate";
 import { matchLeague } from "./match-league";
 import { RECO_ENGINE_VERSION } from "./recommendation-config";
 import { singleMarketKey, resolveMarketMode } from "./match-entry-helpers";
@@ -157,7 +158,8 @@ export function ensureComboRecommendedShell(batch: PredictionBatch): PredictionB
 
 function attachGridToPick(
   pick: RecommendedPick,
-  grid: number[][] | null
+  grid: number[][] | null,
+  lambdas?: { home?: number; away?: number }
 ): RecommendedPick {
   if (!grid) return pick;
   const prev = pick.mathSnapshot;
@@ -188,8 +190,8 @@ function attachGridToPick(
         pDc: prev?.statLayer?.pDc ?? pick.confidence,
         pMl: prev?.statLayer?.pMl ?? pick.confidence,
         scoreGrid: grid,
-        lambdaHome: prev?.statLayer?.lambdaHome,
-        lambdaAway: prev?.statLayer?.lambdaAway,
+        lambdaHome: lambdas?.home ?? prev?.statLayer?.lambdaHome,
+        lambdaAway: lambdas?.away ?? prev?.statLayer?.lambdaAway,
         calibrated: prev?.statLayer?.calibrated ?? false,
       },
     },
@@ -218,23 +220,46 @@ export function attachComboScoreGrids(
   const shelled = ensureComboRecommendedShell(batch);
   if (!shelled.recommended) return shelled;
 
+  // Prefer canonicalFixtureEstimate score matrix (same FT SoT as HSH/ladder).
+  const cfeList = estimateBatchCanonical(shelled, allBatches);
+  const cfeById = new Map(
+    shelled.matches.map((m, i) => [m.id, cfeList[i]!] as const)
+  );
+
   const matches = shelled.recommended.matches.map((rm) => {
     if (matchHasGrid(rm)) return rm;
     const logMatch = shelled.matches.find((m) => m.id === rm.id);
     if (!logMatch) return rm;
     const league = matchLeague(logMatch, shelled.league);
-    let grid = scoreGridForMatch(logMatch, league, clubRecords, clubIndex, allBatches);
+    const cfe = cfeById.get(rm.id);
+    let grid = cfe?.score_matrix ?? null;
+    let fromCfe = Boolean(grid);
     let fromHist = false;
+    if (!grid) {
+      grid = scoreGridForMatch(logMatch, league, clubRecords, clubIndex, allBatches);
+    }
     if (!grid && histGrids?.[rm.id]) {
       grid = histGrids[rm.id]!;
       fromHist = true;
+      fromCfe = false;
     }
     if (!grid) return rm;
 
+    const lambdas = cfe
+      ? { home: cfe.lambdas.home, away: cfe.lambdas.away }
+      : undefined;
     const predictions = { ...rm.predictions };
     const keys = Object.keys(predictions) as LogMarketKey[];
     const attach = (pick: RecommendedPick) => {
-      const next = attachGridToPick(pick, grid);
+      const next = attachGridToPick(pick, grid, lambdas);
+      if (fromCfe) {
+        return {
+          ...next,
+          judgment: next.judgment
+            ? `${next.judgment} · canonicalFixtureEstimate`
+            : "canonicalFixtureEstimate",
+        };
+      }
       if (!fromHist) return next;
       return {
         ...next,
