@@ -32,6 +32,8 @@ export function HistCoverageBadge() {
           partial: data.summary.partial,
           missing: data.summary.missing,
           total: data.summary.total,
+          inventoryPass: data.summary.inventoryPass,
+          providerHoles: data.summary.providerHoles,
         });
       })
       .catch(() => undefined);

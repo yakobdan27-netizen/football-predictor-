@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { UploadCsv, SeedButton } from "@/components/upload-seed";
+import { SystemInformation } from "@/components/system-information";
 
 export default function DashboardPage() {
   const [matchCount, setMatchCount] = useState<number | null>(null);
@@ -36,6 +37,8 @@ export default function DashboardPage() {
           {error}
         </div>
       )}
+
+      <SystemInformation />
 
       <div className="stat-grid" style={{ marginBottom: "1rem" }}>
         <div className="card">
