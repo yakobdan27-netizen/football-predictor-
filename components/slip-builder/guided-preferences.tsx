@@ -17,6 +17,8 @@ type Props = {
   open: boolean;
   onToggle: () => void;
   conflictMessage: string | null;
+  /** When building from one saved batch, hide date window (all matches included). */
+  batchLocked?: boolean;
 };
 
 export function GuidedPreferences({
@@ -25,6 +27,7 @@ export function GuidedPreferences({
   open,
   onToggle,
   conflictMessage,
+  batchLocked = false,
 }: Props) {
   const set = <K extends keyof SlipPreferences>(
     key: K,
@@ -197,36 +200,43 @@ export function GuidedPreferences({
             </div>
           </fieldset>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 12,
-            }}
-          >
-            <label>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                Q5 — Window start
-              </div>
-              <input
-                type="date"
-                value={prefs.windowStart}
-                onChange={(e) => set("windowStart", e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </label>
-            <label>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                Q5 — Window end
-              </div>
-              <input
-                type="date"
-                value={prefs.windowEnd}
-                onChange={(e) => set("windowEnd", e.target.value)}
-                style={{ width: "100%" }}
-              />
-            </label>
-          </div>
+          {batchLocked ? (
+            <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+              Q5 — Using all matches from the selected prediction batch (date
+              window not applied).
+            </p>
+          ) : (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 12,
+              }}
+            >
+              <label>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Q5 — Window start
+                </div>
+                <input
+                  type="date"
+                  value={prefs.windowStart}
+                  onChange={(e) => set("windowStart", e.target.value)}
+                  style={{ width: "100%" }}
+                />
+              </label>
+              <label>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Q5 — Window end
+                </div>
+                <input
+                  type="date"
+                  value={prefs.windowEnd}
+                  onChange={(e) => set("windowEnd", e.target.value)}
+                  style={{ width: "100%" }}
+                />
+              </label>
+            </div>
+          )}
 
           <label>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>

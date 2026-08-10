@@ -1,6 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  getBatchDisplayId,
+  resolveBatchByQuery,
+} from "@/lib/prediction-log/snapshot-readers";
+import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
+import type { PredictionBatch } from "@/lib/prediction-log/types";
+import { usePredictionLogData } from "@/components/prediction-log/use-prediction-log-data";
+import { windowForPredictionBatch } from "@/lib/slip-builder/batch-pool";
 import { FAMILY_LABELS } from "@/lib/slip-builder/families";
 import {
   DEFAULT_SLIP_PREFERENCES,
@@ -18,29 +27,99 @@ function pct1(p: number): string {
   return `${(p * 100).toFixed(1)}%`;
 }
 
-function defaultPrefs(): SlipPreferences {
-  const now = new Date();
-  const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+function prefsForBatch(batch: PredictionBatch): SlipPreferences {
+  const { start, end } = windowForPredictionBatch(batch);
   return {
     ...DEFAULT_SLIP_PREFERENCES,
-    windowStart: now.toISOString().slice(0, 10),
-    windowEnd: end.toISOString().slice(0, 10),
+    sourceBatchId: batch.id,
+    windowStart: start,
+    windowEnd: end,
   };
 }
 
 export function SlipBuilderApp() {
-  const [prefs, setPrefs] = useState<SlipPreferences>(defaultPrefs);
+  const searchParams = useSearchParams();
+  const batchQuery = searchParams.get("batch");
+
+  const { ready, error: dataError, batches, refresh } = usePredictionLogData();
+
+  const [predictionBatchId, setPredictionBatchId] = useState("");
+  const [prefs, setPrefs] = useState<SlipPreferences>(DEFAULT_SLIP_PREFERENCES);
   const [panelOpen, setPanelOpen] = useState(true);
   const [mobileSheet, setMobileSheet] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [batch, setBatch] = useState<SlipBatchResult | null>(null);
+  const [slipResult, setSlipResult] = useState<SlipBatchResult | null>(null);
   const [filteredOpen, setFilteredOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState<{
     slipIndex: number;
   } | null>(null);
   const [manualFixtureId, setManualFixtureId] = useState("");
   const [manualSelectionKey, setManualSelectionKey] = useState("");
+  const [deeplinkReady, setDeeplinkReady] = useState(!batchQuery);
+
+  useEffect(() => {
+    if (!batchQuery) {
+      setDeeplinkReady(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        await reloadBatchesFromServer();
+        await refresh();
+      } catch {
+        /* keep cache */
+      } finally {
+        if (!cancelled) setDeeplinkReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [batchQuery, refresh]);
+
+  const sortedBatches = useMemo(
+    () =>
+      [...batches].sort(
+        (a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)
+      ),
+    [batches]
+  );
+
+  const deepLinkedBatch = useMemo(
+    () => resolveBatchByQuery(batches, batchQuery),
+    [batches, batchQuery]
+  );
+
+  useEffect(() => {
+    if (deepLinkedBatch) {
+      setPredictionBatchId(deepLinkedBatch.id);
+      return;
+    }
+    if (!predictionBatchId && sortedBatches[0]) {
+      setPredictionBatchId(sortedBatches[0].id);
+    }
+  }, [deepLinkedBatch, sortedBatches, predictionBatchId]);
+
+  const predictionBatch =
+    sortedBatches.find((b) => b.id === predictionBatchId) ?? null;
+
+  useEffect(() => {
+    if (!predictionBatch) return;
+    setPrefs((prev) => {
+      const { start, end } = windowForPredictionBatch(predictionBatch);
+      return {
+        ...prev,
+        sourceBatchId: predictionBatch.id,
+        windowStart: start,
+        windowEnd: end,
+      };
+    });
+    setSlipResult(null);
+    setError(null);
+  }, [predictionBatch?.id]);
 
   const conflictMessage = useMemo(() => {
     const v = validateFamilySelection(prefs.families);
@@ -52,6 +131,10 @@ export function SlipBuilderApp() {
 
   const generate = useCallback(
     async (excludeFixtureIds?: string[]) => {
+      if (!predictionBatch) {
+        setError("Select a prediction batch first.");
+        return;
+      }
       if (prefs.families.length !== 4) {
         setError("Select exactly four market families.");
         return;
@@ -67,7 +150,10 @@ export function SlipBuilderApp() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            preferences: prefs,
+            preferences: {
+              ...prefs,
+              sourceBatchId: predictionBatch.id,
+            },
             excludeFixtureIds,
             persist: true,
           }),
@@ -77,61 +163,65 @@ export function SlipBuilderApp() {
           setError(data.error ?? "Generation failed");
           return;
         }
-        setBatch(data.batch as SlipBatchResult);
+        setSlipResult(data.batch as SlipBatchResult);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Generation failed");
       } finally {
         setLoading(false);
       }
     },
-    [prefs, conflictMessage]
+    [prefs, conflictMessage, predictionBatch]
   );
 
-  const onPrefsChange = (next: SlipPreferences) => {
-    setPrefs(next);
-  };
-
-  // Changing engine-facing answers re-runs the optimiser (debounced).
-  // Q9 userNote is record-only and must not trigger selection.
   const enginePrefsKey = useMemo(
     () =>
       JSON.stringify({
+        sourceBatchId: predictionBatch?.id,
         families: prefs.families,
         legsPerSlip: prefs.legsPerSlip,
         pMin: prefs.pMin,
         competitions: prefs.competitions,
-        windowStart: prefs.windowStart,
-        windowEnd: prefs.windowEnd,
         maxLegsPerCompetition: prefs.maxLegsPerCompetition,
         excludeUncalibrated: prefs.excludeUncalibrated,
         correlationCeiling: prefs.correlationCeiling,
       }),
-    [prefs]
+    [prefs, predictionBatch?.id]
   );
 
   useEffect(() => {
+    if (!predictionBatch) return;
     if (prefs.families.length !== 4 || conflictMessage) return;
     const t = setTimeout(() => {
       void generate();
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by enginePrefsKey
-  }, [enginePrefsKey, conflictMessage]);
+  }, [enginePrefsKey, conflictMessage, predictionBatch?.id]);
 
   const applyAndGenerate = () => {
     void generate();
     setMobileSheet(false);
   };
 
+  const handleRefreshBatches = async () => {
+    setRefreshing(true);
+    try {
+      await reloadBatchesFromServer();
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const regenerate = async () => {
-    if (!batch) {
+    if (!slipResult) {
       void generate();
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const id = Number(batch.batchId);
+      const id = Number(slipResult.batchId);
       if (Number.isFinite(id)) {
         const res = await fetch("/api/slips/builder/regenerate", {
           method: "POST",
@@ -143,10 +233,10 @@ export function SlipBuilderApp() {
           setError(data.error ?? "Regenerate failed");
           return;
         }
-        setBatch(data.batch as SlipBatchResult);
+        setSlipResult(data.batch as SlipBatchResult);
       } else {
-        const used = batch.slips.flatMap((s) => s.legs.map((l) => l.fixtureId));
-        await generate([...new Set([...batch.fixtureExclusionIds, ...used])]);
+        const used = slipResult.slips.flatMap((s) => s.legs.map((l) => l.fixtureId));
+        await generate([...new Set([...slipResult.fixtureExclusionIds, ...used])]);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Regenerate failed");
@@ -156,17 +246,17 @@ export function SlipBuilderApp() {
   };
 
   const swap = async (slipIndex: number, legOrder: number) => {
-    if (!batch) return;
+    if (!slipResult) return;
     setLoading(true);
     try {
       const res = await fetch("/api/slips/builder/swap-leg", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          batchId: batch.batchId,
+          batchId: slipResult.batchId,
           slipIndex,
           legOrder,
-          batch,
+          batch: slipResult,
         }),
       });
       const data = await res.json();
@@ -174,15 +264,15 @@ export function SlipBuilderApp() {
         setError(data.error ?? "Swap failed");
         return;
       }
-      setBatch(data.batch as SlipBatchResult);
+      setSlipResult(data.batch as SlipBatchResult);
     } finally {
       setLoading(false);
     }
   };
 
   const submitManualAdd = async () => {
-    if (!batch || manualOpen == null) return;
-    const slip = batch.slips[manualOpen.slipIndex];
+    if (!slipResult || manualOpen == null) return;
+    const slip = slipResult.slips[manualOpen.slipIndex];
     if (!slip) return;
     setLoading(true);
     try {
@@ -190,9 +280,9 @@ export function SlipBuilderApp() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          batchId: batch.batchId,
+          batchId: slipResult.batchId,
           slipIndex: manualOpen.slipIndex,
-          batch,
+          batch: slipResult,
           fixtureId: manualFixtureId,
           family: slip.family,
           selectionKey: manualSelectionKey,
@@ -204,7 +294,7 @@ export function SlipBuilderApp() {
         setError(data.error ?? "Add failed");
         return;
       }
-      setBatch(data.batch as SlipBatchResult);
+      setSlipResult(data.batch as SlipBatchResult);
       setManualOpen(null);
       setManualFixtureId("");
       setManualSelectionKey("");
@@ -214,9 +304,9 @@ export function SlipBuilderApp() {
   };
 
   const filteredReasons = useMemo(() => {
-    if (!batch) return [] as Array<{ reason: string; count: number }>;
+    if (!slipResult) return [] as Array<{ reason: string; count: number }>;
     const counts = new Map<string, number>();
-    for (const f of batch.filtered) {
+    for (const f of slipResult.filtered) {
       for (const r of f.reasons) {
         counts.set(r, (counts.get(r) ?? 0) + 1);
       }
@@ -224,298 +314,374 @@ export function SlipBuilderApp() {
     return [...counts.entries()]
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count);
-  }, [batch]);
+  }, [slipResult]);
+
+  if (!ready || !deeplinkReady) {
+    return <p className="page-sub">Loading prediction batches…</p>;
+  }
 
   return (
     <div className="page">
+      {dataError && (
+        <div className="alert alert-error" style={{ marginBottom: "1rem" }}>
+          {dataError}
+        </div>
+      )}
+
       <header style={{ marginBottom: 16 }}>
         <h1 className="page-title">Portfolio Slip Builder</h1>
         <p className="page-sub">
           Four slips ranked only on calibrated occurrence probability. No
-          bookmaker comparison.
+          bookmaker comparison. Pick a saved prediction batch — slips are built
+          from that batch&apos;s matches only.
         </p>
       </header>
 
       <div
+        className="card"
         style={{
+          marginBottom: "1rem",
           display: "flex",
+          gap: "0.75rem",
           flexWrap: "wrap",
-          gap: 8,
-          alignItems: "center",
-          marginBottom: 12,
+          alignItems: "flex-end",
         }}
       >
-        <span style={{ fontWeight: 600 }}>
-          Batch #{batch?.batchNumber ?? "—"}
-        </span>
-        <span style={{ color: "var(--muted)", fontSize: 13 }}>
-          {batch?.generatedAt
-            ? new Date(batch.generatedAt).toLocaleString()
-            : "—"}
-        </span>
+        <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+          Prediction batch
+          <select
+            className="select"
+            style={{ display: "block", marginTop: "0.25rem", minWidth: "18rem" }}
+            value={predictionBatchId}
+            onChange={(e) => {
+              const next = sortedBatches.find((b) => b.id === e.target.value);
+              if (next) {
+                setPredictionBatchId(next.id);
+                setPrefs(prefsForBatch(next));
+              } else {
+                setPredictionBatchId(e.target.value);
+              }
+            }}
+          >
+            {sortedBatches.length === 0 && <option value="">No batches</option>}
+            {sortedBatches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {getBatchDisplayId(b)} · {b.date} · {b.matches.length} matches
+                {b.batchKind === "recommended" ? " · reco" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <button
           type="button"
-          className="btn"
-          onClick={() => setMobileSheet(true)}
-          style={{ marginLeft: "auto" }}
+          className="btn btn-secondary"
+          disabled={refreshing}
+          onClick={() => void handleRefreshBatches()}
         >
-          Preferences
+          {refreshing ? "Refreshing…" : "Refresh batches"}
         </button>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={loading || Boolean(conflictMessage)}
-          onClick={applyAndGenerate}
-        >
-          {loading ? "Building…" : "Build batch"}
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={loading || !batch}
-          onClick={() => void regenerate()}
-        >
-          Regenerate
-        </button>
+
+        {predictionBatch && (
+          <div style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+            <strong style={{ color: "var(--text)" }}>
+              {predictionBatch.matches.length}
+            </strong>{" "}
+            matches in pool · window {prefs.windowStart} → {prefs.windowEnd}
+          </div>
+        )}
       </div>
 
-      <div className="slip-prefs-panel">
-        <GuidedPreferences
-          prefs={prefs}
-          onChange={onPrefsChange}
-          open={panelOpen}
-          onToggle={() => setPanelOpen((o) => !o)}
-          conflictMessage={conflictMessage}
-        />
-      </div>
-
-      {mobileSheet && (
-        <div
-          role="dialog"
-          aria-modal
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            zIndex: 80,
-            display: "flex",
-            alignItems: "flex-end",
-          }}
-          onClick={() => setMobileSheet(false)}
-        >
+      {!predictionBatch ? (
+        <p className="page-sub">Select a prediction batch to build slips.</p>
+      ) : (
+        <>
           <div
             style={{
-              background: "var(--bg, #fff)",
-              width: "100%",
-              maxHeight: "85vh",
-              overflow: "auto",
-              borderTopLeftRadius: 16,
-              borderTopRightRadius: 16,
-              padding: 16,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              alignItems: "center",
+              marginBottom: 12,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <GuidedPreferences
-              prefs={prefs}
-              onChange={onPrefsChange}
-              open
-              onToggle={() => setMobileSheet(false)}
-              conflictMessage={conflictMessage}
-            />
-            <button
-              type="button"
-              className="btn primary"
-              style={{ width: "100%", marginTop: 12 }}
-              onClick={applyAndGenerate}
-            >
-              Apply & rebuild
-            </button>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <p style={{ color: "var(--danger, #b91c1c)", marginBottom: 12 }}>
-          {error}
-        </p>
-      )}
-
-      {batch?.partialReason && (
-        <p
-          className="card"
-          style={{ marginBottom: 12, color: "var(--muted)", fontSize: 14 }}
-        >
-          {batch.partialReason}
-        </p>
-      )}
-
-      <div style={{ display: "grid", gap: 16 }}>
-        {batch?.slips.map((slip) => (
-          <section key={slip.slipIndex} className="card">
-            <header
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                alignItems: "baseline",
-                marginBottom: 10,
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: 18 }}>
-                SLIP {slip.slipIndex + 1} —{" "}
-                {FAMILY_LABELS[slip.family].toUpperCase()}
-              </h2>
-              {slip.provisional && (
-                <span
-                  style={{
-                    fontSize: 12,
-                    background: "rgba(245,158,11,0.2)",
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                  }}
-                >
-                  provisional
-                </span>
-              )}
-              {slip.manuallyAltered && (
-                <span
-                  style={{
-                    fontSize: 12,
-                    background: "rgba(59,130,246,0.15)",
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                  }}
-                >
-                  manually altered
-                </span>
-              )}
-            </header>
-            <p style={{ margin: "0 0 4px", fontSize: 14 }}>
-              Independence estimate (upper bound):{" "}
-              <strong>{pct(slip.independenceUpper)}</strong>
-            </p>
-            <p style={{ margin: "0 0 4px", fontSize: 14 }}>
-              Correlation-adjusted: {pct(slip.bandLower)} –{" "}
-              {pct(slip.bandUpper)}
-            </p>
-            <p style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 13 }}>
-              mean ρ {slip.meanRho.toFixed(2)}
-            </p>
-
-            <div style={{ display: "grid", gap: 10 }}>
-              {slip.legs.map((leg, i) => (
-                <article
-                  key={`${leg.fixtureId}-${leg.selectionKey}-${i}`}
-                  style={{
-                    border: "1px solid var(--border, #e5e7eb)",
-                    borderRadius: 8,
-                    padding: 12,
-                  }}
-                >
-                  <div style={{ fontWeight: 600 }}>
-                    {leg.homeTeam} vs {leg.awayTeam}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                    {leg.competition} · {leg.kickoffIso.slice(0, 10)}
-                  </div>
-                  <div style={{ marginTop: 6 }}>{leg.selectionLabel}</div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 10,
-                      marginTop: 8,
-                      fontSize: 13,
-                    }}
-                  >
-                    <span>
-                      <strong>{pct1(leg.pCalibrated)}</strong> calibrated
-                    </span>
-                    <span style={{ color: "var(--muted)" }}>
-                      (raw {pct1(leg.pRaw)})
-                    </span>
-                    <span>n = {Math.round(leg.nEffective)}</span>
-                    <span
-                      style={{
-                        color: leg.calibrated ? "#15803d" : "#b45309",
-                      }}
-                    >
-                      ●{leg.calibrated ? "calibrated" : "uncalibrated"}
-                    </span>
-                    <span style={{ color: "var(--muted)" }}>
-                      {leg.selectionSource}
-                    </span>
-                  </div>
-                  {leg.warning && (
-                    <p style={{ color: "#b45309", fontSize: 12, marginTop: 6 }}>
-                      {leg.warning}
-                    </p>
-                  )}
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      style={{ fontSize: 12 }}
-                      disabled={loading}
-                      onClick={() => void swap(slip.slipIndex, i)}
-                    >
-                      Swap leg
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-
+            <span style={{ fontWeight: 600 }}>
+              Slip run #{slipResult?.batchNumber ?? "—"}
+            </span>
+            <span style={{ color: "var(--muted)", fontSize: 13 }}>
+              {slipResult?.generatedAt
+                ? new Date(slipResult.generatedAt).toLocaleString()
+                : "—"}
+            </span>
             <button
               type="button"
               className="btn"
-              style={{ marginTop: 10, fontSize: 13 }}
-              onClick={() => setManualOpen({ slipIndex: slip.slipIndex })}
+              onClick={() => setMobileSheet(true)}
+              style={{ marginLeft: "auto" }}
             >
-              Manual add
+              Preferences
             </button>
-          </section>
-        ))}
-      </div>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={loading || Boolean(conflictMessage)}
+              onClick={applyAndGenerate}
+            >
+              {loading ? "Building…" : "Build slips"}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={loading || !slipResult}
+              onClick={() => void regenerate()}
+            >
+              Regenerate
+            </button>
+          </div>
 
-      {batch && (
-        <section className="card" style={{ marginTop: 16 }}>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setFilteredOpen((o) => !o)}
-            style={{ width: "100%", textAlign: "left" }}
-          >
-            {filteredOpen ? "▾" : "▸"} {batch.filtered.length} legs filtered out
-            — view reasons
-          </button>
-          {filteredOpen && (
-            <div style={{ marginTop: 12, fontSize: 13 }}>
-              {filteredReasons.length === 0 ? (
-                <p style={{ color: "var(--muted)" }}>No exclusions recorded.</p>
-              ) : (
-                <ul>
-                  {filteredReasons.map((r) => (
-                    <li key={r.reason}>
-                      {r.reason}: {r.count}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <details style={{ marginTop: 8 }}>
-                <summary>Sample excluded legs</summary>
-                <ul>
-                  {batch.filtered.slice(0, 40).map((f, i) => (
-                    <li key={`${f.fixtureId}-${f.selectionKey}-${i}`}>
-                      {f.homeTeam} vs {f.awayTeam} · {f.selectionLabel} ·{" "}
-                      {f.reasons.join(", ")}
-                    </li>
-                  ))}
-                </ul>
-              </details>
+          <div className="slip-prefs-panel">
+            <GuidedPreferences
+              prefs={prefs}
+              onChange={setPrefs}
+              open={panelOpen}
+              onToggle={() => setPanelOpen((o) => !o)}
+              conflictMessage={conflictMessage}
+              batchLocked
+            />
+          </div>
+
+          {mobileSheet && (
+            <div
+              role="dialog"
+              aria-modal
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.45)",
+                zIndex: 80,
+                display: "flex",
+                alignItems: "flex-end",
+              }}
+              onClick={() => setMobileSheet(false)}
+            >
+              <div
+                style={{
+                  background: "var(--bg, #fff)",
+                  width: "100%",
+                  maxHeight: "85vh",
+                  overflow: "auto",
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  padding: 16,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <GuidedPreferences
+                  prefs={prefs}
+                  onChange={setPrefs}
+                  open
+                  onToggle={() => setMobileSheet(false)}
+                  conflictMessage={conflictMessage}
+                  batchLocked
+                />
+                <button
+                  type="button"
+                  className="btn primary"
+                  style={{ width: "100%", marginTop: 12 }}
+                  onClick={applyAndGenerate}
+                >
+                  Apply & rebuild
+                </button>
+              </div>
             </div>
           )}
-        </section>
+
+          {error && (
+            <p style={{ color: "var(--danger, #b91c1c)", marginBottom: 12 }}>
+              {error}
+            </p>
+          )}
+
+          {slipResult?.partialReason && (
+            <p
+              className="card"
+              style={{ marginBottom: 12, color: "var(--muted)", fontSize: 14 }}
+            >
+              {slipResult.partialReason}
+            </p>
+          )}
+
+          <div style={{ display: "grid", gap: 16 }}>
+            {slipResult?.slips.map((slip) => (
+              <section key={slip.slipIndex} className="card">
+                <header
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    alignItems: "baseline",
+                    marginBottom: 10,
+                  }}
+                >
+                  <h2 style={{ margin: 0, fontSize: 18 }}>
+                    SLIP {slip.slipIndex + 1} —{" "}
+                    {FAMILY_LABELS[slip.family].toUpperCase()}
+                  </h2>
+                  {slip.provisional && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        background: "rgba(245,158,11,0.2)",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      provisional
+                    </span>
+                  )}
+                  {slip.manuallyAltered && (
+                    <span
+                      style={{
+                        fontSize: 12,
+                        background: "rgba(59,130,246,0.15)",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      manually altered
+                    </span>
+                  )}
+                </header>
+                <p style={{ margin: "0 0 4px", fontSize: 14 }}>
+                  Independence estimate (upper bound):{" "}
+                  <strong>{pct(slip.independenceUpper)}</strong>
+                </p>
+                <p style={{ margin: "0 0 4px", fontSize: 14 }}>
+                  Correlation-adjusted: {pct(slip.bandLower)} –{" "}
+                  {pct(slip.bandUpper)}
+                </p>
+                <p
+                  style={{ margin: "0 0 12px", color: "var(--muted)", fontSize: 13 }}
+                >
+                  mean ρ {slip.meanRho.toFixed(2)}
+                </p>
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  {slip.legs.map((leg, i) => (
+                    <article
+                      key={`${leg.fixtureId}-${leg.selectionKey}-${i}`}
+                      style={{
+                        border: "1px solid var(--border, #e5e7eb)",
+                        borderRadius: 8,
+                        padding: 12,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>
+                        {leg.homeTeam} vs {leg.awayTeam}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                        {leg.competition} · {leg.kickoffIso.slice(0, 10)}
+                      </div>
+                      <div style={{ marginTop: 6 }}>{leg.selectionLabel}</div>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 10,
+                          marginTop: 8,
+                          fontSize: 13,
+                        }}
+                      >
+                        <span>
+                          <strong>{pct1(leg.pCalibrated)}</strong> calibrated
+                        </span>
+                        <span style={{ color: "var(--muted)" }}>
+                          (raw {pct1(leg.pRaw)})
+                        </span>
+                        <span>n = {Math.round(leg.nEffective)}</span>
+                        <span
+                          style={{
+                            color: leg.calibrated ? "#15803d" : "#b45309",
+                          }}
+                        >
+                          ●{leg.calibrated ? "calibrated" : "uncalibrated"}
+                        </span>
+                        <span style={{ color: "var(--muted)" }}>
+                          {leg.selectionSource}
+                        </span>
+                      </div>
+                      {leg.warning && (
+                        <p style={{ color: "#b45309", fontSize: 12, marginTop: 6 }}>
+                          {leg.warning}
+                        </p>
+                      )}
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{ fontSize: 12 }}
+                          disabled={loading}
+                          onClick={() => void swap(slip.slipIndex, i)}
+                        >
+                          Swap leg
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ marginTop: 10, fontSize: 13 }}
+                  onClick={() => setManualOpen({ slipIndex: slip.slipIndex })}
+                >
+                  Manual add
+                </button>
+              </section>
+            ))}
+          </div>
+
+          {slipResult && (
+            <section className="card" style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setFilteredOpen((o) => !o)}
+                style={{ width: "100%", textAlign: "left" }}
+              >
+                {filteredOpen ? "▾" : "▸"} {slipResult.filtered.length} legs
+                filtered out — view reasons
+              </button>
+              {filteredOpen && (
+                <div style={{ marginTop: 12, fontSize: 13 }}>
+                  {filteredReasons.length === 0 ? (
+                    <p style={{ color: "var(--muted)" }}>No exclusions recorded.</p>
+                  ) : (
+                    <ul>
+                      {filteredReasons.map((r) => (
+                        <li key={r.reason}>
+                          {r.reason}: {r.count}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <details style={{ marginTop: 8 }}>
+                    <summary>Sample excluded legs</summary>
+                    <ul>
+                      {slipResult.filtered.slice(0, 40).map((f, i) => (
+                        <li key={`${f.fixtureId}-${f.selectionKey}-${i}`}>
+                          {f.homeTeam} vs {f.awayTeam} · {f.selectionLabel} ·{" "}
+                          {f.reasons.join(", ")}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                </div>
+              )}
+            </section>
+          )}
+        </>
       )}
 
       {manualOpen && (
@@ -580,7 +746,6 @@ export function SlipBuilderApp() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

@@ -82,6 +82,8 @@ export type ExclusionReason =
 export type SelectionSource = "machine" | "manual_add" | "swap";
 
 export type SlipPreferences = {
+  /** Saved prediction-log batch to build from (required in UI). */
+  sourceBatchId?: string;
   /** Q1 — exactly four preferred; optimiser may return fewer if not viable. */
   families: MarketFamilyId[];
   /** Q2 — legs per slip (1–6). */

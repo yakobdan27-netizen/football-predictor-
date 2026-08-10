@@ -43,6 +43,20 @@ export function resolveWindow(prefs: SlipPreferences): {
   return defaultWindow();
 }
 
+/** Match date span for a saved prediction batch (all matches included). */
+export function windowForPredictionBatch(batch: PredictionBatch): {
+  start: string;
+  end: string;
+} {
+  const start = batch.date.slice(0, 10);
+  let end = start;
+  for (const match of batch.matches) {
+    const d = (match.matchDate ?? batch.date).slice(0, 10);
+    if (d > end) end = d;
+  }
+  return { start, end };
+}
+
 function dateInWindow(dateIso: string, start: string, end: string): boolean {
   const d = dateIso.slice(0, 10);
   return d >= start && d <= end;
@@ -58,12 +72,19 @@ export function loadBatchFixturePool(
     excludeFixtureIds?: string[];
   }
 ): PoolFixture[] {
-  const { start, end } = resolveWindow(prefs);
+  const batchScoped = Boolean(prefs.sourceBatchId?.trim());
+  const { start, end } = batchScoped
+    ? { start: "", end: "" }
+    : resolveWindow(prefs);
   const comps =
     prefs.competitions.length > 0
       ? new Set(prefs.competitions)
       : new Set(SLIP_COMPETITIONS);
   const exclude = new Set(opts?.excludeFixtureIds ?? []);
+
+  const batchesToScan = prefs.sourceBatchId?.trim()
+    ? allBatches.filter((b) => b.id === prefs.sourceBatchId)
+    : allBatches;
 
   type Raw = {
     fixtureId: string;
@@ -81,13 +102,18 @@ export function loadBatchFixturePool(
 
   const byKey = new Map<string, Raw>();
 
-  for (const batch of allBatches) {
+  for (const batch of batchesToScan) {
     for (let i = 0; i < batch.matches.length; i++) {
       const match = batch.matches[i]!;
       const competition = matchLeague(match, batch.league);
       if (!comps.has(competition)) continue;
       const kickoffIso = match.matchDate ?? batch.date;
-      if (!dateInWindow(kickoffIso, start, end)) continue;
+      if (
+        !batchScoped &&
+        !dateInWindow(kickoffIso, start, end)
+      ) {
+        continue;
+      }
       const fixtureId =
         match.apiFixtureId != null
           ? `api:${match.apiFixtureId}`
