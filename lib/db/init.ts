@@ -1,9 +1,60 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+
+/** Bump when additive DDL changes so cold starts can skip full bootstrap. */
+const SCHEMA_BOOTSTRAP_VERSION = 2;
 
 let initialized = false;
+let ensureSchemaPromise: Promise<void> | null = null;
+
+function isDuplicateRelationError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  const code = (e as { code?: string }).code;
+  return (
+    code === "23505" ||
+    code === "42P07" ||
+    /pg_class_relname_nsp_index|already exists|duplicate key value/i.test(msg)
+  );
+}
+
+function agentLog(
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+  hypothesisId: string
+): void {
+  // #region agent log
+  fetch("http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "9c443b",
+    },
+    body: JSON.stringify({
+      sessionId: "9c443b",
+      location,
+      message,
+      data,
+      hypothesisId,
+      timestamp: Date.now(),
+      runId: "pre-fix",
+    }),
+  }).catch(() => {});
+  // #endregion
+}
 
 export async function ensureSchema(): Promise<void> {
   if (initialized) return;
+  if (!ensureSchemaPromise) {
+    ensureSchemaPromise = runEnsureSchema().catch((e) => {
+      ensureSchemaPromise = null;
+      throw e;
+    });
+  }
+  return ensureSchemaPromise;
+}
+
+async function runEnsureSchema(): Promise<void> {
+  agentLog("lib/db/init.ts:entry", "ensureSchema start", {}, "H1");
 
   const url =
     process.env.DATABASE_URL ??
@@ -11,10 +62,64 @@ export async function ensureSchema(): Promise<void> {
     process.env.POSTGRES_PRISMA_URL;
   if (!url) return;
 
-  const sql = neon(url);
+  const rawSql: NeonQueryFunction<false, false> = neon(url);
+
+  async function ddl(
+    strings: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<unknown> {
+    try {
+      return await rawSql(strings, ...values);
+    } catch (e) {
+      if (isDuplicateRelationError(e)) {
+        agentLog(
+          "lib/db/init.ts:ddl",
+          "swallowed duplicate relation DDL race",
+          {
+            code: (e as { code?: string }).code,
+            message: e instanceof Error ? e.message : String(e),
+          },
+          "H1"
+        );
+        return;
+      }
+      throw e;
+    }
+  }
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS app_schema_meta (
+      id integer PRIMARY KEY DEFAULT 1,
+      version integer NOT NULL DEFAULT 0,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+
+  const metaRows = await rawSql`
+    SELECT version FROM app_schema_meta WHERE id = 1
+  `;
+  const currentVersion =
+    (metaRows[0] as { version?: number } | undefined)?.version ?? 0;
+  if (currentVersion >= SCHEMA_BOOTSTRAP_VERSION) {
+    agentLog(
+      "lib/db/init.ts:fastpath",
+      "schema bootstrap skipped",
+      { currentVersion, target: SCHEMA_BOOTSTRAP_VERSION },
+      "H4"
+    );
+    initialized = true;
+    return;
+  }
+
+  agentLog(
+    "lib/db/init.ts:bootstrap",
+    "running full schema bootstrap",
+    { currentVersion, target: SCHEMA_BOOTSTRAP_VERSION },
+    "H2"
+  );
 
   // live_sync_meta (added after initial live_* rollout).
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS live_sync_meta (
       id integer PRIMARY KEY DEFAULT 1,
       last_sync_at timestamptz,
@@ -28,7 +133,7 @@ export async function ensureSchema(): Promise<void> {
   `;
 
   // match_stats (canonical Stats API persistence).
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS match_stats (
       fixture_id integer PRIMARY KEY,
       stats_api_match_id text,
@@ -53,34 +158,34 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
   // Expanded overview stats (nullable — additive / safe for other backends)
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_shots_on_target integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_shots_on_target integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_xg real`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_xg real`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_big_chances integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_big_chances integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_gk_saves integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_gk_saves integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_fouls integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_fouls integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_yellow_cards integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_yellow_cards integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_red_cards integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_red_cards integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_passes integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_passes integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_accurate_passes integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_accurate_passes integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_tackles integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_tackles integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_free_kicks integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_free_kicks integer`;
-  await sql`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS raw_json text`;
-  await sql`CREATE INDEX IF NOT EXISTS match_stats_league_season_idx ON match_stats (league_id, season)`;
-  await sql`CREATE INDEX IF NOT EXISTS match_stats_kickoff_idx ON match_stats (kickoff_utc)`;
-  await sql`CREATE INDEX IF NOT EXISTS match_stats_stats_api_id_idx ON match_stats (stats_api_match_id)`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_shots_on_target integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_shots_on_target integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_xg real`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_xg real`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_big_chances integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_big_chances integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_gk_saves integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_gk_saves integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_fouls integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_fouls integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_yellow_cards integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_yellow_cards integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_red_cards integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_red_cards integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_passes integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_passes integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_accurate_passes integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_accurate_passes integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_tackles integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_tackles integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS home_free_kicks integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS away_free_kicks integer`;
+  await ddl`ALTER TABLE match_stats ADD COLUMN IF NOT EXISTS raw_json text`;
+  await ddl`CREATE INDEX IF NOT EXISTS match_stats_league_season_idx ON match_stats (league_id, season)`;
+  await ddl`CREATE INDEX IF NOT EXISTS match_stats_kickoff_idx ON match_stats (kickoff_utc)`;
+  await ddl`CREATE INDEX IF NOT EXISTS match_stats_stats_api_id_idx ON match_stats (stats_api_match_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS stats_backfill_meta (
       id integer PRIMARY KEY DEFAULT 1,
       phase text NOT NULL DEFAULT 'inventory',
@@ -93,7 +198,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS team_season_stats (
       team_name text NOT NULL,
       league_id integer NOT NULL,
@@ -128,9 +233,9 @@ export async function ensureSchema(): Promise<void> {
       PRIMARY KEY (team_name, league_id, season)
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS team_season_stats_league_season_idx ON team_season_stats (league_id, season)`;
+  await ddl`CREATE INDEX IF NOT EXISTS team_season_stats_league_season_idx ON team_season_stats (league_id, season)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS bet_events (
       id serial PRIMARY KEY,
       api_fixture_id integer NOT NULL UNIQUE,
@@ -146,11 +251,11 @@ export async function ensureSchema(): Promise<void> {
       last_synced_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS bet_events_kickoff_idx ON bet_events (kickoff_utc)`;
-  await sql`CREATE INDEX IF NOT EXISTS bet_events_status_idx ON bet_events (status)`;
-  await sql`CREATE INDEX IF NOT EXISTS bet_events_feed_idx ON bet_events (feed_type)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_events_kickoff_idx ON bet_events (kickoff_utc)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_events_status_idx ON bet_events (status)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_events_feed_idx ON bet_events (feed_type)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS bet_markets (
       id serial PRIMARY KEY,
       bet_event_id integer NOT NULL,
@@ -162,10 +267,10 @@ export async function ensureSchema(): Promise<void> {
       updated_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS bet_markets_event_idx ON bet_markets (bet_event_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS bet_markets_type_idx ON bet_markets (bet_event_id, market_type, selection_label)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_markets_event_idx ON bet_markets (bet_event_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_markets_type_idx ON bet_markets (bet_event_id, market_type, selection_label)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS bet_slips (
       id serial PRIMARY KEY,
       created_at timestamptz NOT NULL,
@@ -178,10 +283,10 @@ export async function ensureSchema(): Promise<void> {
       note text
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS bet_slips_status_idx ON bet_slips (status)`;
-  await sql`CREATE INDEX IF NOT EXISTS bet_slips_created_idx ON bet_slips (created_at)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_slips_status_idx ON bet_slips (status)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_slips_created_idx ON bet_slips (created_at)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS bet_selections (
       id serial PRIMARY KEY,
       bet_slip_id integer NOT NULL,
@@ -193,10 +298,10 @@ export async function ensureSchema(): Promise<void> {
       settled_at timestamptz
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS bet_selections_slip_idx ON bet_selections (bet_slip_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS bet_selections_event_idx ON bet_selections (bet_event_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_selections_slip_idx ON bet_selections (bet_slip_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS bet_selections_event_idx ON bet_selections (bet_event_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS ext_users (
       id serial PRIMARY KEY,
       phone text NOT NULL UNIQUE,
@@ -205,9 +310,9 @@ export async function ensureSchema(): Promise<void> {
       last_seen_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS ext_users_phone_idx ON ext_users (phone)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ext_users_phone_idx ON ext_users (phone)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS ext_slips (
       id serial PRIMARY KEY,
       ext_user_id integer NOT NULL,
@@ -221,11 +326,11 @@ export async function ensureSchema(): Promise<void> {
       settled_at timestamptz
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS ext_slips_user_idx ON ext_slips (ext_user_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS ext_slips_status_idx ON ext_slips (status)`;
-  await sql`CREATE INDEX IF NOT EXISTS ext_slips_created_idx ON ext_slips (created_at)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ext_slips_user_idx ON ext_slips (ext_user_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ext_slips_status_idx ON ext_slips (status)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ext_slips_created_idx ON ext_slips (created_at)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS ext_selections (
       id serial PRIMARY KEY,
       ext_slip_id integer NOT NULL,
@@ -239,11 +344,11 @@ export async function ensureSchema(): Promise<void> {
       settled_at timestamptz
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS ext_selections_slip_idx ON ext_selections (ext_slip_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS ext_selections_event_idx ON ext_selections (bet_event_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ext_selections_slip_idx ON ext_selections (ext_slip_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ext_selections_event_idx ON ext_selections (bet_event_id)`;
 
   // Historical AF seed tables (isolated from live_*/bet_*/match_stats)
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_fixtures (
       fixture_id integer PRIMARY KEY,
       league_id integer NOT NULL,
@@ -265,15 +370,15 @@ export async function ensureSchema(): Promise<void> {
       imported_at timestamptz NOT NULL
     )
   `;
-  await sql`ALTER TABLE hist_fixtures ADD COLUMN IF NOT EXISTS comp_type text NOT NULL DEFAULT 'league'`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_league_season_idx ON hist_fixtures (league_id, season)`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_date_idx ON hist_fixtures (date_utc)`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_comp_type_idx ON hist_fixtures (comp_type)`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_home_id_idx ON hist_fixtures (home_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_away_id_idx ON hist_fixtures (away_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_fixtures_status_idx ON hist_fixtures (status)`;
+  await ddl`ALTER TABLE hist_fixtures ADD COLUMN IF NOT EXISTS comp_type text NOT NULL DEFAULT 'league'`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_fixtures_league_season_idx ON hist_fixtures (league_id, season)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_fixtures_date_idx ON hist_fixtures (date_utc)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_fixtures_comp_type_idx ON hist_fixtures (comp_type)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_fixtures_home_id_idx ON hist_fixtures (home_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_fixtures_away_id_idx ON hist_fixtures (away_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_fixtures_status_idx ON hist_fixtures (status)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_goals (
       id serial PRIMARY KEY,
       fixture_id integer NOT NULL,
@@ -285,9 +390,9 @@ export async function ensureSchema(): Promise<void> {
       type text
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS hist_goals_fixture_idx ON hist_goals (fixture_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_goals_fixture_idx ON hist_goals (fixture_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_stats (
       id serial PRIMARY KEY,
       fixture_id integer NOT NULL,
@@ -303,10 +408,10 @@ export async function ensureSchema(): Promise<void> {
       offsides integer
     )
   `;
-  await sql`ALTER TABLE hist_stats ADD COLUMN IF NOT EXISTS ht_corners integer`;
-  await sql`CREATE INDEX IF NOT EXISTS hist_stats_fixture_team_idx ON hist_stats (fixture_id, team_id)`;
+  await ddl`ALTER TABLE hist_stats ADD COLUMN IF NOT EXISTS ht_corners integer`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_stats_fixture_team_idx ON hist_stats (fixture_id, team_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_lineups (
       id serial PRIMARY KEY,
       fixture_id integer NOT NULL,
@@ -314,9 +419,9 @@ export async function ensureSchema(): Promise<void> {
       formation text
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS hist_lineups_fixture_team_idx ON hist_lineups (fixture_id, team_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_lineups_fixture_team_idx ON hist_lineups (fixture_id, team_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_teams (
       team_id integer PRIMARY KEY,
       name text NOT NULL,
@@ -326,7 +431,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_jobs (
       league_id integer NOT NULL,
       season integer NOT NULL,
@@ -344,9 +449,9 @@ export async function ensureSchema(): Promise<void> {
       PRIMARY KEY (league_id, season)
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS hist_jobs_status_idx ON hist_jobs (status)`;
+  await ddl`CREATE INDEX IF NOT EXISTS hist_jobs_status_idx ON hist_jobs (status)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_meta (
       id integer PRIMARY KEY DEFAULT 1,
       plan text,
@@ -360,10 +465,10 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
   // Additive column for DBs created before league_priors_json
-  await sql`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS league_priors_json text`;
-  await sql`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS model_params_json text`;
+  await ddl`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS league_priors_json text`;
+  await ddl`ALTER TABLE hist_meta ADD COLUMN IF NOT EXISTS model_params_json text`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS team_half_stats (
       id serial PRIMARY KEY,
       team_id integer,
@@ -379,10 +484,10 @@ export async function ensureSchema(): Promise<void> {
       last_updated timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS team_half_stats_team_league_venue_idx ON team_half_stats (team_name, league_id, venue)`;
-  await sql`CREATE INDEX IF NOT EXISTS team_half_stats_league_idx ON team_half_stats (league_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS team_half_stats_team_league_venue_idx ON team_half_stats (team_name, league_id, venue)`;
+  await ddl`CREATE INDEX IF NOT EXISTS team_half_stats_league_idx ON team_half_stats (league_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS hist_league_half_params (
       league_id integer NOT NULL,
       comp_type text NOT NULL DEFAULT 'league',
@@ -409,7 +514,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS team_ratings (
       id serial PRIMARY KEY,
       team_id integer,
@@ -429,9 +534,9 @@ export async function ensureSchema(): Promise<void> {
       UNIQUE (team_name, league_id)
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS team_ratings_league_idx ON team_ratings (league_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS team_ratings_league_idx ON team_ratings (league_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS matches (
       id serial PRIMARY KEY,
       match_date date,
@@ -453,23 +558,23 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS hthg integer`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS htag integer`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS hc integer`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS ac integer`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS hti integer`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS ati integer`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_home real`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_draw real`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_away real`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_over25 real`;
-  await sql`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_under25 real`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS hthg integer`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS htag integer`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS hc integer`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS ac integer`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS hti integer`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS ati integer`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_home real`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_draw real`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_away real`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_over25 real`;
+  await ddl`ALTER TABLE matches ADD COLUMN IF NOT EXISTS b365_under25 real`;
 
-  await sql`DROP TABLE IF EXISTS user_predictions CASCADE`;
-  await sql`DROP TABLE IF EXISTS user_prediction_lists CASCADE`;
-  await sql`DROP TABLE IF EXISTS predictions CASCADE`;
+  await ddl`DROP TABLE IF EXISTS user_predictions CASCADE`;
+  await ddl`DROP TABLE IF EXISTS user_prediction_lists CASCADE`;
+  await ddl`DROP TABLE IF EXISTS predictions CASCADE`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS live_leagues (
       league_id integer PRIMARY KEY,
       name text NOT NULL,
@@ -479,7 +584,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS live_fixtures (
       fixture_id integer PRIMARY KEY,
       league_id integer NOT NULL,
@@ -499,7 +604,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS live_events (
       id serial PRIMARY KEY,
       fixture_id integer NOT NULL,
@@ -510,15 +615,15 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`CREATE INDEX IF NOT EXISTS live_fixtures_status_idx ON live_fixtures (status)`;
-  await sql`CREATE INDEX IF NOT EXISTS live_fixtures_kickoff_idx ON live_fixtures (kickoff_utc)`;
-  await sql`CREATE INDEX IF NOT EXISTS live_fixtures_league_season_idx ON live_fixtures (league_id, season)`;
-  await sql`CREATE INDEX IF NOT EXISTS live_events_fixture_idx ON live_events (fixture_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS live_fixtures_status_idx ON live_fixtures (status)`;
+  await ddl`CREATE INDEX IF NOT EXISTS live_fixtures_kickoff_idx ON live_fixtures (kickoff_utc)`;
+  await ddl`CREATE INDEX IF NOT EXISTS live_fixtures_league_season_idx ON live_fixtures (league_id, season)`;
+  await ddl`CREATE INDEX IF NOT EXISTS live_events_fixture_idx ON live_events (fixture_id)`;
 
   // Secondary provider match id (The Stats API `mt_…`; was BeSoccer numeric id)
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS besoccer_match_id text`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS besoccer_match_id text`;
   // If an older integer column exists, widen to text (safe no-op when already text)
-  await sql`
+  await ddl`
     DO $$ BEGIN
       ALTER TABLE live_fixtures
         ALTER COLUMN besoccer_match_id TYPE text
@@ -526,16 +631,16 @@ export async function ensureSchema(): Promise<void> {
     EXCEPTION WHEN others THEN NULL;
     END $$
   `;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_corners integer`;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_corners integer`;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_shots integer`;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_shots integer`;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_possession integer`;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_possession integer`;
-  await sql`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS source_conflicts text`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_corners integer`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_corners integer`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_shots integer`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_shots integer`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS home_possession integer`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS away_possession integer`;
+  await ddl`ALTER TABLE live_fixtures ADD COLUMN IF NOT EXISTS source_conflicts text`;
 
   /** Portfolio slip builder — probability fields only. */
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS slip_batches (
       id serial PRIMARY KEY,
       created_at timestamptz NOT NULL,
@@ -547,9 +652,9 @@ export async function ensureSchema(): Promise<void> {
       regenerated_from_id integer
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS slip_batches_created_idx ON slip_batches (created_at)`;
+  await ddl`CREATE INDEX IF NOT EXISTS slip_batches_created_idx ON slip_batches (created_at)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS slip_batch_legs (
       id serial PRIMARY KEY,
       batch_id integer NOT NULL,
@@ -580,11 +685,11 @@ export async function ensureSchema(): Promise<void> {
       outcome text
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS slip_batch_legs_batch_idx ON slip_batch_legs (batch_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS slip_batch_legs_fixture_idx ON slip_batch_legs (fixture_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS slip_batch_legs_batch_idx ON slip_batch_legs (batch_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS slip_batch_legs_fixture_idx ON slip_batch_legs (fixture_id)`;
 
   /* Additive core_* / audit_* — CREATE IF NOT EXISTS only (no DROP/RENAME). */
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_competition (
       id serial PRIMARY KEY,
       provider_name text NOT NULL DEFAULT 'api-sports',
@@ -595,9 +700,9 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_competition_provider_uidx ON core_competition (provider_name, provider_competition_id)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_competition_provider_uidx ON core_competition (provider_name, provider_competition_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_season (
       id serial PRIMARY KEY,
       competition_id integer NOT NULL,
@@ -606,9 +711,9 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_season_comp_season_uidx ON core_season (competition_id, provider_season)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_season_comp_season_uidx ON core_season (competition_id, provider_season)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_team (
       id serial PRIMARY KEY,
       provider_name text NOT NULL DEFAULT 'api-sports',
@@ -620,9 +725,9 @@ export async function ensureSchema(): Promise<void> {
       updated_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_team_provider_uidx ON core_team (provider_name, provider_team_id)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_team_provider_uidx ON core_team (provider_name, provider_team_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_team_alias (
       id serial PRIMARY KEY,
       team_id integer NOT NULL,
@@ -633,10 +738,10 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_team_alias_norm_team_uidx ON core_team_alias (alias_normalized, team_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_team_alias_norm_idx ON core_team_alias (alias_normalized)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_team_alias_norm_team_uidx ON core_team_alias (alias_normalized, team_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_team_alias_norm_idx ON core_team_alias (alias_normalized)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_fixture (
       id serial PRIMARY KEY,
       provider_name text NOT NULL DEFAULT 'api-sports',
@@ -660,11 +765,11 @@ export async function ensureSchema(): Promise<void> {
       imported_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_fixture_provider_uidx ON core_fixture (provider_name, provider_fixture_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_fixture_pair_date_idx ON core_fixture (home_team_name, away_team_name, kickoff_utc)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_fixture_status_date_idx ON core_fixture (status, kickoff_utc)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_fixture_provider_uidx ON core_fixture (provider_name, provider_fixture_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_fixture_pair_date_idx ON core_fixture (home_team_name, away_team_name, kickoff_utc)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_fixture_status_date_idx ON core_fixture (status, kickoff_utc)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_fixture_statistic (
       id serial PRIMARY KEY,
       fixture_id integer NOT NULL,
@@ -676,10 +781,10 @@ export async function ensureSchema(): Promise<void> {
       source_updated_at timestamptz
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_fixture_stat_fixture_side_key_uidx ON core_fixture_statistic (fixture_id, side, stat_key)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_fixture_stat_fixture_idx ON core_fixture_statistic (fixture_id)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_fixture_stat_fixture_side_key_uidx ON core_fixture_statistic (fixture_id, side, stat_key)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_fixture_stat_fixture_idx ON core_fixture_statistic (fixture_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_provider_ingestion (
       id serial PRIMARY KEY,
       provider_name text NOT NULL,
@@ -689,9 +794,9 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS core_provider_ingestion_fp_idx ON core_provider_ingestion (request_fingerprint)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_provider_ingestion_fp_idx ON core_provider_ingestion (request_fingerprint)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_legacy_record_map (
       id serial PRIMARY KEY,
       legacy_source_table text NOT NULL,
@@ -703,9 +808,9 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_legacy_record_map_uidx ON core_legacy_record_map (legacy_source_table, legacy_pk)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_legacy_record_map_uidx ON core_legacy_record_map (legacy_source_table, legacy_pk)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_prediction_run (
       id serial PRIMARY KEY,
       run_key text,
@@ -716,7 +821,7 @@ export async function ensureSchema(): Promise<void> {
     )
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_market_probability (
       id serial PRIMARY KEY,
       prediction_run_id integer,
@@ -728,10 +833,10 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS core_market_probability_run_idx ON core_market_probability (prediction_run_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_market_probability_fixture_idx ON core_market_probability (fixture_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_market_probability_run_idx ON core_market_probability (prediction_run_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_market_probability_fixture_idx ON core_market_probability (fixture_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_result_trace (
       id serial PRIMARY KEY,
       batch_id text NOT NULL,
@@ -748,10 +853,10 @@ export async function ensureSchema(): Promise<void> {
       updated_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_result_trace_batch_match_uidx ON core_result_trace (batch_id, match_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_result_trace_status_idx ON core_result_trace (status)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_result_trace_batch_match_uidx ON core_result_trace (batch_id, match_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_result_trace_status_idx ON core_result_trace (status)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_coverage_audit (
       id serial PRIMARY KEY,
       competition_id integer NOT NULL,
@@ -768,9 +873,9 @@ export async function ensureSchema(): Promise<void> {
       audited_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_coverage_audit_comp_season_uidx ON core_coverage_audit (competition_id, season_id)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_coverage_audit_comp_season_uidx ON core_coverage_audit (competition_id, season_id)`;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS audit_data_change_log (
       id serial PRIMARY KEY,
       entity_type text NOT NULL,
@@ -781,10 +886,10 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS audit_data_change_log_entity_idx ON audit_data_change_log (entity_type, entity_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS audit_data_change_log_created_idx ON audit_data_change_log (created_at)`;
+  await ddl`CREATE INDEX IF NOT EXISTS audit_data_change_log_entity_idx ON audit_data_change_log (entity_type, entity_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS audit_data_change_log_created_idx ON audit_data_change_log (created_at)`;
 
-  await sql`
+  await ddl`
     CREATE OR REPLACE VIEW analytics_v_fixture_compat AS
     SELECT
       f.id AS core_fixture_id,
@@ -814,7 +919,7 @@ export async function ensureSchema(): Promise<void> {
       ON as_.fixture_id = f.id AND as_.side = 'away' AND as_.stat_key = 'corners'
   `;
 
-  await sql`
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_analysis_run (
       id serial PRIMARY KEY,
       page_id text NOT NULL,
@@ -837,8 +942,21 @@ export async function ensureSchema(): Promise<void> {
       created_at timestamptz NOT NULL
     )
   `;
-  await sql`CREATE INDEX IF NOT EXISTS core_analysis_run_page_idx ON core_analysis_run (page_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS core_analysis_run_created_idx ON core_analysis_run (created_at)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_analysis_run_page_idx ON core_analysis_run (page_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS core_analysis_run_created_idx ON core_analysis_run (created_at)`;
+
+  await ddl`
+    INSERT INTO app_schema_meta (id, version, updated_at)
+    VALUES (1, ${SCHEMA_BOOTSTRAP_VERSION}, now())
+    ON CONFLICT (id) DO UPDATE
+    SET version = EXCLUDED.version, updated_at = EXCLUDED.updated_at
+  `;
 
   initialized = true;
+  agentLog(
+    "lib/db/init.ts:done",
+    "ensureSchema complete",
+    { version: SCHEMA_BOOTSTRAP_VERSION },
+    "H1"
+  );
 }
