@@ -171,14 +171,38 @@ export function HshApp() {
 
   const batchBest = useMemo(() => pickBatchBestHsh(predictions), [predictions]);
 
-  if (!ready) {
-    return <p className="page-sub">Loading…</p>;
-  }
-
   const blendNotice = useMemo(
     () => pickBlendFromEstimates(estimatesById),
     [estimatesById]
   );
+
+  // #region agent log
+  useEffect(() => {
+    fetch("http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c443b" },
+      body: JSON.stringify({
+        sessionId: "9c443b",
+        runId: "pre-fix",
+        hypothesisId: "H1",
+        location: "hsh-app.tsx:ready",
+        message: "HshApp render state",
+        data: {
+          ready,
+          batchCount: sortedBatches.length,
+          batchId,
+          predictionCount: predictions.length,
+          hasError: Boolean(error || predError),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [ready, sortedBatches.length, batchId, predictions.length, error, predError]);
+  // #endregion
+
+  if (!ready) {
+    return <p className="page-sub">Loading…</p>;
+  }
 
   return (
     <div>

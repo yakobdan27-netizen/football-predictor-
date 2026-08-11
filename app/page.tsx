@@ -84,7 +84,7 @@ export default function DashboardPage() {
             <Link href="/goals-survival?tab=half-goals" className="btn btn-secondary btn-full">
               Half Goals (1H vs 2H)
             </Link>
-            <Link href="/corners-analysis" className="btn btn-secondary btn-full">
+            <Link href="/markets-analysis?tab=match-corners" className="btn btn-secondary btn-full">
               Corners Analysis
             </Link>
             <Link href="/combo-centre?tab=combined-odd" className="btn btn-secondary btn-full">

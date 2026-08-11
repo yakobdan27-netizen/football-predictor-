@@ -32,6 +32,29 @@ export function WorkspaceShell({ workspace, panels, subtitle }: Props) {
     });
   }, [tab]);
 
+  // #region agent log
+  useEffect(() => {
+    fetch("http://127.0.0.1:7484/ingest/38649fab-69bc-43fe-918c-13ca943dd3c2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "9c443b" },
+      body: JSON.stringify({
+        sessionId: "9c443b",
+        runId: "pre-fix",
+        hypothesisId: "H2",
+        location: "workspace-shell.tsx:tab",
+        message: "Workspace tab active",
+        data: {
+          workspaceId: workspace.id,
+          tab,
+          mountedTabs: [...mounted],
+          panelIds: panels.map((p) => p.id),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [workspace.id, tab, mounted, workspace.tabs]);
+  // #endregion
+
   return (
     <div className="workspace-shell">
       <header style={{ marginBottom: "0.75rem" }}>

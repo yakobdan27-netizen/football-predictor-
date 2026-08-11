@@ -1,10 +1,9 @@
-import { Suspense } from "react";
-import { CornersApp } from "@/components/prediction-log/corners-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function CornersAnalysisPage() {
-  return (
-    <Suspense fallback={<p className="page-sub">Loading…</p>}>
-      <CornersApp />
-    </Suspense>
-  );
+export default async function CornersAnalysisPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/corners-analysis", searchParams);
 }

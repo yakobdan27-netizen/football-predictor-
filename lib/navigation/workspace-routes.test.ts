@@ -47,6 +47,8 @@ describe("legacy redirects", () => {
     "/stat": "/research-validation?tab=analysis",
     "/conceded-half-analysis": "/goals-survival?tab=half-goals",
     "/half-comparison-analysis": "/goals-survival?tab=half-goals",
+    "/corners-analysis": "/markets-analysis?tab=match-corners",
+    "/draw-either-half-analysis": "/markets-analysis?tab=draw-either-half",
   };
 
   it("maps every legacy path to the correct workspace and tab", () => {
@@ -76,19 +78,23 @@ describe("legacy redirects", () => {
 });
 
 describe("primary nav", () => {
-  it("exposes exactly eight primary hrefs including both standalones", () => {
-    assert.equal(PRIMARY_NAV.length, 8);
+  it("exposes primary hrefs including standalones and Markets Analysis", () => {
+    assert.equal(PRIMARY_NAV.length, 9);
     const hrefs = PRIMARY_NAV.map((l) => l.href);
     assert.ok(hrefs.includes("/decision-maker"));
     assert.ok(hrefs.includes("/prediction-log"));
     assert.ok(hrefs.includes("/match-centre"));
-    assert.equal(new Set(hrefs).size, 8);
+    assert.ok(hrefs.includes("/markets-analysis"));
+    assert.equal(new Set(hrefs).size, 9);
   });
 
-  it("More sheet does not bury Decision Maker or Prediction Log", () => {
+  it("More sheet does not bury Decision Maker, Prediction Log, or Markets Analysis", () => {
     const moreHrefs: string[] = MORE_NAV.map((l) => l.href);
     assert.ok(!moreHrefs.includes("/decision-maker"));
     assert.ok(!moreHrefs.includes("/prediction-log"));
+    assert.ok(!moreHrefs.includes("/markets-analysis"));
+    assert.ok(!moreHrefs.includes("/corners-analysis"));
+    assert.ok(!moreHrefs.includes("/draw-either-half-analysis"));
   });
 
   it("getWorkspace returns known workspaces", () => {

@@ -1,10 +1,9 @@
-import { Suspense } from "react";
-import { DiehApp } from "@/components/prediction-log/dieh-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function DrawEitherHalfAnalysisPage() {
-  return (
-    <Suspense fallback={<p className="page-sub">Loading…</p>}>
-      <DiehApp />
-    </Suspense>
-  );
+export default async function DrawEitherHalfAnalysisPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/draw-either-half-analysis", searchParams);
 }

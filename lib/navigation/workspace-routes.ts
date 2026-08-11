@@ -7,6 +7,7 @@ export type WorkspaceId =
   | "match-centre"
   | "combo-centre"
   | "goals-survival"
+  | "markets-analysis"
   | "research-validation"
   | "settings-guide"
   | "teams-leagues";
@@ -56,6 +57,16 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     ],
   },
   {
+    id: "markets-analysis",
+    path: "/markets-analysis",
+    title: "Markets Analysis",
+    tabs: [
+      { id: "match-corners", label: "Match Corners" },
+      { id: "halftime-corners", label: "Halftime Corners" },
+      { id: "draw-either-half", label: "Draw Either Half" },
+    ],
+  },
+  {
     id: "research-validation",
     path: "/research-validation",
     title: "Research & Validation",
@@ -97,6 +108,12 @@ export const PRIMARY_NAV = [
   { href: "/combo-centre", label: "Combo", desktopLabel: "Combo Centre", icon: "🎲" },
   { href: "/goals-survival", label: "Goals", desktopLabel: "Goals & Survival", icon: "⚽" },
   {
+    href: "/markets-analysis",
+    label: "Markets",
+    desktopLabel: "Markets Analysis",
+    icon: "📐",
+  },
+  {
     href: "/research-validation",
     label: "Research",
     desktopLabel: "Research & Validation",
@@ -130,13 +147,6 @@ export const MORE_NAV = [
   { href: "/", label: "Home", desktopLabel: "Dashboard", icon: "🏠" },
   { href: "/recommendation", label: "Reco", desktopLabel: "Recommendation", icon: "🎯" },
   { href: "/ai-learner", label: "AI", desktopLabel: "AI Learner", icon: "🧠" },
-  { href: "/corners-analysis", label: "Corners", desktopLabel: "Corners", icon: "📐" },
-  {
-    href: "/draw-either-half-analysis",
-    label: "DIEH",
-    desktopLabel: "Draw Either Half",
-    icon: "⚖️",
-  },
 ] as const;
 
 /** Legacy path (no query) → workspace path + tab id. */
@@ -164,6 +174,8 @@ export const LEGACY_REDIRECTS: Readonly<
   "/stat": { workspace: "research-validation", tab: "analysis" },
   "/conceded-half-analysis": { workspace: "goals-survival", tab: "half-goals" },
   "/half-comparison-analysis": { workspace: "goals-survival", tab: "half-goals" },
+  "/corners-analysis": { workspace: "markets-analysis", tab: "match-corners" },
+  "/draw-either-half-analysis": { workspace: "markets-analysis", tab: "draw-either-half" },
 };
 
 export function getWorkspace(id: WorkspaceId): WorkspaceDef {
