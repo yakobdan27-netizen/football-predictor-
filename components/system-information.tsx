@@ -36,6 +36,13 @@ type SystemInfo = {
     apiPlan: string | null;
     apiRemaining: number | null;
   };
+  drain: {
+    gapsRemaining: number;
+    totalStored: number;
+    mode: string;
+    scheduleUtc: string[];
+    scheduleNote: string;
+  };
 };
 
 export function SystemInformation() {
@@ -132,8 +139,17 @@ export function SystemInformation() {
           {info.meta.apiRemaining != null
             ? ` · API remaining: ${info.meta.apiRemaining}`
             : ""}
+          {info.meta.lastRunAt
+            ? ` · run ${new Date(info.meta.lastRunAt).toLocaleString()}`
+            : ""}
         </p>
       )}
+
+      <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "0 0 0.75rem" }}>
+        Daily drain: {info.drain.scheduleNote} · cron{" "}
+        {info.drain.scheduleUtc.join(", ")} UTC · {info.drain.gapsRemaining} gaps
+        left · {info.drain.totalStored.toLocaleString()} fixtures stored
+      </p>
 
       <div className="stat-grid" style={{ marginBottom: "0.75rem" }}>
         <div>
@@ -144,7 +160,21 @@ export function SystemInformation() {
           <div className="stat-value">{inv}</div>
           <div className="stat-label">Inventory buckets pass</div>
         </div>
+        <div>
+          <div className="stat-value">{info.drain.totalStored.toLocaleString()}</div>
+          <div className="stat-label">Hist fixtures stored</div>
+        </div>
+        <div>
+          <div className="stat-value">{info.drain.gapsRemaining}</div>
+          <div className="stat-label">Gap buckets left</div>
+        </div>
       </div>
+
+      {info.dieh.fittedAt && (
+        <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "0 0 0.75rem" }}>
+          Half-params fitted: {new Date(info.dieh.fittedAt).toLocaleString()}
+        </p>
+      )}
 
       <details>
         <summary style={{ cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}>

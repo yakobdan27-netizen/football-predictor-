@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { histMeta } from "@/lib/db/schema";
 import {
   auditHistCoverage,
+  gapQueueFromCoverage,
   type HistCoverageReport,
 } from "./coverage-audit";
 import {
@@ -42,6 +43,13 @@ export type SystemInformation = {
     lastSummary: string | null;
     apiPlan: string | null;
     apiRemaining: number | null;
+  };
+  drain: {
+    gapsRemaining: number;
+    totalStored: number;
+    mode: "gap-priority";
+    scheduleUtc: string[];
+    scheduleNote: string;
   };
 };
 
@@ -85,6 +93,8 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
 
   const inv = coverage.summary.inventoryPass;
   const gatePass = inv >= coverage.summary.total;
+  const gapsRemaining = gapQueueFromCoverage(coverage).length;
+  const totalStored = coverage.perCompetition.reduce((n, c) => n + c.stored, 0);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -104,6 +114,14 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
       lastSummary: metaRow?.lastSummary ?? null,
       apiPlan: metaRow?.plan ?? null,
       apiRemaining: metaRow?.remaining ?? null,
+    },
+    drain: {
+      gapsRemaining,
+      totalStored,
+      mode: "gap-priority",
+      scheduleUtc: ["05:00", "09:00", "13:00", "17:00", "21:00"],
+      scheduleNote:
+        "Cron /api/cron/hist-backfill · gap-priority · stops at inventoryPass=66 or quota",
     },
   };
 }
