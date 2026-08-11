@@ -583,5 +583,262 @@ export async function ensureSchema(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS slip_batch_legs_batch_idx ON slip_batch_legs (batch_id)`;
   await sql`CREATE INDEX IF NOT EXISTS slip_batch_legs_fixture_idx ON slip_batch_legs (fixture_id)`;
 
+  /* Additive core_* / audit_* — CREATE IF NOT EXISTS only (no DROP/RENAME). */
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_competition (
+      id serial PRIMARY KEY,
+      provider_name text NOT NULL DEFAULT 'api-sports',
+      provider_competition_id integer NOT NULL,
+      name text NOT NULL,
+      country text,
+      comp_type text NOT NULL,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_competition_provider_uidx ON core_competition (provider_name, provider_competition_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_season (
+      id serial PRIMARY KEY,
+      competition_id integer NOT NULL,
+      provider_season integer NOT NULL,
+      label text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_season_comp_season_uidx ON core_season (competition_id, provider_season)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_team (
+      id serial PRIMARY KEY,
+      provider_name text NOT NULL DEFAULT 'api-sports',
+      provider_team_id integer NOT NULL,
+      canonical_name text NOT NULL,
+      country text,
+      logo_url text,
+      created_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_team_provider_uidx ON core_team (provider_name, provider_team_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_team_alias (
+      id serial PRIMARY KEY,
+      team_id integer NOT NULL,
+      alias_normalized text NOT NULL,
+      alias_raw text NOT NULL,
+      source text NOT NULL,
+      approved integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_team_alias_norm_team_uidx ON core_team_alias (alias_normalized, team_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_team_alias_norm_idx ON core_team_alias (alias_normalized)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_fixture (
+      id serial PRIMARY KEY,
+      provider_name text NOT NULL DEFAULT 'api-sports',
+      provider_fixture_id integer NOT NULL,
+      competition_id integer,
+      season_id integer,
+      home_team_id integer,
+      away_team_id integer,
+      home_team_name text NOT NULL,
+      away_team_name text NOT NULL,
+      kickoff_utc timestamptz NOT NULL,
+      status text NOT NULL,
+      ht_home integer,
+      ht_away integer,
+      ft_home integer,
+      ft_away integer,
+      venue text,
+      round text,
+      manual_verified integer NOT NULL DEFAULT 0,
+      source_updated_at timestamptz,
+      imported_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_fixture_provider_uidx ON core_fixture (provider_name, provider_fixture_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_fixture_pair_date_idx ON core_fixture (home_team_name, away_team_name, kickoff_utc)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_fixture_status_date_idx ON core_fixture (status, kickoff_utc)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_fixture_statistic (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer,
+      side text NOT NULL,
+      stat_key text NOT NULL,
+      stat_value integer,
+      manual_verified integer NOT NULL DEFAULT 0,
+      source_updated_at timestamptz
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_fixture_stat_fixture_side_key_uidx ON core_fixture_statistic (fixture_id, side, stat_key)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_fixture_stat_fixture_idx ON core_fixture_statistic (fixture_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_provider_ingestion (
+      id serial PRIMARY KEY,
+      provider_name text NOT NULL,
+      request_fingerprint text NOT NULL,
+      payload_hash text,
+      endpoint text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS core_provider_ingestion_fp_idx ON core_provider_ingestion (request_fingerprint)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_legacy_record_map (
+      id serial PRIMARY KEY,
+      legacy_source_table text NOT NULL,
+      legacy_pk text NOT NULL,
+      canonical_entity_type text NOT NULL,
+      canonical_entity_id integer NOT NULL,
+      verified integer NOT NULL DEFAULT 1,
+      notes text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_legacy_record_map_uidx ON core_legacy_record_map (legacy_source_table, legacy_pk)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_prediction_run (
+      id serial PRIMARY KEY,
+      run_key text,
+      model_version text,
+      input_snapshot_hash text,
+      meta_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_market_probability (
+      id serial PRIMARY KEY,
+      prediction_run_id integer,
+      fixture_id integer,
+      market_key text NOT NULL,
+      selection_key text NOT NULL,
+      probability real,
+      trace_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS core_market_probability_run_idx ON core_market_probability (prediction_run_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_market_probability_fixture_idx ON core_market_probability (fixture_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_result_trace (
+      id serial PRIMARY KEY,
+      batch_id text NOT NULL,
+      match_id text NOT NULL,
+      home_team_name text NOT NULL,
+      away_team_name text NOT NULL,
+      match_date text,
+      status text NOT NULL,
+      provider_fixture_id integer,
+      core_fixture_id integer,
+      evidence_json text,
+      checked_at timestamptz,
+      created_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_result_trace_batch_match_uidx ON core_result_trace (batch_id, match_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_result_trace_status_idx ON core_result_trace (status)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_coverage_audit (
+      id serial PRIMARY KEY,
+      competition_id integer NOT NULL,
+      season_id integer NOT NULL,
+      expected_fixtures integer,
+      imported_fixtures integer,
+      with_ht integer,
+      with_stats integer,
+      with_corners integer,
+      completeness text,
+      inventory_pass integer NOT NULL DEFAULT 0,
+      provider_hole integer NOT NULL DEFAULT 0,
+      provider_hole_reason text,
+      audited_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS core_coverage_audit_comp_season_uidx ON core_coverage_audit (competition_id, season_id)`;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS audit_data_change_log (
+      id serial PRIMARY KEY,
+      entity_type text NOT NULL,
+      entity_id integer,
+      action text NOT NULL,
+      diff_json text,
+      actor text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS audit_data_change_log_entity_idx ON audit_data_change_log (entity_type, entity_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS audit_data_change_log_created_idx ON audit_data_change_log (created_at)`;
+
+  await sql`
+    CREATE OR REPLACE VIEW analytics_v_fixture_compat AS
+    SELECT
+      f.id AS core_fixture_id,
+      f.provider_fixture_id,
+      f.provider_name,
+      f.competition_id,
+      f.season_id,
+      f.home_team_id,
+      f.away_team_id,
+      f.home_team_name,
+      f.away_team_name,
+      f.kickoff_utc,
+      f.status,
+      f.ht_home,
+      f.ht_away,
+      f.ft_home,
+      f.ft_away,
+      f.venue,
+      f.round,
+      f.manual_verified,
+      hs.stat_value AS home_corners,
+      as_.stat_value AS away_corners
+    FROM core_fixture f
+    LEFT JOIN core_fixture_statistic hs
+      ON hs.fixture_id = f.id AND hs.side = 'home' AND hs.stat_key = 'corners'
+    LEFT JOIN core_fixture_statistic as_
+      ON as_.fixture_id = f.id AND as_.side = 'away' AND as_.stat_key = 'corners'
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS core_analysis_run (
+      id serial PRIMARY KEY,
+      page_id text NOT NULL,
+      mode text NOT NULL,
+      configured_api_weight real NOT NULL,
+      configured_system_weight real NOT NULL,
+      effective_api_weight real NOT NULL,
+      effective_system_weight real NOT NULL,
+      api_record_count integer NOT NULL DEFAULT 0,
+      system_record_count integer NOT NULL DEFAULT 0,
+      api_date_from text,
+      api_date_to text,
+      system_date_from text,
+      system_date_to text,
+      calculation_version text NOT NULL,
+      status text NOT NULL,
+      fallback_reason text,
+      warnings_json text,
+      meta_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS core_analysis_run_page_idx ON core_analysis_run (page_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS core_analysis_run_created_idx ON core_analysis_run (created_at)`;
+
   initialized = true;
 }

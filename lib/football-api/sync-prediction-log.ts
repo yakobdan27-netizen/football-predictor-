@@ -1,7 +1,5 @@
 import { loadAllBatches, saveBatch } from "@/lib/prediction-log/club-store";
 import { syncBatchToClubHistories } from "@/lib/prediction-log/club-history-writer";
-import { maybeRetrainOnBatchResult } from "@/lib/prediction-log/retrain-ml";
-import { maybeBayesianCalibrateOnBatch } from "@/lib/prediction-log/bayesian-calibration";
 import { computeLeagueBaselines } from "@/lib/prediction-log/league-baselines";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
 import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
@@ -11,11 +9,10 @@ import { recomputeLlSeasonCards } from "@/lib/prediction-log/ll-season-store";
 import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
 import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
 import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
-import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
-import { scoreMatch, scoreBatch, marketsEnteredCount } from "@/lib/prediction-log/scoring";
+import { scoreBatch } from "@/lib/prediction-log/scoring";
 import { matchLeague } from "@/lib/prediction-log/match-league";
 import type { LogMarketKey, LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
-import { isApiFootballKeyError, sleep } from "./client";
+import { sleep } from "./client";
 import {
   fetchFixtureByIdCached,
   fetchFixtureStatisticsCached,
@@ -27,12 +24,17 @@ import {
   type ApiFieldConflict,
   type ApiFootballFixture,
   type ApiFootballStatBlock,
-  detectApiConflicts,
-  mapFixtureToMatchUpdates,
-  matchNeedsStatistics,
-  mergeMatchUpdates,
 } from "./map-fixture-to-match";
 import { fixturePairKey } from "./team-resolve";
+import {
+  fillMatchFromFixture,
+  statusShort as traceStatusShort,
+  FINISHED_STATUSES,
+  ABANDONED_STATUSES,
+  tracePendingMatchResults,
+  type TracePendingSummary,
+} from "./trace-fixture-by-pair";
+import type { TraceStatusCounts } from "@/lib/prediction-log/result-trace";
 
 export interface SyncResultsSummary {
   updatedBatches: number;
@@ -42,13 +44,15 @@ export interface SyncResultsSummary {
   conflicts: ApiFieldConflict[];
   /** True when key/API is unavailable (UI shows non-blocking banner). */
   unavailable?: boolean;
+  /** Name-pair trace status breakdown. */
+  trace?: TraceStatusCounts;
 }
 
-const FINISHED = new Set(["FT", "AET", "PEN"]);
-const ABANDONED = new Set(["AB", "AWD", "WO", "CANC", "ABD"]);
+const FINISHED = FINISHED_STATUSES;
+const ABANDONED = ABANDONED_STATUSES;
 
 function statusShort(f: ApiFootballFixture): string {
-  return (f.fixture?.status?.short ?? "").trim().toUpperCase();
+  return traceStatusShort(f);
 }
 
 export function matchNeedsSync(match: LogMatch): boolean {
@@ -170,208 +174,30 @@ function applyFixtureSync(
   stats: ApiFootballStatBlock[] | null,
   overwrite: boolean
 ): { merged: LogMatch; conflicts: ApiFieldConflict[] } {
-  const conflicts = overwrite
-    ? []
-    : detectApiConflicts(match, fixture, stats);
-  const updates = mapFixtureToMatchUpdates(fixture, stats, match, { overwrite });
-  let merged = mergeMatchUpdates(match, updates);
-  merged = {
-    ...merged,
-    apiFixtureId: match.apiFixtureId ?? fixture.fixture.id,
-    fixtureStatus: statusShort(fixture),
-    matchDate: match.matchDate ?? apiDateOnly(fixture.fixture.date),
-    homeApiTeamId: match.homeApiTeamId ?? fixture.teams.home.id,
-    awayApiTeamId: match.awayApiTeamId ?? fixture.teams.away.id,
-  };
-  merged = applyTeamStatsSync(merged);
-  merged = scoreMatch(merged);
-  return { merged, conflicts };
+  return fillMatchFromFixture(match, fixture, stats, overwrite);
 }
 
+/**
+ * Auto-fill Prediction Log results via ordered home–away name-pair trace.
+ * Prefers apiFixtureId when already stored; otherwise traces API by exact ordered pair.
+ */
 export async function syncPredictionLogResults(
   batchId?: string
 ): Promise<SyncResultsSummary> {
-  const summary: SyncResultsSummary = {
-    updatedBatches: 0,
-    matchesSynced: 0,
-    matchesNotFound: 0,
-    errors: [],
-    conflicts: [],
-  };
+  const traced: TracePendingSummary = await tracePendingMatchResults({
+    batchId,
+  });
 
-  let batches: PredictionBatch[];
+  // Best-effort: warm 2H-heavy venue half profiles (never blocks sync).
   try {
-    batches = await loadAllBatches();
-  } catch (e) {
-    summary.errors.push(e instanceof Error ? e.message : String(e));
-    summary.unavailable = true;
-    return summary;
-  }
-
-  if (batchId) {
-    batches = batches.filter((b) => b.id === batchId);
-    if (!batches.length) {
-      summary.errors.push(`Batch not found: ${batchId}`);
-      return summary;
-    }
-  }
-
-  const pendingBatches = batches.filter(batchNeedsSync);
-  if (!pendingBatches.length) return summary;
-
-  const fixtureCache = new Map<string, Map<string, ApiFootballFixture>>();
-  const byIdCache = new Map<number, ApiFootballFixture | null>();
-
-  for (const batch of pendingBatches) {
-    let batchChanged = false;
-    const updatedMatches: LogMatch[] = [];
-
-    for (const match of batch.matches) {
-      if (!matchNeedsSync(match)) {
-        updatedMatches.push(match);
-        continue;
-      }
-
-      let lookup: Awaited<ReturnType<typeof lookupFixtureForMatch>>;
-      try {
-        lookup = await lookupFixtureForMatch(batch, match, fixtureCache, byIdCache);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        summary.errors.push(`${batch.batchName}: ${msg}`);
-        if (isApiFootballKeyError(msg) || /rate|limit|quota/i.test(msg)) {
-          summary.unavailable = true;
-        }
-        updatedMatches.push(match);
-        continue;
-      }
-
-      if (lookup.skip) {
-        if (lookup.status && lookup.status !== match.fixtureStatus) {
-          updatedMatches.push({ ...match, fixtureStatus: lookup.status });
-          batchChanged = true;
-        } else {
-          updatedMatches.push(match);
-        }
-        continue;
-      }
-
-      const fixture = lookup.fixture;
-      if (!fixture) {
-        summary.matchesNotFound++;
-        updatedMatches.push(match);
-        continue;
-      }
-
-      let stats: ApiFootballStatBlock[] | null = null;
-      if (matchNeedsStatistics(match)) {
-        stats = await fetchFixtureStatisticsCached(fixture.fixture.id);
-        await sleep(150);
-      }
-
-      const { merged, conflicts } = applyFixtureSync(match, fixture, stats, false);
-      if (conflicts.length) summary.conflicts.push(...conflicts);
-
-      let withTiming = merged;
-      const needsTiming =
-        !merged.teamStats?.goalTiming?.timingBuckets &&
-        !merged.teamStats?.goalTiming?.goalInLast10 &&
-        merged.teamStats?.home?.goals != null;
-      if (needsTiming && match.resultSource !== "manual") {
-        try {
-          const {
-            fetchFixtureGoalEvents,
-            goalTimingFromEvents,
-          } = await import("./fixture-events");
-          const { events, planGated, error } = await fetchFixtureGoalEvents(
-            fixture.fixture.id
-          );
-          if (planGated && error) {
-            summary.errors.push(
-              `${batch.batchName}: goal events plan-gated (${error.slice(0, 80)})`
-            );
-          } else if (events.length) {
-            const timing = goalTimingFromEvents(events);
-            if (Object.keys(timing).length) {
-              withTiming = {
-                ...merged,
-                teamStats: {
-                  ...merged.teamStats!,
-                  home: { ...merged.teamStats!.home },
-                  away: { ...merged.teamStats!.away },
-                  goalTiming: {
-                    ...merged.teamStats?.goalTiming,
-                    ...timing,
-                  },
-                },
-              };
-              withTiming = applyTeamStatsSync(withTiming);
-            }
-          }
-          await sleep(100);
-        } catch {
-          // leave timing empty — never invent
-        }
-      }
-
-      if (JSON.stringify(withTiming) !== JSON.stringify(match)) {
-        batchChanged = true;
-        summary.matchesSynced++;
-      }
-      updatedMatches.push(withTiming);
-    }
-
-    if (!batchChanged) continue;
-
-    let updatedBatch: PredictionBatch = scoreBatch({ ...batch, matches: updatedMatches });
-    const entered = marketsEnteredCount(updatedBatch);
-    if (entered.total > 0 && entered.scored === entered.total) {
-      updatedBatch = {
-        ...updatedBatch,
-        recommendationStatus:
-          updatedBatch.batchKind === "recommended" ? "SETTLED" : updatedBatch.recommendationStatus,
-        settledAt:
-          updatedBatch.batchKind === "recommended"
-            ? new Date().toISOString()
-            : updatedBatch.settledAt,
-      };
-    }
-
-    try {
-      const allBatches = await loadAllBatches();
-      const leagueBaselines = computeLeagueBaselines(allBatches);
-      const teamsQuality = await loadTeamsQualityStore().catch(() => null);
-      const synced = await syncBatchToClubHistories(updatedBatch, {
-        leagueBaselines,
-        teamsQuality,
-      });
-      await saveBatch(synced);
-      await maybeRetrainOnBatchResult(synced).catch(() => null);
-      await maybeBayesianCalibrateOnBatch(synced).catch(() => null);
-      summary.updatedBatches++;
-    } catch (e) {
-      summary.errors.push(
-        `Failed to save ${batch.batchName}: ${e instanceof Error ? e.message : String(e)}`
-      );
-    }
-  }
-
-  if (summary.updatedBatches > 0) {
-    await recomputeAndPersistLearnerStats().catch(() => null);
-    await recomputeAndPersistLeaguePriors().catch(() => null);
-    await recomputePlSeasonCards().catch(() => null);
-    await recomputeLlSeasonCards().catch(() => null);
-    await recomputeBlSeasonCards().catch(() => null);
-    await recomputeSaSeasonCards().catch(() => null);
-    await recomputeL1SeasonCards().catch(() => null);
-  }
-
-  // Best-effort: warm 2H-heavy venue half profiles for synced batch teams (never blocks sync).
-  try {
+    const batches = await loadAllBatches();
+    const scope = batchId ? batches.filter((b) => b.id === batchId) : batches;
     const { warmTeamHalfProfiles } = await import(
       "@/lib/prediction-log/two-h-heavy/fetch-profiles"
     );
-    const requests: { team: string; league: string; venue: "home" | "away" }[] = [];
-    for (const batch of pendingBatches) {
+    const requests: { team: string; league: string; venue: "home" | "away" }[] =
+      [];
+    for (const batch of scope) {
       for (const match of batch.matches) {
         const league = matchLeague(match, batch.league);
         requests.push({ team: match.homeTeam, league, venue: "home" });
@@ -383,7 +209,15 @@ export async function syncPredictionLogResults(
     /* offline / quota — ranking falls back to db/prior */
   }
 
-  return summary;
+  return {
+    updatedBatches: traced.updatedBatches,
+    matchesSynced: traced.matchesSynced,
+    matchesNotFound: traced.matchesNotFound,
+    errors: traced.errors,
+    conflicts: traced.conflicts,
+    unavailable: traced.unavailable,
+    trace: traced.trace,
+  };
 }
 
 /** Apply API values overwriting manual fields for selected matches (Replace). */

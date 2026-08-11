@@ -1,14 +1,9 @@
-import { LeagueAnalysisApp } from "@/components/league/league-analysis-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function LeagueAnalysisPage() {
-  return (
-    <div>
-      <h1 className="page-title">League Analysis</h1>
-      <p className="page-sub">
-        Season-scoped behavioral fingerprints from your logged results. Traits feed a capped ±8% adjustment
-        layer in the prediction engine.
-      </p>
-      <LeagueAnalysisApp />
-    </div>
-  );
+export default async function LeagueAnalysisPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/league-analysis", searchParams);
 }

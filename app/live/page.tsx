@@ -1,5 +1,9 @@
-import { LiveFixturesApp } from "@/components/live/live-fixtures-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function LivePage() {
-  return <LiveFixturesApp />;
+export default async function LivePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/live", searchParams);
 }

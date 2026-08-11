@@ -15,6 +15,10 @@ import {
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHshPredictions } from "./use-hsh-predictions";
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
+import {
+  BlendedAnalysisNotice,
+  pickBlendFromEstimates,
+} from "@/components/analysis/blended-analysis-notice";
 
 const KNOWN_SEASONS = availableSeedSeasons();
 
@@ -115,6 +119,11 @@ export function CornersApp() {
     return [...set].sort();
   }, []);
 
+  const blendNotice = useMemo(
+    () => pickBlendFromEstimates(estimatesById),
+    [estimatesById]
+  );
+
   if (!ready) {
     return <p className="page-sub">Loading…</p>;
   }
@@ -126,6 +135,8 @@ export function CornersApp() {
           {error}
         </div>
       )}
+
+      <BlendedAnalysisNotice blend={blendNotice} pageLabel="Corners" />
 
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Corners Analysis</h1>

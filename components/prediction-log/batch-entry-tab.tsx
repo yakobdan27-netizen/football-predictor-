@@ -53,12 +53,11 @@ import {
   evaluateStopLoss,
 } from "@/lib/prediction-log/strategy-rules";
 import { DuplicateBlockModal } from "./duplicate-block-modal";
-import { BatchFixturePicker } from "./batch-fixture-picker";
-import { deriveBatchDateFromMatches } from "@/lib/prediction-log/batch-date";
-import type { NextMatchesLeague } from "@/lib/football-api/fetch-upcoming-league";
+import { todayIsoDate } from "@/lib/prediction-log/batch-date";
+import { stampPendingTrace } from "@/lib/prediction-log/result-trace";
 
 function emptyMatch(settings: CombinedOddsSettings, league: string): LogMatch {
-  return {
+  return stampPendingTrace({
     id: newId(),
     homeTeam: "",
     awayTeam: "",
@@ -67,7 +66,7 @@ function emptyMatch(settings: CombinedOddsSettings, league: string): LogMatch {
     actualResults: {},
     scored: {},
     marketMode: settings.defaultMarketMode,
-  };
+  });
 }
 
 function freezeComboProbabilities(
@@ -120,7 +119,8 @@ export function BatchEntryTab({
   const [saved, setSaved] = useState(false);
   const [noReco, setNoReco] = useState(false);
   const [duplicateHits, setDuplicateHits] = useState<DuplicateHit[] | null>(null);
-  const stubDate = deriveBatchDateFromMatches(matches);
+  /** Creation stamp only — result filling traces by home/away names, not this date. */
+  const stubDate = todayIsoDate();
 
   function addMatch() {
     setMatches((prev) => [...prev, emptyMatch(comboSettings, defaultLeague)]);
@@ -222,7 +222,7 @@ export function BatchEntryTab({
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
         batchKind: "manual",
-        matches: preparedMatches,
+        matches: preparedMatches.map((m) => stampPendingTrace(m)),
       };
 
       const duplicates = findCrossBatchDuplicates({
@@ -234,7 +234,7 @@ export function BatchEntryTab({
         return;
       }
 
-      // Server resolves fixtures and sets matchDate / apiFixtureId / batch.date
+      // Names-only save — API fixture id / date filled later by ordered name-pair trace.
       await upsertBatch(batch);
       const all = loadBatches();
       const savedBatch = all.find((b) => b.id === batch.id) ?? batch;
@@ -279,20 +279,12 @@ export function BatchEntryTab({
             />
           </div>
           <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
-            Load upcoming matches from the API below (date and fixture id are set automatically), or add blank
-            rows and pick teams manually.
+            Enter home and away team names and your markets. No date or fixture id is required —
+            results fill automatically when the API finds a finished match with the same ordered
+            home–away pairing.
           </p>
         </div>
       </div>
-
-      <BatchFixturePicker
-        matches={matches}
-        comboSettings={comboSettings}
-        onMatchesChange={setMatches}
-        onLeagueChange={(league: NextMatchesLeague) => {
-          setDefaultLeague(league);
-        }}
-      />
 
       <BatchMatchTable
         mode="entry"

@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/fill-telegram-results",
-      "schedule": "0 8 * * *"
+      "schedule": "0,30 6-22 * * *"
     },
     {
       "path": "/api/cron/live-daily-sweep",
@@ -85,6 +85,9 @@
       "maxDuration": 60
     },
     "app/api/cron/fill-telegram-results/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/core-integrity/route.ts": {
       "maxDuration": 60
     },
     "app/api/cron/live-daily-sweep/route.ts": {

@@ -20,6 +20,10 @@ import { withClosingOdds } from "@/lib/prediction-log/evaluation-metrics";
 import type { LogMatch, ScoreResult, TeamSideStats } from "@/lib/prediction-log/types";
 import type { ReactNode } from "react";
 import { leagueShortLabel } from "@/lib/prediction-log/match-league";
+import {
+  migrateMatchTraceState,
+  traceStateLabel,
+} from "@/lib/prediction-log/result-trace";
 import { BatchResultAdvanced } from "./batch-result-advanced";
 
 function primaryLegResult(match: LogMatch): ScoreResult {
@@ -243,6 +247,9 @@ export function BatchResultRow({
   const earlyNo = match.teamStats?.goalTiming?.goalInFirst10 === false;
   const fg = match.teamStats?.firstGoalSide;
   const altNote = formatAltWouldHaveWonNote(match, match.primaryGrade, match.altGrade);
+  const traced = migrateMatchTraceState(match);
+  const showTraceBadge =
+    traced.resultTraceState != null && traced.resultTraceState !== "FILLED";
 
   const refFor = (field: ResultGridField) => {
     const i = fields.indexOf(field);
@@ -295,6 +302,25 @@ export function BatchResultRow({
               <span className="batch-formation-tag"> {twoHHeavy.awayProfile.formation}</span>
             ) : null}
           </span>
+          {showTraceBadge ? (
+            <div
+              title={traced.traceNote ?? traceStateLabel(traced.resultTraceState)}
+              style={{
+                fontSize: "0.65rem",
+                fontWeight: 600,
+                marginTop: 2,
+                color:
+                  traced.resultTraceState === "FOUND_NOT_FINAL"
+                    ? "#a16207"
+                    : traced.resultTraceState === "AMBIGUOUS" ||
+                        traced.resultTraceState === "NEEDS_REVIEW"
+                      ? "#b91c1c"
+                      : "var(--muted)",
+              }}
+            >
+              {traceStateLabel(traced.resultTraceState)}
+            </div>
+          ) : null}
         </td>
         <td className="batch-col-market" title={matchLegLabel(match)}>
           <span className="batch-ellipsis">{marketDisplay(match)}</span>

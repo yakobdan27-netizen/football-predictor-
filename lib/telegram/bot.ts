@@ -9,7 +9,6 @@ import { saveBatch } from "@/lib/prediction-log/club-store";
 import { deriveBatchDateFromMatches } from "@/lib/prediction-log/batch-date";
 import { deriveBatchLeague } from "@/lib/prediction-log/match-league";
 import type { LogMarketKey } from "@/lib/prediction-log/types";
-import { attachFixturesToBatch, resolveUpcomingFixture } from "@/lib/football-api/resolve-upcoming-fixture";
 import {
   buildTelegramBatch,
   formatDecisionMessages,
@@ -538,29 +537,8 @@ export function getTelegramBot(): Telegraf {
     session.draftMarketKey = undefined;
     session.draftLine = undefined;
     session.draftPrediction = undefined;
-    await saveSession(tgId, session);
-    await ctx.reply(`Looking up fixture (optional)…\n🏠 ${session.draftHome}\n✈️ ${team}`);
-    const resolved = await resolveUpcomingFixture({
-      homeTeam: session.draftHome,
-      awayTeam: team,
-      league: session.draftLeague,
-    });
-    if (resolved.ok) {
-      session.draftMatchDate = resolved.fixture.matchDate;
-      session.draftApiFixtureId = resolved.fixture.apiFixtureId;
-      session.draftFixtureStatus = resolved.fixture.fixtureStatus;
-      session.draftHomeApiTeamId = resolved.fixture.homeApiTeamId;
-      session.draftAwayApiTeamId = resolved.fixture.awayApiTeamId;
-      session.step = "await_market";
-      await saveSession(tgId, session);
-      await ctx.reply(
-        `✅ Fixture · ${resolved.fixture.matchDate}\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
-        marketKeyboard(0)
-      );
-      return;
-    }
-    // API miss is supportive only — continue without fixture_id
-    session.draftMatchDate = todayIsoDate();
+    // Names-only: no fixture lookup / date required — result filler traces by ordered pair later.
+    session.draftMatchDate = undefined;
     session.draftApiFixtureId = undefined;
     session.draftFixtureStatus = undefined;
     session.draftHomeApiTeamId = undefined;
@@ -568,7 +546,7 @@ export function getTelegramBot(): Telegraf {
     session.step = "await_market";
     await saveSession(tgId, session);
     await ctx.reply(
-      `⚠️ Fixture not found in API (ok to continue).\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
+      `✅ Match saved by names\n🏠 ${session.draftHome}\n✈️ ${team}\n🏆 ${session.draftLeague}\n\nSelect your market:`,
       marketKeyboard(0)
     );
   });
@@ -919,10 +897,6 @@ async function commitMatchWithOdds(
     awayTeam: session.draftAway,
     league: session.draftLeague,
     date: session.draftMatchDate || todayIsoDate(),
-    apiFixtureId: session.draftApiFixtureId,
-    fixtureStatus: session.draftFixtureStatus,
-    homeApiTeamId: session.draftHomeApiTeamId,
-    awayApiTeamId: session.draftAwayApiTeamId,
     marketKey: session.draftMarketKey as LogMarketKey,
     prediction: session.draftPrediction,
     line: session.draftLine,
@@ -983,14 +957,13 @@ async function saveDraftBatch(ctx: Context, user: TelegramUser) {
   const date = deriveBatchDateFromMatches(
     session.draftMatches.map((m) => ({ matchDate: m.date }))
   );
-  let batch = buildTelegramBatch({
+  const batch = buildTelegramBatch({
     ownerUserId: user.id,
     batchName: session.draftBatchName,
     date,
     league,
     matches: session.draftMatches,
   });
-  batch = await attachFixturesToBatch(batch).catch(() => batch);
   await saveBatch(batch);
   await addUserBatchId(user.id, batch.id);
   await clearSession(tgId);

@@ -144,7 +144,7 @@ export function AiLearnerApp() {
           Core 1X2 model uses gradient boosting (XGBoost/LightGBM-style) once enough samples exist,
           with logistic / forest / naive Bayes fallbacks. Retrains after new results. Never blocks
           bets — see{" "}
-          <a href="/risk" style={{ color: "var(--accent)" }}>
+          <a href="/research-validation?tab=risk-evaluation" style={{ color: "var(--accent)" }}>
             Risk & Eval
           </a>{" "}
           for CLV trend, calibration, and bankroll simulation.

@@ -1,5 +1,9 @@
-import { PlayApp } from "@/components/ext-bets/play-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function PlayPage() {
-  return <PlayApp />;
+export default async function PlayPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/play", searchParams);
 }

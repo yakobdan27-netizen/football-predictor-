@@ -14,7 +14,7 @@ import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
 import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
 import { batchHasScoredResults } from "@/lib/prediction-log/scoring";
 import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
-import { attachFixturesToBatch } from "@/lib/football-api/resolve-upcoming-fixture";
+import { stampPendingTraceOnBatch } from "@/lib/prediction-log/result-trace";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
 export async function GET() {
@@ -37,14 +37,6 @@ export async function DELETE() {
   }
 }
 
-function batchNeedsFixtureResolve(batch: PredictionBatch): boolean {
-  return batch.matches.some(
-    (m) =>
-      Boolean(m.homeTeam?.trim() && m.awayTeam?.trim()) &&
-      (m.apiFixtureId == null || !m.matchDate)
-  );
-}
-
 export async function POST(request: Request) {
   try {
     let batch = (await request.json()) as PredictionBatch;
@@ -55,9 +47,9 @@ export async function POST(request: Request) {
     const allBatches = await loadAllBatches();
     const isNewBatch = !allBatches.some((b) => b.id === batch.id);
 
-    // Best-effort fixture enrich on create — never blocks save if API misses.
-    if (isNewBatch && batchNeedsFixtureResolve(batch)) {
-      batch = await attachFixturesToBatch(batch).catch(() => batch);
+    // Names-only create: stamp pending trace; no API fixture lookup required.
+    if (isNewBatch) {
+      batch = stampPendingTraceOnBatch(batch);
     }
 
     if (isNewBatch) {

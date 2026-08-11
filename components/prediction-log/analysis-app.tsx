@@ -22,6 +22,13 @@ import { StatMatchDiagnostics } from "./stat-match-diagnostics";
 import { RecommendationGeneratePanel } from "./recommendation-generate-panel";
 import { RecommendationAnalysisPanel } from "./recommendation-analysis-panel";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { BlendedAnalysisNotice } from "@/components/analysis/blended-analysis-notice";
+import { isAnalysisBlendedModeEnabled } from "@/lib/analysis/feature-flags";
+import { safeBuildBlendedAnalysisResult } from "@/lib/analysis/blended-analysis-service";
+import {
+  apiGroupFromHistSamples,
+  countValidSystemMatchRecords,
+} from "@/lib/analysis/source-groups";
 
 export function AnalysisApp() {
   const searchParams = useSearchParams();
@@ -102,10 +109,6 @@ export function AnalysisApp() {
     router.replace(`/analysis?${params.toString()}`, { scroll: false });
   }
 
-  if (!ready) {
-    return <p className="page-sub">Loading stats…</p>;
-  }
-
   const totalWins =
     analysis != null
       ? Object.values(analysis.marketAccuracy).reduce((s, m) => s + (m?.correct ?? 0), 0)
@@ -119,6 +122,36 @@ export function AnalysisApp() {
       ? Math.round((totalWins / (totalWins + totalLosses)) * 100)
       : null;
 
+  const blendNotice = useMemo(() => {
+    if (!isAnalysisBlendedModeEnabled()) return null;
+    const systemInfo = countValidSystemMatchRecords(batches);
+    const overall = winRate != null ? winRate / 100 : null;
+    const wrapped = safeBuildBlendedAnalysisResult<
+      { overall: number | null },
+      { overallAccuracy: number }
+    >({
+      legacy: { overall },
+      metrics:
+        overall != null
+          ? [{ key: "overallAccuracy", api: overall, system: overall }]
+          : [],
+      apiSummary: apiGroupFromHistSamples({
+        matchesUsed: Math.max(systemInfo.count, totalWins + totalLosses),
+      }),
+      systemSummary: {
+        recordCount: systemInfo.count,
+        dateRange: systemInfo.dateRange,
+        byProvenance: { manual_batch: systemInfo.count },
+        excludedUnknown: systemInfo.unknownBatches,
+      },
+    });
+    return wrapped.blended.enabled ? wrapped.blended : null;
+  }, [batches, winRate, totalWins, totalLosses]);
+
+  if (!ready) {
+    return <p className="page-sub">Loading stats…</p>;
+  }
+
   return (
     <div>
       {error && (
@@ -126,6 +159,8 @@ export function AnalysisApp() {
           {error}
         </div>
       )}
+
+      <BlendedAnalysisNotice blend={blendNotice} pageLabel="Analysis" />
 
       <RecommendationGeneratePanel
         batches={batches}

@@ -1,6 +1,9 @@
-import { redirect } from "next/navigation";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-/** Former Half Comparison page — merged into Half Goals at /highest-scoring-half. */
-export default function HalfComparisonAnalysisPage() {
-  redirect("/highest-scoring-half");
+export default async function HalfComparisonAnalysisPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/half-comparison-analysis", searchParams);
 }

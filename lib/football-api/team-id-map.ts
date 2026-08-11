@@ -86,6 +86,8 @@ export async function ensureTeamIdMap(
 export interface TeamIdLookupResult {
   teamId: number | null;
   suggestions: string[];
+  /** True when multiple distinct team IDs match — never guess. */
+  ambiguous?: boolean;
 }
 
 function fuzzySuggestions(store: TeamIdMapStore, key: string): string[] {
@@ -127,11 +129,16 @@ export function lookupTeamIdInMap(
     const [id] = fuzzyIds.keys();
     return { teamId: id!, suggestions: [] };
   }
+  if (fuzzyIds.size > 1) {
+    return {
+      teamId: null,
+      suggestions: [...fuzzyIds.values()].slice(0, 5),
+      ambiguous: true,
+    };
+  }
   return {
     teamId: null,
-    suggestions: fuzzyIds.size > 1
-      ? [...fuzzyIds.values()].slice(0, 5)
-      : fuzzySuggestions(store, key),
+    suggestions: fuzzySuggestions(store, key),
   };
 }
 
@@ -166,16 +173,37 @@ export async function resolveApiTeamId(opts: {
     LEAGUE_API_IDS["Ligue 1"],
   ];
   const allSuggestions: string[] = [];
+  const hitsById = new Map<number, { leagueId: number; suggestions: string[] }>();
+  let sawAmbiguous = false;
   for (const lid of major) {
     try {
       const hit = await tryLeague(lid);
-      if (hit.teamId != null) {
-        return { ...hit, leagueId: lid, season };
+      if (hit.ambiguous) {
+        sawAmbiguous = true;
+        allSuggestions.push(...hit.suggestions);
+        continue;
       }
-      allSuggestions.push(...hit.suggestions);
+      if (hit.teamId != null) {
+        hitsById.set(hit.teamId, { leagueId: lid, suggestions: hit.suggestions });
+      } else {
+        allSuggestions.push(...hit.suggestions);
+      }
     } catch {
       /* skip unavailable league */
     }
+  }
+  if (hitsById.size === 1) {
+    const [teamId, meta] = [...hitsById.entries()][0]!;
+    return { teamId, suggestions: [], leagueId: meta.leagueId, season };
+  }
+  if (hitsById.size > 1 || sawAmbiguous) {
+    return {
+      teamId: null,
+      suggestions: [...new Set(allSuggestions)].slice(0, 5),
+      leagueId: null,
+      season,
+      ambiguous: true,
+    };
   }
   return {
     teamId: null,

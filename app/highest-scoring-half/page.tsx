@@ -1,5 +1,9 @@
-import { HshApp } from "@/components/prediction-log/hsh-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function HighestScoringHalfPage() {
-  return <HshApp />;
+export default async function HighestScoringHalfPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/highest-scoring-half", searchParams);
 }

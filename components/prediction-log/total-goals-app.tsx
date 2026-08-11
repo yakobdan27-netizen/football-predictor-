@@ -13,6 +13,10 @@ import {
   TOTAL_GOALS_LINES,
   type TotalGoalsLine,
 } from "@/lib/prediction-log/total-goals-markets";
+import {
+  BlendedAnalysisNotice,
+  pickBlendFromEstimates,
+} from "@/components/analysis/blended-analysis-notice";
 
 type SortKey =
   | "expected"
@@ -61,7 +65,15 @@ export function TotalGoalsApp() {
   }, [sortedBatches, batchId]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
-  const { rows } = useTotalGoalsPredictions(batch, batches, halfStore);
+  const { rows, estimatesById } = useTotalGoalsPredictions(
+    batch,
+    batches,
+    halfStore
+  );
+  const blendNotice = useMemo(
+    () => pickBlendFromEstimates(estimatesById),
+    [estimatesById]
+  );
 
   const leagues = useMemo(() => {
     if (!batch) return [] as string[];
@@ -119,6 +131,8 @@ export function TotalGoalsApp() {
           {error ?? halfError}
         </div>
       )}
+
+      <BlendedAnalysisNotice blend={blendNotice} pageLabel="Total Goals" />
 
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Total Goals</h1>

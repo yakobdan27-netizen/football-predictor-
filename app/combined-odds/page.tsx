@@ -1,5 +1,9 @@
-import { CombinedOddsApp } from "@/components/prediction-log/combined-odds-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function CombinedOddsPage() {
-  return <CombinedOddsApp />;
+export default async function CombinedOddsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/combined-odds", searchParams);
 }

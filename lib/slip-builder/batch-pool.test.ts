@@ -28,6 +28,9 @@ describe("loadBatchFixturePool sourceBatchId", () => {
       awayTeam: "Chelsea",
       matchDate: "2026-08-10",
       apiFixtureId: 101,
+      predictions: {},
+      actualResults: {},
+      scored: {},
     },
     {
       id: "m2",
@@ -35,6 +38,9 @@ describe("loadBatchFixturePool sourceBatchId", () => {
       awayTeam: "City",
       matchDate: "2026-08-12",
       apiFixtureId: 102,
+      predictions: {},
+      actualResults: {},
+      scored: {},
     },
   ]);
   const batchB = stubBatch("batch-b", "2026-08-11", [
@@ -44,6 +50,9 @@ describe("loadBatchFixturePool sourceBatchId", () => {
       awayTeam: "United",
       matchDate: "2026-08-11",
       apiFixtureId: 201,
+      predictions: {},
+      actualResults: {},
+      scored: {},
     },
   ]);
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { batchNeedsResults } from "@/lib/prediction-log/scoring";
+import { matchNeedsNamePairTrace } from "@/lib/prediction-log/result-trace";
 import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
 import { syncPredictionLogResults } from "@/lib/football-api/sync-prediction-log";
 
@@ -15,8 +16,8 @@ function authorize(request: Request): boolean {
 }
 
 /**
- * Hourly catch-up: auto-fill incomplete batches (web + telegram) via API-Football.
- * Prefers matches with apiFixtureId; legacy date+pair matching remains in sync.
+ * Every 30 minutes (06–22 UTC): ordered name-pair result trace for pending
+ * Prediction Log batches (web + telegram). Same path as POST /api/sync-results.
  */
 export async function GET(request: Request) {
   return run(request);
@@ -33,19 +34,15 @@ async function run(request: Request) {
 
   try {
     const all = await loadAllBatches();
-    const pending = all.filter((b) => batchNeedsResults(b));
-    let updatedBatches = 0;
-    let matchesSynced = 0;
-    const errors: string[] = [];
+    const pending = all.filter(
+      (b) =>
+        batchNeedsResults(b) || b.matches.some((m) => matchNeedsNamePairTrace(m))
+    );
 
-    for (const batch of pending) {
-      const summary = await syncPredictionLogResults(batch.id);
-      updatedBatches += summary.updatedBatches;
-      matchesSynced += summary.matchesSynced;
-      if (summary.errors.length) errors.push(...summary.errors.slice(0, 3));
-    }
+    // Single pass over all pending — syncPredictionLogResults already loops batches.
+    const summary = await syncPredictionLogResults();
 
-    if (pending.length > 0 || updatedBatches > 0) {
+    if (pending.length > 0 || summary.updatedBatches > 0) {
       await recomputeAndPersistLearnerStats().catch(() => null);
     }
 
@@ -53,9 +50,11 @@ async function run(request: Request) {
       ok: true,
       pendingBatches: pending.length,
       pendingTelegram: pending.filter((b) => b.source === "telegram").length,
-      updatedBatches,
-      matchesSynced,
-      errors: errors.slice(0, 10),
+      updatedBatches: summary.updatedBatches,
+      matchesSynced: summary.matchesSynced,
+      matchesNotFound: summary.matchesNotFound,
+      trace: summary.trace,
+      errors: summary.errors.slice(0, 10),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Result fill cron failed";

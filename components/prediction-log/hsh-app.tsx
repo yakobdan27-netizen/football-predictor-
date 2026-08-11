@@ -33,6 +33,10 @@ import { useConcededHalfPredictions, useConcededHalfStats } from "./use-conceded
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
 import { FixtureEstimateDiagnostics } from "./fixture-estimate-diagnostics";
 import { HistCoverageBadge } from "./hist-coverage-badge";
+import {
+  BlendedAnalysisNotice,
+  pickBlendFromEstimates,
+} from "@/components/analysis/blended-analysis-notice";
 
 function pct(p: number): string {
   return `${Math.round(p * 100)}%`;
@@ -171,6 +175,11 @@ export function HshApp() {
     return <p className="page-sub">Loading…</p>;
   }
 
+  const blendNotice = useMemo(
+    () => pickBlendFromEstimates(estimatesById),
+    [estimatesById]
+  );
+
   return (
     <div>
       {(error || predError) && (
@@ -178,6 +187,8 @@ export function HshApp() {
           {error ?? predError}
         </div>
       )}
+
+      <BlendedAnalysisNotice blend={blendNotice} pageLabel="Half Goals" />
 
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Half Goals (1H vs 2H)</h1>

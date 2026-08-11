@@ -69,7 +69,7 @@ export default function DashboardPage() {
             <Link href="/prediction-log" className="btn btn-primary btn-full">
               Prediction Log
             </Link>
-            <Link href="/next-matches" className="btn btn-secondary btn-full">
+            <Link href="/match-centre?tab=next-match" className="btn btn-secondary btn-full">
               Next Matches
             </Link>
             <Link href="/ai-learner" className="btn btn-secondary btn-full">
@@ -81,22 +81,22 @@ export default function DashboardPage() {
             <Link href="/decision-maker" className="btn btn-secondary btn-full">
               Decision Maker
             </Link>
-            <Link href="/highest-scoring-half" className="btn btn-secondary btn-full">
+            <Link href="/goals-survival?tab=half-goals" className="btn btn-secondary btn-full">
               Half Goals (1H vs 2H)
             </Link>
             <Link href="/corners-analysis" className="btn btn-secondary btn-full">
               Corners Analysis
             </Link>
-            <Link href="/combined-odds" className="btn btn-secondary btn-full">
+            <Link href="/combo-centre?tab=combined-odd" className="btn btn-secondary btn-full">
               Combined Odds
             </Link>
-            <Link href="/analysis" className="btn btn-secondary btn-full">
+            <Link href="/research-validation?tab=analysis" className="btn btn-secondary btn-full">
               Analysis
             </Link>
-            <Link href="/backtest" className="btn btn-secondary btn-full">
+            <Link href="/research-validation?tab=back-test" className="btn btn-secondary btn-full">
               Run backtest
             </Link>
-            <Link href="/guide" className="btn btn-secondary btn-full">
+            <Link href="/settings-guide?tab=guide" className="btn btn-secondary btn-full">
               Operating guide
             </Link>
             <Link

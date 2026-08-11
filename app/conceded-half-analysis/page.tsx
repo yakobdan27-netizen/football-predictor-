@@ -1,6 +1,9 @@
-import { redirect } from "next/navigation";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-/** Former Conceded Half page — merged into Half Goals at /highest-scoring-half. */
-export default function ConcededHalfAnalysisPage() {
-  redirect("/highest-scoring-half");
+export default async function ConcededHalfAnalysisPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/conceded-half-analysis", searchParams);
 }

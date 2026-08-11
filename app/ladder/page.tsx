@@ -1,5 +1,9 @@
-import { LadderApp } from "@/components/prediction-log/ladder-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function LadderPage() {
-  return <LadderApp />;
+export default async function LadderPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/ladder", searchParams);
 }

@@ -75,7 +75,7 @@ export function PredictionLogApp() {
     <div>
       <p className="page-sub" style={{ marginBottom: "1rem" }}>
         Enter predictions and match results here. For exports, tips, and batch comparisons, see{" "}
-        <a href="/analysis" style={{ color: "var(--accent)" }}>
+        <a href="/research-validation?tab=analysis" style={{ color: "var(--accent)" }}>
           Stats
         </a>
         .

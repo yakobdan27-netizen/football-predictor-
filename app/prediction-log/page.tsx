@@ -7,8 +7,8 @@ export default function PredictionLogPage() {
       <h1 className="page-title">Prediction Log</h1>
       <p className="page-sub">
         Enter batch predictions and match results. Exports, tips, and batch comparisons live on{" "}
-        <a href="/analysis">Stats</a>. Long-term risk metrics on{" "}
-        <a href="/risk">Risk & Evaluation</a>.
+        <a href="/research-validation?tab=analysis">Stats</a>. Long-term risk metrics on{" "}
+        <a href="/research-validation?tab=risk-evaluation">Risk & Evaluation</a>.
       </p>
       <PredictionLogApp />
       <RealisticExpectationsBanner compact />

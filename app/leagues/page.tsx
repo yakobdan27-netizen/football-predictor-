@@ -1,6 +1,9 @@
-import { redirect } from "next/navigation";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-/** MASTER page map alias → League Analysis. */
-export default function LeaguesPage() {
-  redirect("/league-analysis");
+export default async function LeaguesPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/leagues", searchParams);
 }

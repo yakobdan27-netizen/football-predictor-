@@ -1,13 +1,9 @@
-import { BetCouponApp } from "@/components/bets/bet-coupon-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export const metadata = {
-  title: "Bets — tracking coupon",
-};
-
-export default function BetsPage() {
-  return (
-    <main style={{ maxWidth: "72rem", margin: "0 auto", padding: "1rem" }}>
-      <BetCouponApp />
-    </main>
-  );
+export default async function BetsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/bets", searchParams);
 }

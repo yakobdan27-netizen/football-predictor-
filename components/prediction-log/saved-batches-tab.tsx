@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BatchMatchTable } from "./batch-match-table";
 import { BatchSummaryStrip } from "./batch-summary-strip";
@@ -13,6 +13,10 @@ import { loadCombinedOddsSettings } from "@/lib/prediction-log/combo-settings";
 import { recomputeAnalysis } from "@/lib/prediction-log/analysis";
 import { LOG_MARKET_MAP } from "@/lib/prediction-log/markets-config";
 import { batchLeagueDisplay, normalizeMatchLeagues } from "@/lib/prediction-log/match-league";
+import {
+  countTraceStatusesAcrossBatches,
+  type TraceStatusCounts,
+} from "@/lib/prediction-log/result-trace";
 import {
   loadBatches,
   deleteBatch,
@@ -67,6 +71,13 @@ export function SavedBatchesTab({
   const [search, setSearch] = useState("");
   const [twoHHeavySort, setTwoHHeavySort] = useState(true);
   const { byId: twoHHeavyByMatch } = useTwoHHeavyRanking(draft, batches);
+  const [traceCounts, setTraceCounts] = useState<TraceStatusCounts | null>(null);
+
+  const localTraceCounts = useMemo(
+    () => countTraceStatusesAcrossBatches(batches),
+    [batches]
+  );
+  const displayTrace = traceCounts ?? localTraceCounts;
 
   useEffect(() => {
     if (highlightBatchId && batches.some((b) => b.id === highlightBatchId)) {
@@ -94,8 +105,8 @@ export function SavedBatchesTab({
     onUpdate();
   }
 
-  /** Primary Auto-Fill: API-Football (server-only key). Never blocks manual entry.
-   *  Pass batchId for one batch, or omit to fill every pending predicted batch. */
+  /** Ordered name-pair API trace. Never blocks manual entry.
+   *  Pass batchId for one batch, or omit to trace every pending batch. */
   async function autoFillFromApi(batchId?: string | null, opts?: { force?: boolean }) {
     const scopeKey = batchId ?? "__all__";
     if (!opts?.force && autoFillAttempted[scopeKey]) return;
@@ -105,8 +116,8 @@ export function SavedBatchesTab({
     setAutoFillUnavailable(false);
     setAutoFillMsg(
       batchId
-        ? "Auto-filling results from API-Football…"
-        : "Auto-filling results for every pending batch…"
+        ? "Tracing results by home–away names…"
+        : "Tracing all pending results by home–away names…"
     );
     setSyncMsg(null);
 
@@ -125,6 +136,7 @@ export function SavedBatchesTab({
         matchesNotFound?: number;
         updatedBatches?: number;
         errors?: string[];
+        trace?: TraceStatusCounts;
         conflicts?: {
           matchId: string;
           field: string;
@@ -144,6 +156,8 @@ export function SavedBatchesTab({
         return;
       }
 
+      if (data.trace) setTraceCounts(data.trace);
+
       if (batchId) {
         await refreshDraftFromServer(batchId);
       } else {
@@ -154,6 +168,7 @@ export function SavedBatchesTab({
         updateLearnerStats();
         updateTeamCharacteristics();
         updateLeagueProfiles();
+        setTraceCounts(countTraceStatusesAcrossBatches(all));
         if (expandedId) {
           const refreshed = all.find((b) => b.id === expandedId);
           if (refreshed) setDraft(JSON.parse(JSON.stringify(refreshed)) as PredictionBatch);
@@ -165,8 +180,13 @@ export function SavedBatchesTab({
       const parts = [
         `${data.updatedBatches ?? 0} batch(es) updated`,
         `${data.matchesSynced ?? 0} match(es) filled`,
-        `${data.matchesNotFound ?? 0} not found on API`,
+        `${data.matchesNotFound ?? 0} not found yet`,
       ];
+      if (data.trace) {
+        parts.push(
+          `pending ${data.trace.pending + data.trace.retry} · awaiting final ${data.trace.foundNotFinal} · review ${data.trace.ambiguous + data.trace.needsReview}`
+        );
+      }
       if (data.conflicts?.length) {
         parts.push(`${data.conflicts.length} field(s) kept manual (use Replace to overwrite)`);
       }
@@ -579,10 +599,43 @@ export function SavedBatchesTab({
             <input className="input" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="REC-... or source batch" />
           </div>
         </div>
+        <div
+          className="stat-grid"
+          style={{
+            marginTop: "0.75rem",
+            fontSize: "0.75rem",
+            gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+          }}
+        >
+          <div>
+            <div className="stat-value" style={{ fontSize: "1.1rem" }}>
+              {displayTrace.pending + displayTrace.retry}
+            </div>
+            <div className="stat-label">Pending trace</div>
+          </div>
+          <div>
+            <div className="stat-value" style={{ fontSize: "1.1rem" }}>
+              {displayTrace.foundNotFinal}
+            </div>
+            <div className="stat-label">Found / awaiting final</div>
+          </div>
+          <div>
+            <div className="stat-value" style={{ fontSize: "1.1rem" }}>
+              {displayTrace.filled}
+            </div>
+            <div className="stat-label">Filled</div>
+          </div>
+          <div>
+            <div className="stat-value" style={{ fontSize: "1.1rem" }}>
+              {displayTrace.ambiguous + displayTrace.needsReview}
+            </div>
+            <div className="stat-label">Needs review</div>
+          </div>
+        </div>
         {pendingTelegramResults > 0 && (
           <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.75rem 0 0" }}>
             {pendingTelegramResults} Telegram batch{pendingTelegramResults === 1 ? "" : "es"} pending
-            results — Auto-Fill All includes them (feeds the global AI Learner).
+            results — Trace all includes them (feeds the global AI Learner).
           </p>
         )}
         <div style={{ marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
@@ -594,10 +647,10 @@ export function SavedBatchesTab({
             style={{ minHeight: 44, minWidth: 160, fontWeight: 700 }}
           >
             {syncing || autoFilling
-              ? "Auto-filling…"
+              ? "Tracing…"
               : expandedId
-                ? "Auto-Fill Results"
-                : "Auto-Fill All Batches"}
+                ? "Trace open batch"
+                : "Trace all pending results"}
           </button>
           <button
             type="button"
@@ -618,11 +671,10 @@ export function SavedBatchesTab({
             {bulkSyncing ? "Bulk syncing…" : "Sync last 5 (Livescore)"}
           </button>
           <span style={{ fontSize: "0.75rem", color: "var(--muted)", maxWidth: 420 }}>
-            Auto-Fill uses API-Football for FT, HT, and corners on finished matches (every
-            pending predicted batch including Telegram, or the open batch). Empty cells only —
-            manual values are kept. After fill, scored outcomes update the global AI Learner for
-            Recommendation and Telegram Get Decision. Livescore is optional fallback.
-            {expandedId ? " Targeting the open batch." : " No batch open → fills all pending."}
+            Trace uses saved home and away team names only (exact ordered pair). No fixture id or
+            date is required. Results fill when the API reports an officially finished match.
+            Manual values are kept. Livescore remains an optional fallback.
+            {expandedId ? " Targeting the open batch." : " Traces every pending batch."}
           </span>
         </div>
         {autoFillUnavailable && (
@@ -756,7 +808,7 @@ export function SavedBatchesTab({
                     }}
                   >
                     {autoFilling
-                      ? "Auto-filling results from API-Football…"
+                      ? "Tracing results by home–away names…"
                       : livescoreFilling
                         ? "Filling from Livescore…"
                         : autoFillMsg}

@@ -4,6 +4,19 @@ import {
   replaceMatchResultsFromApi,
   syncPredictionLogResults,
 } from "@/lib/football-api/sync-prediction-log";
+import { countTraceStatusesAcrossBatches } from "@/lib/prediction-log/result-trace";
+import { loadAllBatches } from "@/lib/prediction-log/club-store";
+
+export async function GET() {
+  try {
+    const batches = await loadAllBatches();
+    const trace = countTraceStatusesAcrossBatches(batches);
+    return NextResponse.json({ ok: true, trace });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Failed to load trace status";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+  }
+}
 
 export async function POST(request: Request) {
   try {

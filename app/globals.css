@@ -506,6 +506,43 @@ table.data-table td {
   line-height: 1.2;
 }
 
+/* Workspace internal tabs — horizontally scrollable on mobile */
+.workspace-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 1rem;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.workspace-tab {
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.workspace-tab.active {
+  background: var(--surface2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.workspace-panel[hidden] {
+  display: none !important;
+}
+
 /* Sticky panels (bet slip, play slip) sit above bottom nav on phones */
 .sticky-above-nav {
   bottom: calc(var(--nav-height) + var(--safe-bottom)) !important;

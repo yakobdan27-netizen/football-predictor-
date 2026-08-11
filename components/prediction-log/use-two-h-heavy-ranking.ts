@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import {
   estimateBatchCanonical,
   ladderRanksFromBatchEstimates,
+  type CanonicalFixtureEstimate,
   type LadderRankFromCfe,
 } from "@/lib/prediction-log/canonical-fixture-estimate";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
@@ -22,11 +23,22 @@ export function useTwoHHeavyRanking(
   byId: Record<string, LadderRankResult>;
   ranked: LadderRankResult[];
   loading: boolean;
+  estimatesById: Record<string, CanonicalFixtureEstimate>;
 } {
-  const ranked = useMemo(() => {
-    if (!batch) return [] as LadderRankResult[];
+  const { ranked, estimatesById } = useMemo(() => {
+    const emptyEst: Record<string, CanonicalFixtureEstimate> = {};
+    if (!batch) {
+      return { ranked: [] as LadderRankResult[], estimatesById: emptyEst };
+    }
     const estimates = estimateBatchCanonical(batch, allBatches);
-    return ladderRanksFromBatchEstimates(estimates, batch, allBatches);
+    const byId: Record<string, CanonicalFixtureEstimate> = {};
+    for (let i = 0; i < batch.matches.length; i++) {
+      byId[batch.matches[i]!.id] = estimates[i]!;
+    }
+    return {
+      ranked: ladderRanksFromBatchEstimates(estimates, batch, allBatches),
+      estimatesById: byId,
+    };
   }, [batch, allBatches]);
 
   const byId = useMemo(() => {
@@ -35,7 +47,7 @@ export function useTwoHHeavyRanking(
     return out;
   }, [ranked]);
 
-  return { byId, ranked, loading: false };
+  return { byId, ranked, loading: false, estimatesById };
 }
 
 export { profileCacheKey } from "@/lib/prediction-log/two-h-heavy";

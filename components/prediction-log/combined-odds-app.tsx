@@ -95,7 +95,7 @@ export function CombinedOddsApp() {
           <Link href="/recommendation" style={{ color: "var(--accent)" }}>
             Single-market picks →
           </Link>{" "}
-          <Link href="/combined-odds-extended" style={{ color: "var(--accent)" }}>
+          <Link href="/combo-centre?tab=extended-combo" style={{ color: "var(--accent)" }}>
             New combos (Section 2G) →
           </Link>
         </p>

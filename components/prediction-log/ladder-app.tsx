@@ -17,6 +17,10 @@ import { blendBadgeLabel, blendBadgeTitle } from "@/lib/prediction-log/predictio
 import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useTwoHHeavyRanking } from "./use-two-h-heavy-ranking";
+import {
+  BlendedAnalysisNotice,
+  pickBlendFromEstimates,
+} from "@/components/analysis/blended-analysis-notice";
 
 const HONESTY_BANNER =
   "This ladder lowers the chance of losing everything — it does NOT guarantee a win. Spreading across rounds reduces wipeout risk but also reduces total payout, because safer rounds (fewer legs) pay less. Losing one match knocks out only the rounds that include it; rounds that already dropped it can still land. All probabilities are model estimates, not certainties.";
@@ -95,7 +99,13 @@ export function LadderApp() {
   }, [sortedBatches, batchId]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
-  const { ranked, loading } = useTwoHHeavyRanking(batch, batches, { refreshToken });
+  const { ranked, loading, estimatesById } = useTwoHHeavyRanking(batch, batches, {
+    refreshToken,
+  });
+  const blendNotice = useMemo(
+    () => pickBlendFromEstimates(estimatesById),
+    [estimatesById]
+  );
 
   const ladder = useMemo(() => {
     if (!batch) return null;
@@ -147,6 +157,8 @@ export function LadderApp() {
           {error}
         </div>
       )}
+
+      <BlendedAnalysisNotice blend={blendNotice} pageLabel="Survival Ladder" />
 
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Survival Ladder (2H &gt; 1H)</h1>

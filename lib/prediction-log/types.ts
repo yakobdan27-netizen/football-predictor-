@@ -137,6 +137,18 @@ export interface MatchTeamStats {
   lineups?: MatchLineups;
 }
 
+/**
+ * Name-pair result-trace lifecycle for Prediction Log matches.
+ * PENDING → RETRY / FOUND_NOT_FINAL → FILLED (or AMBIGUOUS / NEEDS_REVIEW).
+ */
+export type ResultTraceState =
+  | "PENDING"
+  | "FOUND_NOT_FINAL"
+  | "RETRY"
+  | "AMBIGUOUS"
+  | "NEEDS_REVIEW"
+  | "FILLED";
+
 export interface LogMatch {
   id: string;
   homeTeam: string;
@@ -187,6 +199,18 @@ export interface LogMatch {
   strategyFlags?: string[];
   /** Closing decimal odds for CLV (optional; enter after market close). */
   closingOdds?: number;
+  /** True when FT score was filled by ordered name-pair API trace (or already settled). */
+  resultFilled?: boolean;
+  /** Name-pair trace state; defaults to PENDING on manual create. */
+  resultTraceState?: ResultTraceState;
+  /** ISO timestamp of last name-pair trace attempt. */
+  resultTraceCheckedAt?: string;
+  /** Canonical API home team name after alias resolve. */
+  resolvedHomeTeamName?: string;
+  /** Canonical API away team name after alias resolve. */
+  resolvedAwayTeamName?: string;
+  /** Human-readable note for RETRY / AMBIGUOUS / NEEDS_REVIEW. */
+  traceNote?: string;
 }
 
 export type RecommendationTier = "safe" | "balanced" | "aggressive";

@@ -31,6 +31,11 @@ import {
 import { outcomeProbsFromMatrix } from "@/lib/predictor/score-matrix";
 import { weightedEstimate, type BlendSource } from "./prediction-weights";
 import {
+  attachCfeBlendedEnvelope,
+  type CanonicalFixtureEstimateWithBlend,
+} from "@/lib/analysis/attach-cfe-blend";
+import type { BlendedPayload } from "@/lib/analysis/blended-analysis-service";
+import {
   defaultModelParams,
   loadModelParams,
   type ModelParamsStore,
@@ -106,6 +111,14 @@ export type CanonicalFixtureEstimate = {
     lambdaFt: number;
     halfSumOk: boolean;
   };
+  /**
+   * Present only when ANALYSIS_BLENDED_MODE_ENABLED=1.
+   * Pages must keep using lambdas/markets (legacy) unless status === "complete".
+   */
+  analysisBlend?: BlendedPayload<{
+    lambdaHome: number;
+    lambdaAway: number;
+  }>;
 };
 
 export type CanonicalFixtureInput = {
@@ -364,8 +377,18 @@ export function canonicalFixtureEstimateSync(
     },
   };
 
-  cache.set(cacheKey, estimate);
-  return estimate;
+  // Flag-gated provenance envelope — does not change markets when flag off.
+  const withBlend: CanonicalFixtureEstimateWithBlend = attachCfeBlendedEnvelope(
+    estimate,
+    input.batches,
+    {
+      manualHome: input.manualLambdas?.home,
+      manualAway: input.manualLambdas?.away,
+    }
+  );
+
+  cache.set(cacheKey, withBlend);
+  return withBlend;
 }
 
 /**

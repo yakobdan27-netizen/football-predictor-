@@ -7,6 +7,10 @@ import { useDiehPredictions, type DiehRow } from "./use-dieh-predictions";
 import { FixtureEstimateDiagnostics } from "./fixture-estimate-diagnostics";
 import { HistCoverageBadge } from "./hist-coverage-badge";
 import { matchLeague } from "@/lib/prediction-log/match-league";
+import {
+  BlendedAnalysisNotice,
+  pickBlendFromEstimates,
+} from "@/components/analysis/blended-analysis-notice";
 
 type SortKey =
   | "yes"
@@ -58,7 +62,11 @@ export function DiehApp() {
   }, [sortedBatches, batchId]);
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
-  const { rows } = useDiehPredictions(batch, batches, halfStore);
+  const { rows, estimatesById } = useDiehPredictions(batch, batches, halfStore);
+  const blendNotice = useMemo(
+    () => pickBlendFromEstimates(estimatesById),
+    [estimatesById]
+  );
 
   const leagues = useMemo(() => {
     if (!batch) return [] as string[];
@@ -110,6 +118,8 @@ export function DiehApp() {
           {error ?? halfError}
         </div>
       )}
+
+      <BlendedAnalysisNotice blend={blendNotice} pageLabel="DIEH" />
 
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Draw in Either Half</h1>

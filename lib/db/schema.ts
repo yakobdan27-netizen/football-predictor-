@@ -739,3 +739,329 @@ export type SlipBatchRow = typeof slipBatches.$inferSelect;
 export type NewSlipBatchRow = typeof slipBatches.$inferInsert;
 export type SlipBatchLegRow = typeof slipBatchLegs.$inferSelect;
 export type NewSlipBatchLegRow = typeof slipBatchLegs.$inferInsert;
+
+/* -------------------------------------------------------------------------- */
+/* Additive core_* / audit_* — never replace legacy hist_/live_/bet_/KV paths */
+/* -------------------------------------------------------------------------- */
+
+export const coreCompetition = pgTable(
+  "core_competition",
+  {
+    id: serial("id").primaryKey(),
+    providerName: text("provider_name").notNull().default("api-sports"),
+    providerCompetitionId: integer("provider_competition_id").notNull(),
+    name: text("name").notNull(),
+    country: text("country"),
+    /** domestic_league | cup */
+    compType: text("comp_type").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    providerUniq: uniqueIndex("core_competition_provider_uidx").on(
+      t.providerName,
+      t.providerCompetitionId
+    ),
+  })
+);
+
+export const coreSeason = pgTable(
+  "core_season",
+  {
+    id: serial("id").primaryKey(),
+    competitionId: integer("competition_id").notNull(),
+    providerSeason: integer("provider_season").notNull(),
+    label: text("label"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    compSeasonUniq: uniqueIndex("core_season_comp_season_uidx").on(
+      t.competitionId,
+      t.providerSeason
+    ),
+  })
+);
+
+export const coreTeam = pgTable(
+  "core_team",
+  {
+    id: serial("id").primaryKey(),
+    providerName: text("provider_name").notNull().default("api-sports"),
+    providerTeamId: integer("provider_team_id").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    country: text("country"),
+    logoUrl: text("logo_url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    providerUniq: uniqueIndex("core_team_provider_uidx").on(
+      t.providerName,
+      t.providerTeamId
+    ),
+  })
+);
+
+export const coreTeamAlias = pgTable(
+  "core_team_alias",
+  {
+    id: serial("id").primaryKey(),
+    teamId: integer("team_id").notNull(),
+    aliasNormalized: text("alias_normalized").notNull(),
+    aliasRaw: text("alias_raw").notNull(),
+    source: text("source").notNull(),
+    /** 1 = approved for auto-resolve; 0 = fuzzy / needs review */
+    approved: integer("approved").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    aliasTeamUniq: uniqueIndex("core_team_alias_norm_team_uidx").on(
+      t.aliasNormalized,
+      t.teamId
+    ),
+    aliasIdx: index("core_team_alias_norm_idx").on(t.aliasNormalized),
+  })
+);
+
+export const coreFixture = pgTable(
+  "core_fixture",
+  {
+    id: serial("id").primaryKey(),
+    providerName: text("provider_name").notNull().default("api-sports"),
+    providerFixtureId: integer("provider_fixture_id").notNull(),
+    competitionId: integer("competition_id"),
+    seasonId: integer("season_id"),
+    homeTeamId: integer("home_team_id"),
+    awayTeamId: integer("away_team_id"),
+    homeTeamName: text("home_team_name").notNull(),
+    awayTeamName: text("away_team_name").notNull(),
+    kickoffUtc: timestamp("kickoff_utc", { withTimezone: true }).notNull(),
+    status: text("status").notNull(),
+    htHome: integer("ht_home"),
+    htAway: integer("ht_away"),
+    ftHome: integer("ft_home"),
+    ftAway: integer("ft_away"),
+    venue: text("venue"),
+    round: text("round"),
+    /** 1 = human-verified; backfill must not overwrite */
+    manualVerified: integer("manual_verified").notNull().default(0),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    importedAt: timestamp("imported_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    providerUniq: uniqueIndex("core_fixture_provider_uidx").on(
+      t.providerName,
+      t.providerFixtureId
+    ),
+    pairDateIdx: index("core_fixture_pair_date_idx").on(
+      t.homeTeamName,
+      t.awayTeamName,
+      t.kickoffUtc
+    ),
+    statusDateIdx: index("core_fixture_status_date_idx").on(
+      t.status,
+      t.kickoffUtc
+    ),
+  })
+);
+
+export const coreFixtureStatistic = pgTable(
+  "core_fixture_statistic",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id"),
+    /** home | away */
+    side: text("side").notNull(),
+    statKey: text("stat_key").notNull(),
+    /** NULL means missing — never coerce to 0 */
+    statValue: integer("stat_value"),
+    manualVerified: integer("manual_verified").notNull().default(0),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+  },
+  (t) => ({
+    fixtureSideKeyUniq: uniqueIndex("core_fixture_stat_fixture_side_key_uidx").on(
+      t.fixtureId,
+      t.side,
+      t.statKey
+    ),
+    fixtureIdx: index("core_fixture_stat_fixture_idx").on(t.fixtureId),
+  })
+);
+
+export const coreProviderIngestion = pgTable(
+  "core_provider_ingestion",
+  {
+    id: serial("id").primaryKey(),
+    providerName: text("provider_name").notNull(),
+    requestFingerprint: text("request_fingerprint").notNull(),
+    payloadHash: text("payload_hash"),
+    endpoint: text("endpoint"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    fpIdx: index("core_provider_ingestion_fp_idx").on(t.requestFingerprint),
+  })
+);
+
+export const coreLegacyRecordMap = pgTable(
+  "core_legacy_record_map",
+  {
+    id: serial("id").primaryKey(),
+    legacySourceTable: text("legacy_source_table").notNull(),
+    legacyPk: text("legacy_pk").notNull(),
+    canonicalEntityType: text("canonical_entity_type").notNull(),
+    canonicalEntityId: integer("canonical_entity_id").notNull(),
+    verified: integer("verified").notNull().default(1),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    legacyUniq: uniqueIndex("core_legacy_record_map_uidx").on(
+      t.legacySourceTable,
+      t.legacyPk
+    ),
+  })
+);
+
+export const corePredictionRun = pgTable("core_prediction_run", {
+  id: serial("id").primaryKey(),
+  runKey: text("run_key"),
+  modelVersion: text("model_version"),
+  inputSnapshotHash: text("input_snapshot_hash"),
+  metaJson: text("meta_json"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const coreMarketProbability = pgTable(
+  "core_market_probability",
+  {
+    id: serial("id").primaryKey(),
+    predictionRunId: integer("prediction_run_id"),
+    fixtureId: integer("fixture_id"),
+    marketKey: text("market_key").notNull(),
+    selectionKey: text("selection_key").notNull(),
+    probability: real("probability"),
+    traceJson: text("trace_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    runIdx: index("core_market_probability_run_idx").on(t.predictionRunId),
+    fixtureIdx: index("core_market_probability_fixture_idx").on(t.fixtureId),
+  })
+);
+
+export const coreResultTrace = pgTable(
+  "core_result_trace",
+  {
+    id: serial("id").primaryKey(),
+    batchId: text("batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    homeTeamName: text("home_team_name").notNull(),
+    awayTeamName: text("away_team_name").notNull(),
+    matchDate: text("match_date"),
+    /**
+     * pending | matched | filled | ambiguous | unresolved | not_final
+     */
+    status: text("status").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    coreFixtureId: integer("core_fixture_id"),
+    evidenceJson: text("evidence_json"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    batchMatchUniq: uniqueIndex("core_result_trace_batch_match_uidx").on(
+      t.batchId,
+      t.matchId
+    ),
+    statusIdx: index("core_result_trace_status_idx").on(t.status),
+  })
+);
+
+export const coreCoverageAudit = pgTable(
+  "core_coverage_audit",
+  {
+    id: serial("id").primaryKey(),
+    competitionId: integer("competition_id").notNull(),
+    seasonId: integer("season_id").notNull(),
+    expectedFixtures: integer("expected_fixtures"),
+    importedFixtures: integer("imported_fixtures"),
+    withHt: integer("with_ht"),
+    withStats: integer("with_stats"),
+    withCorners: integer("with_corners"),
+    completeness: text("completeness"),
+    inventoryPass: integer("inventory_pass").notNull().default(0),
+    providerHole: integer("provider_hole").notNull().default(0),
+    providerHoleReason: text("provider_hole_reason"),
+    auditedAt: timestamp("audited_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    compSeasonUniq: uniqueIndex("core_coverage_audit_comp_season_uidx").on(
+      t.competitionId,
+      t.seasonId
+    ),
+  })
+);
+
+export const auditDataChangeLog = pgTable(
+  "audit_data_change_log",
+  {
+    id: serial("id").primaryKey(),
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id"),
+    action: text("action").notNull(),
+    diffJson: text("diff_json"),
+    actor: text("actor"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    entityIdx: index("audit_data_change_log_entity_idx").on(
+      t.entityType,
+      t.entityId
+    ),
+    createdIdx: index("audit_data_change_log_created_idx").on(t.createdAt),
+  })
+);
+
+/** Append-only blended analysis run audit (additive). */
+export const coreAnalysisRun = pgTable(
+  "core_analysis_run",
+  {
+    id: serial("id").primaryKey(),
+    pageId: text("page_id").notNull(),
+    mode: text("mode").notNull(),
+    configuredApiWeight: real("configured_api_weight").notNull(),
+    configuredSystemWeight: real("configured_system_weight").notNull(),
+    effectiveApiWeight: real("effective_api_weight").notNull(),
+    effectiveSystemWeight: real("effective_system_weight").notNull(),
+    apiRecordCount: integer("api_record_count").notNull().default(0),
+    systemRecordCount: integer("system_record_count").notNull().default(0),
+    apiDateFrom: text("api_date_from"),
+    apiDateTo: text("api_date_to"),
+    systemDateFrom: text("system_date_from"),
+    systemDateTo: text("system_date_to"),
+    calculationVersion: text("calculation_version").notNull(),
+    status: text("status").notNull(),
+    fallbackReason: text("fallback_reason"),
+    warningsJson: text("warnings_json"),
+    metaJson: text("meta_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pageIdx: index("core_analysis_run_page_idx").on(t.pageId),
+    createdIdx: index("core_analysis_run_created_idx").on(t.createdAt),
+  })
+);
+
+export type CoreCompetition = typeof coreCompetition.$inferSelect;
+export type CoreSeason = typeof coreSeason.$inferSelect;
+export type CoreTeam = typeof coreTeam.$inferSelect;
+export type CoreTeamAlias = typeof coreTeamAlias.$inferSelect;
+export type CoreFixture = typeof coreFixture.$inferSelect;
+export type CoreFixtureStatistic = typeof coreFixtureStatistic.$inferSelect;
+export type CoreLegacyRecordMap = typeof coreLegacyRecordMap.$inferSelect;
+export type CoreResultTrace = typeof coreResultTrace.$inferSelect;
+export type CoreCoverageAudit = typeof coreCoverageAudit.$inferSelect;
+export type AuditDataChangeLog = typeof auditDataChangeLog.$inferSelect;
+export type CoreAnalysisRun = typeof coreAnalysisRun.$inferSelect;

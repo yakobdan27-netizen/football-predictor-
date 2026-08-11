@@ -85,7 +85,7 @@ export function CombinedOddsExtendedApp() {
         <p className="page-sub">
           Only the four new combo families: Result + Total, At Least One Team Not To Score (BTTS No) + Total,
           Double Chance + BTTS Yes, and Double Chance + Total. Every match from every saved batch is included.{" "}
-          <Link href="/combined-odds" style={{ color: "var(--accent)" }}>
+          <Link href="/combo-centre?tab=combined-odd" style={{ color: "var(--accent)" }}>
             ← Original combos
           </Link>
         </p>
@@ -93,7 +93,7 @@ export function CombinedOddsExtendedApp() {
 
       <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "1rem" }}>
         Edit the enabled-combo checklist (including these new ones) on the{" "}
-        <Link href="/settings" style={{ color: "var(--accent)" }}>
+        <Link href="/settings-guide?tab=settings" style={{ color: "var(--accent)" }}>
           Settings
         </Link>{" "}
         page.

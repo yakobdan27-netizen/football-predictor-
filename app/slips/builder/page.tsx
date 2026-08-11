@@ -1,10 +1,9 @@
-import { Suspense } from "react";
-import { SlipBuilderApp } from "@/components/slip-builder/slip-builder-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function SlipBuilderPage() {
-  return (
-    <Suspense fallback={<p className="page-sub">Loading…</p>}>
-      <SlipBuilderApp />
-    </Suspense>
-  );
+export default async function SlipBuilderPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/slips/builder", searchParams);
 }

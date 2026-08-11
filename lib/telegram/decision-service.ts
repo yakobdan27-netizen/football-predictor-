@@ -244,7 +244,8 @@ export function buildTelegramBatch(params: {
         homeTeam: m.homeTeam,
         awayTeam: m.awayTeam,
         league: m.league,
-        matchDate: m.date,
+        // Date / fixture id optional — name-pair trace fills results later.
+        matchDate: m.date || undefined,
         apiFixtureId: m.apiFixtureId,
         fixtureStatus: m.fixtureStatus,
         homeApiTeamId: m.homeApiTeamId,
@@ -252,6 +253,8 @@ export function buildTelegramBatch(params: {
         predictions,
         actualResults: {},
         scored: {},
+        resultFilled: false,
+        resultTraceState: "PENDING" as const,
       };
     }),
   };

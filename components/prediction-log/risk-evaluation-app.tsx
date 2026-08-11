@@ -199,7 +199,7 @@ export function RiskEvaluationApp() {
             </div>
           ))}
           <div style={{ marginTop: "0.35rem" }}>
-            <Link href="/settings" style={{ fontSize: "0.8125rem" }}>
+            <Link href="/settings-guide?tab=settings" style={{ fontSize: "0.8125rem" }}>
               Edit bankroll settings →
             </Link>
           </div>

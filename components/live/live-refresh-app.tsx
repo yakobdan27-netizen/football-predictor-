@@ -384,7 +384,7 @@ export function LiveRefreshApp() {
       >
         <div>
           <p className="page-sub" style={{ margin: "0 0 0.35rem" }}>
-            <Link href="/live" style={{ textDecoration: "underline" }}>
+            <Link href="/match-centre?tab=live-fixtures" style={{ textDecoration: "underline" }}>
               ← Live &amp; Fixtures
             </Link>
           </p>

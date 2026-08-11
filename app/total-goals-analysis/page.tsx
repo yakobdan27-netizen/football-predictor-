@@ -1,10 +1,9 @@
-import { Suspense } from "react";
-import { TotalGoalsApp } from "@/components/prediction-log/total-goals-app";
+import { redirectLegacyPath } from "@/lib/navigation/legacy-redirect";
 
-export default function TotalGoalsAnalysisPage() {
-  return (
-    <Suspense fallback={<p className="page-sub">Loading…</p>}>
-      <TotalGoalsApp />
-    </Suspense>
-  );
+export default async function TotalGoalsAnalysisPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await redirectLegacyPath("/total-goals-analysis", searchParams);
 }
