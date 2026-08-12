@@ -37,7 +37,10 @@ function fallbacksFromMatch(
   const out: DecisionMarketCandidate[] = [];
   for (const [key, pred] of Object.entries(match.predictions)) {
     if (!pred?.prediction) continue;
-    if (pred.insufficientData) continue;
+    const insuff =
+      "insufficientData" in pred &&
+      Boolean((pred as { insufficientData?: boolean }).insufficientData);
+    if (insuff) continue;
     const conf = pred.confidence ?? 0;
     if (!(conf > 0)) continue;
     const marketKey = key as LogMarketKey;
