@@ -62,7 +62,9 @@ export function applyCoherentMarketConfidences(
         m.marketKey,
         m.prediction,
         m.line,
-        grid
+        grid,
+        opts.match.homeTeam,
+        opts.match.awayTeam
       );
       if (pct != null) {
         return { ...m, confidence: clampConfidence(pct) };

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { RecommendationApp } from "@/components/prediction-log/recommendation-app";
 
 export default function RecommendationPage() {
@@ -8,7 +9,9 @@ export default function RecommendationPage() {
         Batch decision sheet — system pick, selected market, and better alternatives at a glance.
         Generate recommendations and open full analysis on Stats.
       </p>
-      <RecommendationApp />
+      <Suspense fallback={<p className="page-sub">Loading…</p>}>
+        <RecommendationApp />
+      </Suspense>
     </div>
   );
 }

@@ -2,8 +2,10 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
+import { BatchSelect } from "./batch-select";
 import { RecommendationBatchLayout } from "./recommendation-batch-layout";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { useSelectedBatchId } from "./use-selected-batch-id";
 
 export function RecommendationApp() {
   const { ready, error, batches } = usePredictionLogData();
@@ -21,6 +23,8 @@ export function RecommendationApp() {
     [batches]
   );
 
+  const { batchId, setBatchId, selected } = useSelectedBatchId(recommendedBatches);
+
   if (!ready) {
     return <p className="page-sub">Loading…</p>;
   }
@@ -36,8 +40,8 @@ export function RecommendationApp() {
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Recommendation</h1>
         <p className="page-sub">
-          One correct score, one better market, and one best combined prediction per batch —
-          advisory only. Recommendations appear automatically when you save a batch.
+          One correct score, one better market, and one best combined prediction for the selected
+          batch — advisory only. Recommendations appear automatically when you save a batch.
         </p>
       </div>
 
@@ -50,24 +54,48 @@ export function RecommendationApp() {
           — the recommendation is ready as soon as the batch is saved.
         </p>
       ) : (
-        <div style={{ display: "grid", gap: "1.5rem" }}>
-          {recommendedBatches.map((batch) => (
-            <div key={batch.id} style={{ display: "grid", gap: "0.5rem" }}>
+        <>
+          <div
+            className="card"
+            style={{
+              marginBottom: "1rem",
+              display: "flex",
+              gap: "0.75rem",
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <BatchSelect
+              batches={recommendedBatches}
+              value={batchId}
+              onChange={setBatchId}
+              emptyLabel="No recommendations"
+            />
+          </div>
+
+          {!selected ? (
+            <p className="page-sub">Select a batch to view its recommendation.</p>
+          ) : (
+            <div style={{ display: "grid", gap: "0.5rem" }}>
               <RecommendationBatchLayout
-                batch={batch}
+                batch={selected}
                 sourceBatch={
-                  batch.sourceBatchId ? batchById.get(batch.sourceBatchId) ?? null : null
+                  selected.sourceBatchId
+                    ? batchById.get(selected.sourceBatchId) ?? null
+                    : null
                 }
               />
               <Link
-                href={`/analysis?batch=${encodeURIComponent(batch.recommendationId ?? batch.id)}`}
+                href={`/analysis?batch=${encodeURIComponent(
+                  selected.recommendationId ?? selected.id
+                )}`}
                 className="reco-analysis-link"
               >
                 Open full analysis (grids & Bayesian detail) →
               </Link>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

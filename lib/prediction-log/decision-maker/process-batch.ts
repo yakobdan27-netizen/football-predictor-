@@ -37,6 +37,9 @@ function fallbacksFromMatch(
   const out: DecisionMarketCandidate[] = [];
   for (const [key, pred] of Object.entries(match.predictions)) {
     if (!pred?.prediction) continue;
+    if (pred.insufficientData) continue;
+    const conf = pred.confidence ?? 0;
+    if (!(conf > 0)) continue;
     const marketKey = key as LogMarketKey;
     const def = LOG_MARKET_MAP[marketKey];
     if (!def) continue;
@@ -51,7 +54,7 @@ function fallbacksFromMatch(
       marketKey,
       label: def.label,
       prediction: label,
-      confidence: clampConfidence(pred.confidence ?? 50),
+      confidence: clampConfidence(conf),
       category: categoryForLogMarket(marketKey),
       pageId: "prediction-log",
       pageLabel: "Prediction Log",
@@ -138,7 +141,12 @@ export function processBatchDecisions(params: {
     const result = generateTopThreeMarkets(
       matchData,
       fallbacksFromMatch(batch, match),
-      { leagueName: league, leaguePriors }
+      {
+        leagueName: league,
+        leaguePriors,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+      }
     );
     result.markets = applyCoherentMarketConfidences(result.markets, {
       batch,

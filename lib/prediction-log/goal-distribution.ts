@@ -9,9 +9,11 @@ import {
   bttsFromMatrix,
   buildScoreMatrix,
   homeGoalsPmf,
+  outcomeProbsFromMatrix,
   overUnderFromMatrix,
   totalGoalsPmf,
 } from "@/lib/predictor/score-matrix";
+import { standardizeTeamName } from "@/lib/data/team-names";
 import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
 import { poissonOverLine } from "./poisson-ou";
 
@@ -139,7 +141,9 @@ export function eventProbPctFromScoreGrid(
   marketKey: string,
   prediction: string,
   line: number | undefined,
-  grid: number[][]
+  grid: number[][],
+  homeTeam?: string,
+  awayTeam?: string
 ): number | null {
   const key = marketKey.toLowerCase();
   if (key === "total_goals_ou") {
@@ -157,6 +161,20 @@ export function eventProbPctFromScoreGrid(
   if (key === "btts") {
     const [yes, no] = bttsYesNo(grid);
     return (isYesPrediction(prediction) ? yes : no) * 100;
+  }
+  if (key === "1x2" || key === "ht_1x2") {
+    const outcomes = outcomeProbsFromMatrix(grid);
+    const p = prediction.trim().toLowerCase().replace(/\s+/g, " ");
+    if (p === "draw" || p === "x" || p === "tie") return outcomes.draw * 100;
+    if (p === "home" || p === "1" || p === "home win") return outcomes.home * 100;
+    if (p === "away" || p === "2" || p === "away win") return outcomes.away * 100;
+    if (homeTeam && standardizeTeamName(prediction).toLowerCase() === standardizeTeamName(homeTeam).toLowerCase()) {
+      return outcomes.home * 100;
+    }
+    if (awayTeam && standardizeTeamName(prediction).toLowerCase() === standardizeTeamName(awayTeam).toLowerCase()) {
+      return outcomes.away * 100;
+    }
+    return null;
   }
   return null;
 }

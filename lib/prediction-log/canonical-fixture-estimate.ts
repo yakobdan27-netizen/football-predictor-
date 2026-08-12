@@ -3,6 +3,7 @@
  * Blend λ inputs (60/40) → one FT score matrix + half joint → all markets.
  * Decision Maker merge/settlement must NOT call this for page-weighting.
  */
+import { standardizeTeamName } from "@/lib/data/team-names";
 import {
   computeCanonicalHshPrediction,
   hshPredictionToLadderResult,
@@ -609,6 +610,44 @@ export function cfeDisplayProbPct(
     return (yes ? d.diehYes : d.diehNo) * 100;
   }
 
+  if (key === "1x2" || key === "ht_1x2") {
+    if (pred === "draw" || pred === "x" || pred === "tie") return est.markets.draw * 100;
+    if (pred === "home" || pred === "1" || pred === "home win") {
+      return est.markets.home * 100;
+    }
+    if (pred === "away" || pred === "2" || pred === "away win") {
+      return est.markets.away * 100;
+    }
+    return null;
+  }
+
+  return null;
+}
+
+/**
+ * 1X2 display % from CFE, resolving Home/Away/team-name predictions.
+ */
+export function cfeMatchOutcomePct(
+  est: CanonicalFixtureEstimate,
+  prediction: string,
+  homeTeam: string,
+  awayTeam: string
+): number | null {
+  const p = prediction.trim().toLowerCase().replace(/\s+/g, " ");
+  if (p === "draw" || p === "x" || p === "tie" || p === "1x2 draw") {
+    return est.markets.draw * 100;
+  }
+  if (p === "home" || p === "1" || p === "home win" || p === "1x2 home") {
+    return est.markets.home * 100;
+  }
+  if (p === "away" || p === "2" || p === "away win" || p === "1x2 away") {
+    return est.markets.away * 100;
+  }
+  const h = standardizeTeamName(homeTeam).trim().toLowerCase();
+  const a = standardizeTeamName(awayTeam).trim().toLowerCase();
+  const t = standardizeTeamName(prediction).trim().toLowerCase();
+  if (t && t === h) return est.markets.home * 100;
+  if (t && t === a) return est.markets.away * 100;
   return null;
 }
 

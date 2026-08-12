@@ -286,9 +286,7 @@ function DecisionRow({
 
       <tr className="dm-mobile-row">
         <td colSpan={9} style={{ padding: "0.5rem 0" }}>
-          <button
-            type="button"
-            onClick={onToggle}
+          <div
             style={{
               width: "100%",
               textAlign: "left",
@@ -296,10 +294,25 @@ function DecisionRow({
               borderRadius: 12,
               padding: "0.85rem",
               background: "var(--surface)",
-              cursor: "pointer",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded={expanded}
+              style={{
+                display: "flex",
+                width: "100%",
+                justifyContent: "space-between",
+                gap: 8,
+                textAlign: "left",
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                cursor: "pointer",
+                color: "inherit",
+              }}
+            >
               <div>
                 <div style={{ fontWeight: 700 }}>
                   {row.match.homeTeam} vs {row.match.awayTeam}
@@ -312,7 +325,7 @@ function DecisionRow({
               <span style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
                 {expanded ? "▴" : "▾"}
               </span>
-            </div>
+            </button>
             {m1 && (
               <div style={{ marginTop: "0.65rem" }}>
                 <MarketCell market={m1} />
@@ -338,7 +351,7 @@ function DecisionRow({
                 />
               </div>
             )}
-          </button>
+          </div>
         </td>
       </tr>
     </>

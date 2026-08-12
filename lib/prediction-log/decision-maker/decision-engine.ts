@@ -102,15 +102,19 @@ function applyPriorsToSources(
 
 function mergeCandidates(
   sources: MatchSourceBundle[],
-  weights: Map<string, number>
+  weights: Map<string, number>,
+  matchTeams?: { homeTeam: string; awayTeam: string }
 ): ScoredDecisionMarket[] {
   const byId = new Map<string, ScoredDecisionMarket>();
+  const idOpts = matchTeams
+    ? { homeTeam: matchTeams.homeTeam, awayTeam: matchTeams.awayTeam }
+    : undefined;
 
   for (const source of sources) {
     const w = weights.get(source.pageId);
     if (w == null) continue;
     for (const m of source.markets) {
-      const id = marketIdentity(m);
+      const id = marketIdentity(m, idOpts);
       const contribution = m.confidence * w;
       const withPrior = m as CandidateWithPrior;
       const priorAlign = withPrior.priorAlign ?? 0;
@@ -156,7 +160,8 @@ function mergeCandidates(
  * Near-ties prefer league-prior alignment.
  */
 export function selectDiverseTopThree(
-  scored: ScoredDecisionMarket[]
+  scored: ScoredDecisionMarket[],
+  matchTeams?: { homeTeam: string; awayTeam: string }
 ): ScoredDecisionMarket[] {
   const eligible = scored.filter((m) => m.confidence >= DECISION_MIN_CONFIDENCE);
   const pool = eligible.length > 0 ? eligible : scored;
@@ -165,9 +170,12 @@ export function selectDiverseTopThree(
   const picked: ScoredDecisionMarket[] = [];
   const used = new Set<string>();
   const usedBinaryGroups = new Set<string>();
+  const idOpts = matchTeams
+    ? { homeTeam: matchTeams.homeTeam, awayTeam: matchTeams.awayTeam }
+    : undefined;
 
   const isBlocked = (m: ScoredDecisionMarket) => {
-    const id = marketIdentity(m);
+    const id = marketIdentity(m, idOpts);
     if (used.has(id)) return true;
     const group = binaryMarketGroupKey(m);
     if (group && usedBinaryGroups.has(group)) return true;
@@ -176,7 +184,7 @@ export function selectDiverseTopThree(
 
   const take = (m: ScoredDecisionMarket | undefined) => {
     if (!m || isBlocked(m)) return;
-    used.add(marketIdentity(m));
+    used.add(marketIdentity(m, idOpts));
     const group = binaryMarketGroupKey(m);
     if (group) usedBinaryGroups.add(group);
     picked.push(m);
@@ -213,17 +221,25 @@ export function selectDiverseTopThree(
 
 export function ensureThreeMarkets(
   markets: ScoredDecisionMarket[],
-  fallbacks: DecisionMarketCandidate[]
+  fallbacks: DecisionMarketCandidate[],
+  matchTeams?: { homeTeam: string; awayTeam: string }
 ): ScoredDecisionMarket[] {
   const out = [...markets];
-  const used = new Set(out.map(marketIdentity));
+  const idOpts = matchTeams
+    ? { homeTeam: matchTeams.homeTeam, awayTeam: matchTeams.awayTeam }
+    : undefined;
+  const used = new Set(out.map((m) => marketIdentity(m, idOpts)));
   const usedBinaryGroups = new Set(
     out.map(binaryMarketGroupKey).filter((g): g is string => g != null)
   );
 
   for (const f of fallbacks) {
     if (out.length >= 3) break;
-    const id = marketIdentity(f);
+    // Never pad with zero/unavailable confidence — that invents picks.
+    if (!(f.confidence > 0) || /unavailable|insufficient/i.test(f.prediction)) {
+      continue;
+    }
+    const id = marketIdentity(f, idOpts);
     if (used.has(id)) continue;
     const group = binaryMarketGroupKey(f);
     if (group && usedBinaryGroups.has(group)) continue;
@@ -261,6 +277,8 @@ export function generateTopThreeMarkets(
   opts?: {
     leagueName?: string;
     leaguePriors?: LeaguePriorsStore | null;
+    homeTeam?: string;
+    awayTeam?: string;
   }
 ): {
   markets: ScoredDecisionMarket[];
@@ -272,10 +290,14 @@ export function generateTopThreeMarkets(
     opts?.leagueName != null
       ? applyPriorsToSources(matchData.sources, opts.leagueName, opts.leaguePriors)
       : matchData.sources;
+  const matchTeams =
+    opts?.homeTeam && opts?.awayTeam
+      ? { homeTeam: opts.homeTeam, awayTeam: opts.awayTeam }
+      : undefined;
   const weights = normalisedSourceWeights(sources);
-  const scored = mergeCandidates(sources, weights);
-  const diverse = selectDiverseTopThree(scored);
-  const markets = ensureThreeMarkets(diverse, fallbacks);
+  const scored = mergeCandidates(sources, weights, matchTeams);
+  const diverse = selectDiverseTopThree(scored, matchTeams);
+  const markets = ensureThreeMarkets(diverse, fallbacks, matchTeams);
 
   const okSources = matchData.sources.filter((s) => s.ok);
   const missingSources = matchData.sources

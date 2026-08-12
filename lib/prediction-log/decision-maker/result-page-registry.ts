@@ -14,7 +14,10 @@ import { getSelectedPickForMatch } from "../snapshot-readers";
 import type { LogMarketKey } from "../types";
 import { bandToConfidence, clampConfidence } from "./confidence";
 import { eventProbPctFromScoreGrid } from "../goal-distribution";
-import { cfeDisplayProbPct } from "../canonical-fixture-estimate";
+import {
+  cfeDisplayProbPct,
+  cfeMatchOutcomePct,
+} from "../canonical-fixture-estimate";
 import { categoryForLogMarket } from "./market-category";
 import type {
   DecisionFetchContext,
@@ -39,6 +42,8 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
   const selected = getSelectedPickForMatch(rm);
   if (!selected) return [];
   const { marketKey, pick } = selected;
+  // Tangible-data gate: never surface insufficient / empty picks.
+  if (pick.insufficientData) return [];
   const label = predictionLabel(
     marketKey,
     pick.prediction,
@@ -46,19 +51,35 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
     ctx.match.homeTeam,
     ctx.match.awayTeam
   );
-  // Prefer CFE for total goals / DIEH so reco matches analysis pages.
   const cfe = ctx.caches.cfeByMatchId.get(ctx.match.id);
-  const cfePct = cfe
-    ? cfeDisplayProbPct(cfe, marketKey, pick.prediction, pick.line)
-    : null;
+  let cfePct =
+    cfe != null
+      ? cfeDisplayProbPct(cfe, marketKey, pick.prediction, pick.line)
+      : null;
+  if (cfePct == null && cfe != null && (marketKey === "1x2" || marketKey === "ht_1x2")) {
+    cfePct = cfeMatchOutcomePct(
+      cfe,
+      label,
+      ctx.match.homeTeam,
+      ctx.match.awayTeam
+    );
+  }
   const grid = pick.mathSnapshot?.statLayer?.scoreGrid;
   const distPct =
     grid != null
-      ? eventProbPctFromScoreGrid(marketKey, label, pick.line, grid)
+      ? eventProbPctFromScoreGrid(
+          marketKey,
+          label,
+          pick.line,
+          grid,
+          ctx.match.homeTeam,
+          ctx.match.awayTeam
+        )
       : null;
   const conf = clampConfidence(
     cfePct ?? distPct ?? pick.hybridConfidence ?? pick.pFinal ?? pick.confidence ?? 0
   );
+  if (!(conf > 0)) return [];
   const def = LOG_MARKET_MAP[marketKey];
   return [
     {
@@ -76,42 +97,18 @@ function fromRecommendation(ctx: DecisionFetchContext): DecisionMarketCandidate[
 
 function fromCorners(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   const p = ctx.caches.cornersByMatchId.get(ctx.match.id);
-  if (!p) {
-    return [
-      {
-        marketKey: "corners_ou",
-        label: "Total corners O/U",
-        prediction: "stats unavailable (API plan or not synced)",
-        confidence: 0,
-        category: "corners",
-        pageId: "corners-analysis",
-        pageLabel: "Corners Analysis",
-        line: 9.5,
-      },
-    ];
+  if (!p || p.lean === "lean_none") {
+    // No tangible lean — do not invent a corners pick for top-3.
+    return [];
   }
-  if (p.lean === "lean_none") {
-    return [
-      {
-        marketKey: "corners_ou",
-        label: "Total corners O/U",
-        prediction:
-          p.unavailableReason ??
-          "stats unavailable (API plan or not synced)",
-        confidence: Math.round(p.topProbability * 100),
-        category: "corners",
-        pageId: "corners-analysis",
-        pageLabel: "Corners Analysis",
-        line: 9.5,
-      },
-    ];
-  }
+  const conf = bandToConfidence(p.confidence, p.topProbability);
+  if (!(conf > 0)) return [];
   return [
     {
       marketKey: "corners_ou",
       label: "Total corners O/U",
       prediction: leanLabel(p.lean),
-      confidence: bandToConfidence(p.confidence, p.topProbability),
+      confidence: conf,
       category: "corners",
       pageId: "corners-analysis",
       pageLabel: "Corners Analysis",
@@ -123,12 +120,16 @@ function fromCorners(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
 function fromHsh(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   const p = ctx.caches.hshByMatchId.get(ctx.match.id);
   if (!p) return [];
+  // Seed-only / low band without probability → skip.
+  if (p.confidence === "low" && !(p.topProbability > 0)) return [];
+  const conf = bandToConfidence(p.confidence, p.topProbability);
+  if (!(conf > 0)) return [];
   return [
     {
       marketKey: "hsh",
       label: "Half goals (1H vs 2H)",
       prediction: p.recommended === "Tie" ? "Tie" : `${p.recommended} more goals`,
-      confidence: bandToConfidence(p.confidence, p.topProbability),
+      confidence: conf,
       category: "specialized",
       pageId: "highest-scoring-half",
       pageLabel: "Half Goals",
@@ -159,11 +160,8 @@ function fromDieh(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
 function fromTotalGoals(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   const est = ctx.caches.cfeByMatchId.get(ctx.match.id);
   if (!est) return [];
-  const line = est.markets.totalGoals.lines[2.5];
-  // Byte-identical with Total Goals page / CFE markets.over25
   const over = est.markets.over25;
   const under = est.markets.under25;
-  void line;
   const takeOver = over >= under;
   return [
     {
@@ -179,46 +177,55 @@ function fromTotalGoals(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
   ];
 }
 
+/**
+ * League seed analysis — only when CFE is present (tangible fixture estimate).
+ * Prefer CFE 1X2 / BTTS so seed Poisson never contradicts CFE at equal %.
+ */
 function fromLeagueAnalysis(ctx: DecisionFetchContext): DecisionMarketCandidate[] {
-  const league = matchLeague(ctx.match, ctx.batch.league);
-  const a = getLeagueMatchupAnalysis(ctx.match.homeTeam, ctx.match.awayTeam, league);
-  if (!a) return [];
-  const out: DecisionMarketCandidate[] = [];
+  const cfe = ctx.caches.cfeByMatchId.get(ctx.match.id);
+  // Without CFE there is no tangible fixture estimate — skip seed-only pubs.
+  if (!cfe) return [];
 
-  const w = a.winProbability;
-  const bestOutcome =
-    w.home >= w.draw && w.home >= w.away
-      ? { key: "home", label: "Home", conf: w.home }
-      : w.away >= w.draw
-        ? { key: "away", label: "Away", conf: w.away }
-        : { key: "draw", label: "Draw", conf: w.draw };
+  const out: DecisionMarketCandidate[] = [];
+  const home = cfe.markets.home;
+  const draw = cfe.markets.draw;
+  const away = cfe.markets.away;
+  const best =
+    home >= draw && home >= away
+      ? { side: "home" as const, conf: home, label: ctx.match.homeTeam }
+      : away >= draw
+        ? { side: "away" as const, conf: away, label: ctx.match.awayTeam }
+        : { side: "draw" as const, conf: draw, label: "Draw" };
+
   out.push({
     marketKey: "1x2",
     label: "Match result (1X2)",
-    prediction: bestOutcome.label,
-    confidence: clampConfidence(bestOutcome.conf),
+    prediction: best.label,
+    confidence: clampConfidence(best.conf * 100),
     category: "goals",
     pageId: "league-analysis",
     pageLabel: "League Analysis",
   });
 
-  // total_goals_ou now published by total-goals-analysis (CFE) — not league-analysis.
+  const bttsYes = cfe.markets.bttsYes;
+  const bttsNo = cfe.markets.bttsNo;
+  if (bttsYes != null && bttsNo != null) {
+    const takeYes = bttsYes >= bttsNo;
+    out.push({
+      marketKey: "btts",
+      label: "Both teams to score",
+      prediction: takeYes ? "BTTS Yes" : "BTTS No",
+      confidence: clampConfidence((takeYes ? bttsYes : bttsNo) * 100),
+      category: "goals",
+      pageId: "league-analysis",
+      pageLabel: "League Analysis",
+    });
+  }
 
-  const btts =
-    a.bothTeamsToScore.yes >= a.bothTeamsToScore.no
-      ? { pred: "BTTS Yes", conf: a.bothTeamsToScore.yes }
-      : { pred: "BTTS No", conf: a.bothTeamsToScore.no };
-  out.push({
-    marketKey: "btts",
-    label: "Both teams to score",
-    prediction: btts.pred,
-    confidence: clampConfidence(btts.conf),
-    category: "goals",
-    pageId: "league-analysis",
-    pageLabel: "League Analysis",
-  });
-
-  if (a.mostLikelyProbPct > 0) {
+  // Correct score still from seed grid when available (reference), low weight via page.
+  const league = matchLeague(ctx.match, ctx.batch.league);
+  const a = getLeagueMatchupAnalysis(ctx.match.homeTeam, ctx.match.awayTeam, league);
+  if (a && a.mostLikelyProbPct > 0) {
     out.push({
       marketKey: "correct_score",
       label: "Correct score",

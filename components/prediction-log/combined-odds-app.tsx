@@ -6,10 +6,12 @@ import { evaluateBatchCombos } from "@/lib/prediction-log/combo-selection";
 import { ensureComboRecommendedShell } from "@/lib/prediction-log/prepare-batch-combos";
 import { upsertBatch } from "@/lib/prediction-log/storage";
 import type { PredictionBatch, RecommendationTier } from "@/lib/prediction-log/types";
+import { BatchSelect } from "./batch-select";
 import { CombinedOddsBatchCard } from "./combined-odds-batch-card";
 import { CombinedOddsSettingsPanel } from "./combined-odds-settings-panel";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { usePreparedComboBatches } from "./use-prepared-combo-batches";
+import { useSelectedBatchId } from "./use-selected-batch-id";
 
 const TIER_OPTIONS: Array<{ value: RecommendationTier; label: string }> = [
   { value: "safe", label: "Extreme Safe" },
@@ -34,22 +36,31 @@ export function CombinedOddsApp() {
   const [savingOdds, setSavingOdds] = useState(false);
   const { preparedBatches, preparing } = usePreparedComboBatches(batches);
 
-  const evaluated = useMemo(
+  const sortedEligible = useMemo(
     () =>
-      preparedBatches.map((batch) => ({
-        batch,
-        ...evaluateBatchCombos(
-          batch,
-          comboSettings,
-          analysis,
-          batches,
-          teamsQuality,
-          learnerStats,
-          tier
-        ),
-      })),
-    [preparedBatches, comboSettings, analysis, batches, teamsQuality, learnerStats, tier]
+      [...preparedBatches].sort(
+        (a, b) => b.createdAt.localeCompare(a.createdAt) || b.date.localeCompare(a.date)
+      ),
+    [preparedBatches]
   );
+
+  const { batchId, setBatchId, selected } = useSelectedBatchId(sortedEligible);
+
+  const evaluated = useMemo(() => {
+    if (!selected) return null;
+    return {
+      batch: selected,
+      ...evaluateBatchCombos(
+        selected,
+        comboSettings,
+        analysis,
+        batches,
+        teamsQuality,
+        learnerStats,
+        tier
+      ),
+    };
+  }, [selected, comboSettings, analysis, batches, teamsQuality, learnerStats, tier]);
 
   if (!ready) {
     return <p className="page-sub">Loading…</p>;
@@ -90,7 +101,7 @@ export function CombinedOddsApp() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Combined Odds</h1>
         <p className="page-sub">
-          Combo picks for every match in every saved batch — probabilities from real club/hist
+          Combo picks for every match in the selected batch — probabilities from real club/hist
           samples only (insufficient-data legs excluded).{" "}
           <Link href="/recommendation" style={{ color: "var(--accent)" }}>
             Single-market picks →
@@ -102,6 +113,24 @@ export function CombinedOddsApp() {
       </div>
 
       <CombinedOddsSettingsPanel settings={comboSettings} onChange={setComboOddsSettings} />
+
+      <div
+        className="card"
+        style={{
+          marginBottom: "1rem",
+          display: "flex",
+          gap: "0.75rem",
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <BatchSelect
+          batches={sortedEligible}
+          value={batchId}
+          onChange={setBatchId}
+          emptyLabel="No batches"
+        />
+      </div>
 
       <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         {TIER_OPTIONS.map((opt) => (
@@ -126,7 +155,7 @@ export function CombinedOddsApp() {
         </p>
       )}
 
-      {evaluated.length === 0 ? (
+      {sortedEligible.length === 0 ? (
         <p className="page-sub">
           No batches with matches yet. Save a batch from the{" "}
           <Link href="/prediction-log" style={{ color: "var(--accent)" }}>
@@ -134,17 +163,18 @@ export function CombinedOddsApp() {
           </Link>{" "}
           first.
         </p>
+      ) : !evaluated ? (
+        <p className="page-sub">Select a batch to view combined-odds results.</p>
       ) : (
-        evaluated.map(({ batch, matches, accumulator }) => (
-          <CombinedOddsBatchCard
-            key={batch.id}
-            batch={batch}
-            tier={tier}
-            matches={matches}
-            accumulator={accumulator}
-            onComboOddsChange={(matchId, odds) => handleComboOddsChange(batch, matchId, odds)}
-          />
-        ))
+        <CombinedOddsBatchCard
+          batch={evaluated.batch}
+          tier={tier}
+          matches={evaluated.matches}
+          accumulator={evaluated.accumulator}
+          onComboOddsChange={(matchId, odds) =>
+            handleComboOddsChange(evaluated.batch, matchId, odds)
+          }
+        />
       )}
     </div>
   );

@@ -14,18 +14,20 @@ export function bandToConfidence(
       ? clampConfidence(topProbability <= 1 ? topProbability * 100 : topProbability)
       : null;
 
+  // Prefer tangible probability; band is a quality label only — never inflate %.
   switch (band) {
     case "very_high":
-      return Math.max(fromProb ?? 0, 88);
+      return fromProb ?? 88;
     case "high":
-      return Math.max(fromProb ?? 0, 80);
+      return fromProb ?? 80;
     case "medium":
     case "moderate":
-      return Math.max(fromProb ?? 0, 65);
+      return fromProb ?? 65;
     case "low":
-      return fromProb ?? 45;
+      // Cap soft floors so seed/low never looks like a green 80%+ pick.
+      return fromProb != null ? Math.min(fromProb, 55) : 40;
     default:
-      return fromProb ?? 50;
+      return fromProb ?? 0;
   }
 }
 

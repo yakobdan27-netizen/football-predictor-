@@ -13,6 +13,7 @@ import type {
   ScoredDecisionMarket,
 } from "./types";
 import { listRegisteredResultPages } from "./result-page-registry";
+import { marketIdentity } from "./market-category";
 
 function mk(
   partial: Partial<ScoredDecisionMarket> &
@@ -346,4 +347,183 @@ test("ensureThreeMarkets fallbacks respect binary mutex", () => {
   const out = ensureThreeMarkets(one, fallbacks);
   assert.equal(out.filter((m) => m.marketKey === "total_goals_ou").length, 1);
   assert.ok(out.some((m) => m.marketKey === "corners_ou"));
+});
+
+test("1X2 exclusivity: Inter win and Monza win cannot both appear (Inter vs Monza)", () => {
+  const teams = { homeTeam: "Inter", awayTeam: "Monza" };
+  const scored = [
+    mk({
+      marketKey: "1x2",
+      prediction: "Inter",
+      label: "1X2",
+      category: "goals",
+      confidence: 82,
+      totalScore: 40,
+    }),
+    mk({
+      marketKey: "1x2",
+      prediction: "Monza",
+      label: "1X2",
+      category: "goals",
+      confidence: 82,
+      totalScore: 39,
+    }),
+    mk({
+      marketKey: "corners_ou",
+      prediction: "Over 9.5",
+      category: "corners",
+      confidence: 40,
+      totalScore: 8,
+      line: 9.5,
+    }),
+    mk({
+      marketKey: "hsh",
+      prediction: "2H more goals",
+      category: "specialized",
+      confidence: 40,
+      totalScore: 7,
+    }),
+  ];
+  const top = selectDiverseTopThree(scored, teams);
+  const ones = top.filter((m) => m.marketKey === "1x2");
+  assert.equal(ones.length, 1, "exactly one 1x2 side");
+  assert.equal(ones[0]!.prediction, "Inter");
+});
+
+test("1X2 exclusivity: Home label and Away team name cannot both appear", () => {
+  const teams = { homeTeam: "Inter", awayTeam: "Monza" };
+  const scored = [
+    mk({
+      marketKey: "1x2",
+      prediction: "Home",
+      category: "goals",
+      confidence: 82,
+      totalScore: 40,
+    }),
+    mk({
+      marketKey: "1x2",
+      prediction: "Monza",
+      category: "goals",
+      confidence: 82,
+      totalScore: 39,
+    }),
+    mk({
+      marketKey: "total_goals_ou",
+      prediction: "Over 2.5",
+      category: "goals",
+      confidence: 70,
+      totalScore: 20,
+      line: 2.5,
+    }),
+    mk({
+      marketKey: "corners_ou",
+      prediction: "Under 9.5",
+      category: "corners",
+      confidence: 65,
+      totalScore: 12,
+      line: 9.5,
+    }),
+    mk({
+      marketKey: "hsh",
+      prediction: "1H more goals",
+      category: "specialized",
+      confidence: 62,
+      totalScore: 10,
+    }),
+  ];
+  const top = selectDiverseTopThree(scored, teams);
+  assert.equal(top.filter((m) => m.marketKey === "1x2").length, 1);
+});
+
+test("1X2 Home and Inter merge as same identity when teams provided", () => {
+  const a = marketIdentity(
+    { marketKey: "1x2", prediction: "Home" },
+    { homeTeam: "Inter", awayTeam: "Monza" }
+  );
+  const b = marketIdentity(
+    { marketKey: "1x2", prediction: "Inter" },
+    { homeTeam: "Inter", awayTeam: "Monza" }
+  );
+  assert.equal(a, b);
+});
+
+test("HSH 1H and 2H cannot both appear in top-3", () => {
+  const scored = [
+    mk({
+      marketKey: "hsh",
+      prediction: "1H more goals",
+      category: "specialized",
+      confidence: 70,
+      totalScore: 20,
+    }),
+    mk({
+      marketKey: "hsh",
+      prediction: "2H more goals",
+      category: "specialized",
+      confidence: 68,
+      totalScore: 18,
+    }),
+    mk({
+      marketKey: "1x2",
+      prediction: "Home",
+      category: "goals",
+      confidence: 75,
+      totalScore: 30,
+    }),
+    mk({
+      marketKey: "corners_ou",
+      prediction: "Over 9.5",
+      category: "corners",
+      confidence: 65,
+      totalScore: 12,
+      line: 9.5,
+    }),
+  ];
+  const top = selectDiverseTopThree(scored);
+  assert.equal(top.filter((m) => m.marketKey === "hsh").length, 1);
+});
+
+test("fallbacks cannot add opposite 1X2 side", () => {
+  const teams = { homeTeam: "Inter", awayTeam: "Monza" };
+  const one = [
+    mk({
+      marketKey: "1x2",
+      prediction: "Inter",
+      category: "goals",
+      confidence: 82,
+    }),
+  ];
+  const fallbacks: DecisionMarketCandidate[] = [
+    {
+      marketKey: "1x2",
+      label: "1X2",
+      prediction: "Monza",
+      confidence: 82,
+      category: "goals",
+      pageId: "prediction-log",
+      pageLabel: "Log",
+    },
+    {
+      marketKey: "corners_ou",
+      label: "Corners",
+      prediction: "Over 9.5",
+      confidence: 60,
+      category: "corners",
+      pageId: "prediction-log",
+      pageLabel: "Log",
+      line: 9.5,
+    },
+    {
+      marketKey: "hsh",
+      label: "HSH",
+      prediction: "2H more goals",
+      confidence: 55,
+      category: "specialized",
+      pageId: "prediction-log",
+      pageLabel: "Log",
+    },
+  ];
+  const out = ensureThreeMarkets(one, fallbacks, teams);
+  assert.equal(out.filter((m) => m.marketKey === "1x2").length, 1);
+  assert.equal(out.find((m) => m.marketKey === "1x2")!.prediction, "Inter");
 });
