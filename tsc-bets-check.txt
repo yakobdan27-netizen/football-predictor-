@@ -1,0 +1,89 @@
+## 8. External-user access layer (phone-number entry → keyless admin view)
+
+**Goal:** let outside people use the coupon and submit slips **without touching the main system**. They identify with a phone number (no password); their submitted slips surface on an admin page you open **without a pass key**.
+
+### 8.1 Isolation (hard rule)
+- External flow writes ONLY to new tables `ext_users`, `ext_slips`, `ext_selections`. It may READ `bet_events` / `bet_markets` (to show the coupon) and `live_*` (for settlement display). It **never** writes to `bet_slips` (your own tracking), the prediction log, or manual-result tables. Your personal betting/tracking flow is completely unaffected.
+
+### 8.2 New tables
+```
+ext_users(id, phone, display_name, first_seen_at, last_seen_at)
+   -- phone is the identity key (normalized, e.g. E.164). No password stored.
+ext_slips(id, ext_user_id, created_at, slip_type[SINGLE|MULTI],
+          stake, total_odd, potential_return, note,
+          status[SUBMITTED|WON|LOST|VOID])
+ext_selections(id, ext_slip_id, bet_event_id, market_id,
+               event_label, market_label, chosen_label, chosen_odd,
+               result[PENDING|WON|LOST|VOID])
+   -- store event_label/market_label as text snapshots so the admin
+   -- view is readable even if a market row later changes.
+```
+
+### 8.3 External access & entry
+1. A public route `/play` (or similar). On first visit, a lightweight gate asks for a **phone number** (and optional display name). Normalize + basic-validate the number; no OTP/password required (you asked for simple access). Upsert into `ext_users`, keep the id in the session/localStorage so they aren't re-asked.
+2. Optionally support an **alternate access method**: an access code you hand out, mapped to a phone/label — same table, `phone` can hold the code if no number is given. Keep it simple; the point is identity, not security.
+3. After entry they see the **same coupon feed and full Match Market View** (section 7), reusing `bet_events`/`bet_markets` read-only.
+
+### 8.4 External bet slip
+1. Same tap-to-add sticky slip, Single/Multi toggle, stake, total odd, potential return.
+2. **Submit Slip** writes `ext_slips` + `ext_selections` tagged to their `ext_user_id`, snapshotting `chosen_odd` and the event/market label text. Status `SUBMITTED`.
+3. Confirmation screen shows their slip summary + their phone number so they know it was recorded. They can view their own past slips (filtered by their session phone only — they never see other users').
+4. **Never block submission** — same rule; missing odds become manual/`—` but the slip still submits.
+
+### 8.5 Admin submissions page (keyless via secret slug)
+1. Route at an **unguessable random slug**, e.g. `/admin-slips-<32-char-random>`, set once in `.env` as `ADMIN_SLIPS_SLUG`. No password prompt — but treat the URL like a password (see warning below).
+2. Lists **all `ext_slips`** newest-first, each row showing: **phone number**, display name, submit time, slip type, stake, total odd, potential return, and the **full list of matches + markets + selections** (using the stored label snapshots) with each odd.
+3. Filters: by phone number, by league, by date, by status. Search box on phone.
+4. Read-only by default; optional admin action to mark a slip `VOID` or trigger settlement recompute. Admin actions write only to `ext_*` tables.
+5. Settlement of `ext_slips` reuses the **same `evaluate()` functions** from section 3 against `live_*` results at FT — so external slips settle exactly like yours, without sharing tables.
+6. A count/summary header: total submissions, unique phones, open vs settled.
+
+### 8.6 Admin users & bet history page (new — same secret slug family)
+
+**Problem:** The submissions page shows slips flat, but there is no way to see *who* has accessed the system or to review a specific user's complete betting timeline.
+
+1. Route at `/admin-users-<32-char-random>` (separate slug in `.env` as `ADMIN_USERS_SLUG`, or reuse the same slug with a `/users` sub-path). Same keyless access model as 8.5.
+2. **Users directory table** — lists every row in `ext_users`, sorted by `last_seen_at` descending:
+   - Phone number (masked middle digits optional, full on tap/click)
+   - Display name
+   - First seen / Last seen timestamps
+   - Total slips submitted
+   - Win / Loss / Void / Pending counts
+   - Net result summary (total won − total lost, if stakes are tracked)
+3. **Search & filter bar:** search by phone or display name; filter by date range, minimum slip count, or status breakdown.
+4. **Per-user drill-down:** tapping any user row opens their **Bet History View**:
+   - Chronological list of all their `ext_slips` (newest first), each expandable to show full match/market/selection detail with odds and settlement status.
+   - Summary stats at top: total slips, win rate %, average stake, most-bet leagues/markets.
+   - Filter within user history: by date, league, market type, status.
+5. **Cross-link from submissions page (8.5):** each phone number in the submissions list is a link that jumps to this page pre-filtered to that user — so admin can go from "see a slip" → "see everything this person ever bet" in one tap.
+6. Writes only to `ext_*` tables. Reads `bet_events` / `bet_markets` for label resolution only.
+7. Same unguarded-link warning applies: “This link exposes all user identities and histories. Do not share.”
+
+### 8.7 Security warning (state plainly in the UI and to the operator)
+- A keyless admin page means **anyone who has the slug URL can read every user's phone number and slips.** The random slug is the *only* protection. Show a one-line notice on the admin page: “This link is unguarded — anyone with it sees all submissions. Do not share it.”
+- Phone numbers are personal data. Add a short visible notice on the `/play` gate: “Your number is stored to label your slips.”
+- If you later want real protection, the drop-in upgrade is to gate the slug route behind the existing `ADMIN_SECRET` env guard (same pattern as the Manual Result page) — noted here so it’s a one-line change, not a rebuild.
+
+---
+
+## 6. Acceptance checklist
+
+- [ ] Selecting a league and pressing "Load games" fetches upcoming + live fixtures from the API and lists them as bettable events.
+- [ ] Fetched fixtures upsert into `bet_events`; Pre-Match and Live feeds correctly split and time-sorted.
+- [ ] Tap-to-add builds a sticky slip; Single/Multi toggle recomputes total odd & return live.
+- [ ] Missing odds fall back to manual entry, never a blank/blocked market.
+- [ ] Placing a slip snapshots odds and creates OPEN records.
+- [ ] Open slips show live provisional per-selection status on the live tick.
+- [ ] FT triggers correct WON/LOST/VOID settlement; Multi requires all legs.
+- [ ] No read/write to prediction-log or manual-result tables anywhere.
+- [ ] Mobile: slip usable one-handed; live cards refresh without reload.
+- [ ] Tapping a match opens the full Match Market View with all market groups; every outcome adds to the same slip.
+- [ ] Markets missing from the API show manual-entry odd fields, never hidden.
+- [ ] `/play` gate accepts a phone number (or access code), upserts `ext_users`, and remembers the session.
+- [ ] External users build and submit a slip → written to `ext_slips`/`ext_selections` with odd + label snapshots; confirmation shows their phone.
+- [ ] External users see only their own past slips, never others'.
+- [ ] Admin slug page loads with NO password and lists every submission with phone + full match/market/selection detail; filter by phone works.
+- [ ] Admin users page (`/admin-users-<slug>`) lists all external users with phone, display name, first/last seen, slip counts, and win/loss summary.
+- [ ] Tapping a user on the admin users page opens their full chronological bet history with expandable slip detail and per-user stats.
+- [ ] Phone numbers in the submissions page link directly to that user's history view (pre-filtered).
+- [ ] Search/filter on admin users page works by phone, name, date range, and
