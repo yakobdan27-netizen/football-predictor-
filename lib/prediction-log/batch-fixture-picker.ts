@@ -1,8 +1,11 @@
 /**
  * Helpers for Path A: add upcoming fixtures into a Prediction Log draft batch.
  */
-import type { CombinedOddsSettings, LogMatch } from "./types";
 import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-league";
+import { deriveBatchDateFromMatches } from "./batch-date";
+import { defaultCombinedOddsSettings } from "./combo-settings";
+import { deriveBatchLeague } from "./match-league";
+import type { CombinedOddsSettings, LogMatch, PredictionBatch } from "./types";
 
 export function draftHasApiFixtureId(
   matches: Pick<LogMatch, "apiFixtureId">[],
@@ -45,4 +48,64 @@ export function appendFixtureMatches(
     (m) => m.homeTeam.trim() || m.awayTeam.trim() || m.apiFixtureId != null
   );
   return [...kept, ...incoming];
+}
+
+function kickoffMs(iso: string): number {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Dedupe by apiFixtureId, earliest kickoff first. */
+export function sortDedupeUpcomingFixtures(
+  fixtures: UpcomingFixtureRow[]
+): UpcomingFixtureRow[] {
+  const sorted = [...fixtures].sort(
+    (a, b) => kickoffMs(a.kickoffIso) - kickoffMs(b.kickoffIso)
+  );
+  const seen = new Set<number>();
+  const out: UpcomingFixtureRow[] = [];
+  for (const row of sorted) {
+    if (seen.has(row.apiFixtureId)) continue;
+    seen.add(row.apiFixtureId);
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * In-memory batch for upcoming API fixtures (not persisted to KV).
+ */
+export function buildUpcomingPredictionBatch(
+  fixtures: UpcomingFixtureRow[],
+  opts?: {
+    settings?: CombinedOddsSettings;
+    batchId?: string;
+  }
+): PredictionBatch | null {
+  const rows = sortDedupeUpcomingFixtures(fixtures);
+  if (rows.length === 0) return null;
+
+  const settings = opts?.settings ?? defaultCombinedOddsSettings();
+  const batchDate = deriveBatchDateFromMatches(
+    rows.map((r) => ({ matchDate: r.matchDate }))
+  );
+  const batchId = opts?.batchId ?? `UPCOMING-${batchDate}`;
+
+  const matches = rows.map((row, i) =>
+    logMatchFromUpcomingFixture(row, {
+      id: `${batchId}-m${i + 1}`,
+      settings,
+    })
+  );
+
+  return {
+    id: batchId,
+    date: batchDate,
+    league: deriveBatchLeague(matches),
+    batchName: "Upcoming (API)",
+    createdAt: new Date().toISOString(),
+    batchKind: "manual",
+    source: "web",
+    matches,
+  };
 }

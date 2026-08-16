@@ -191,6 +191,57 @@ test("test_cfe_file_forbids_probability_weighted_estimate", () => {
   assert.ok(src.includes("Blend λ inputs"));
 });
 
+test("test_upcoming_batch_ladder_matches_hsh_p2h_gt_1h", async () => {
+  const { buildUpcomingPredictionBatch } = await import("./batch-fixture-picker");
+  const {
+    estimateBatchCanonical,
+    ladderRanksFromBatchEstimates,
+    clearCanonicalFixtureCache,
+  } = await import("./canonical-fixture-estimate");
+  clearCanonicalFixtureCache();
+
+  const batch = buildUpcomingPredictionBatch(
+    [
+      {
+        apiFixtureId: 1001,
+        kickoffIso: "2026-08-16T14:00:00Z",
+        matchDate: "2026-08-16",
+        status: "NS",
+        home: { id: 42, name: "Arsenal", logo: null },
+        away: { id: 49, name: "Chelsea", logo: null },
+        venue: null,
+        league: "Premier League",
+        leagueId: 39,
+      },
+      {
+        apiFixtureId: 1002,
+        kickoffIso: "2026-08-17T18:00:00Z",
+        matchDate: "2026-08-17",
+        status: "NS",
+        home: { id: 529, name: "Barcelona", logo: null },
+        away: { id: 530, name: "Real Madrid", logo: null },
+        venue: null,
+        league: "La Liga",
+        leagueId: 140,
+      },
+    ],
+    { batchId: "UPCOMING-TEST-INV" }
+  );
+  assert.ok(batch);
+  const allBatches = [batch!];
+
+  const estimates = estimateBatchCanonical(batch!, allBatches);
+  const ladder = ladderRanksFromBatchEstimates(estimates, batch!, allBatches);
+
+  assert.equal(ladder.length, estimates.length);
+  estimates.forEach((est, i) => {
+    const mid = batch!.matches[i]!.id;
+    const leg = ladder.find((l) => l.matchId === mid);
+    assert.ok(leg);
+    assert.equal(leg!.p_2h_gt_1h, est.markets.p2h_gt_1h);
+  });
+});
+
 test("test_inventory_gate_helper_counts_66_buckets", async () => {
   // Structural gate: auditor always returns 6 comps × 11 seasons.
   // Live inventoryPass=66/66 is enforced by scripts/drain-hist-gaps.ts (quota-bound).

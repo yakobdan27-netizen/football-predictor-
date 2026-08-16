@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   appendFixtureMatches,
+  buildUpcomingPredictionBatch,
   draftHasApiFixtureId,
   logMatchFromUpcomingFixture,
+  sortDedupeUpcomingFixtures,
 } from "./batch-fixture-picker";
 import type { CombinedOddsSettings, LogMatch } from "./types";
 import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-league";
@@ -60,4 +62,41 @@ test("appendFixtureMatches drops blank placeholders", () => {
   const next = appendFixtureMatches([blank], [filled]);
   assert.equal(next.length, 1);
   assert.equal(next[0]!.apiFixtureId, 12345);
+});
+
+const plRow: UpcomingFixtureRow = { ...row };
+const laLigaRow: UpcomingFixtureRow = {
+  ...row,
+  apiFixtureId: 99999,
+  kickoffIso: "2026-08-15T18:00:00Z",
+  matchDate: "2026-08-15",
+  home: { id: 529, name: "Barcelona", logo: null },
+  away: { id: 530, name: "Real Madrid", logo: null },
+  league: "La Liga",
+  leagueId: 140,
+};
+
+test("sortDedupeUpcomingFixtures sorts by kickoff and dedupes", () => {
+  const dup: UpcomingFixtureRow = { ...plRow, kickoffIso: "2026-08-16T20:00:00Z" };
+  const sorted = sortDedupeUpcomingFixtures([laLigaRow, plRow, dup]);
+  assert.equal(sorted.length, 2);
+  assert.equal(sorted[0]!.apiFixtureId, laLigaRow.apiFixtureId);
+  assert.equal(sorted[1]!.apiFixtureId, plRow.apiFixtureId);
+});
+
+test("buildUpcomingPredictionBatch produces Mixed league batch", () => {
+  const batch = buildUpcomingPredictionBatch([laLigaRow, plRow], {
+    batchId: "UPCOMING-TEST",
+  });
+  assert.ok(batch);
+  assert.equal(batch!.league, "Mixed");
+  assert.equal(batch!.matches.length, 2);
+  assert.equal(batch!.matches[0]!.league, "La Liga");
+  assert.equal(batch!.matches[1]!.league, "Premier League");
+  assert.equal(batch!.batchName, "Upcoming (API)");
+  assert.equal(batch!.id, "UPCOMING-TEST");
+});
+
+test("buildUpcomingPredictionBatch returns null for empty input", () => {
+  assert.equal(buildUpcomingPredictionBatch([]), null);
 });

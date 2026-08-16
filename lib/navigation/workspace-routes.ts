@@ -10,7 +10,8 @@ export type WorkspaceId =
   | "markets-analysis"
   | "research-validation"
   | "settings-guide"
-  | "teams-leagues";
+  | "teams-leagues"
+  | "upcoming-predictions";
 
 export type WorkspaceTabDef = {
   id: string;
@@ -94,12 +95,24 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
       { id: "leagues", label: "Leagues" },
     ],
   },
+  {
+    id: "upcoming-predictions",
+    path: "/upcoming-predictions",
+    title: "Upcoming Predictions",
+    tabs: [
+      { id: "half-goals", label: "Half Goals" },
+      { id: "total-goals", label: "Total Goals" },
+      { id: "survival-ladder", label: "Survival Ladder" },
+      { id: "formation-reference", label: "Formation Reference" },
+    ],
+  },
 ] as const;
 
 /** Standalone pages — never redirected into a workspace. */
 export const STANDALONE_PATHS = [
   "/decision-maker",
   "/prediction-log",
+  "/upcoming-predictions",
 ] as const;
 
 /** Eight primary nav destinations (desktop). */
@@ -146,6 +159,12 @@ export const MORE_NAV = [
   { href: "/teams-leagues", label: "Teams", desktopLabel: "Teams & Leagues", icon: "🏆" },
   { href: "/", label: "Home", desktopLabel: "Dashboard", icon: "🏠" },
   { href: "/recommendation", label: "Reco", desktopLabel: "Recommendation", icon: "🎯" },
+  {
+    href: "/upcoming-predictions",
+    label: "Upcoming",
+    desktopLabel: "Upcoming Predictions",
+    icon: "📅",
+  },
   { href: "/ai-learner", label: "AI", desktopLabel: "AI Learner", icon: "🧠" },
 ] as const;
 
@@ -250,7 +269,11 @@ export function workspacePathActive(
   href: string
 ): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/decision-maker" || href === "/prediction-log") {
+  if (
+    href === "/decision-maker" ||
+    href === "/prediction-log" ||
+    href === "/upcoming-predictions"
+  ) {
     return pathname === href || pathname.startsWith(`${href}/`);
   }
   return pathname === href || pathname.startsWith(`${href}/`);

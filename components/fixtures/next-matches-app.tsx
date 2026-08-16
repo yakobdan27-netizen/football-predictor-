@@ -1,9 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  fetchUpcomingLeagueClient,
   NEXT_MATCHES_LEAGUES,
+  UPCOMING_API_UNAVAILABLE_COPY,
+} from "@/lib/football-api/fetch-upcoming-client";
+import {
   type NextMatchesLeague,
   type UpcomingFixtureRow,
 } from "@/lib/football-api/fetch-upcoming-league";
@@ -110,42 +115,19 @@ function TeamSide({
   );
 }
 
-const API_UNAVAILABLE_COPY =
-  "API unavailable — try again or enter batches manually.";
+const API_UNAVAILABLE_COPY = UPCOMING_API_UNAVAILABLE_COPY;
 
 async function fetchLeague(
   league: NextMatchesLeague,
   refresh: boolean
 ): Promise<LeagueState> {
-  const q = new URLSearchParams({
-    league,
-    next: "10",
-    ...(refresh ? { refresh: "1" } : {}),
-  });
-  const res = await fetch(`/api/fixtures/upcoming?${q}`);
-  const data = (await res.json()) as {
-    ok?: boolean;
-    error?: string;
-    warning?: string;
-    season?: number;
-    fixtures?: UpcomingFixtureRow[];
-    fromCache?: boolean;
-  };
-  if (!res.ok) {
-    return {
-      loading: false,
-      error: data.warning ?? API_UNAVAILABLE_COPY,
-      season: null,
-      fixtures: data.fixtures ?? [],
-      fromCache: data.fromCache,
-    };
-  }
+  const result = await fetchUpcomingLeagueClient(league, refresh);
   return {
     loading: false,
-    error: data.warning ? API_UNAVAILABLE_COPY : null,
-    season: data.season ?? null,
-    fixtures: data.fixtures ?? [],
-    fromCache: data.fromCache,
+    error: result.error,
+    season: result.season,
+    fixtures: result.fixtures,
+    fromCache: result.fromCache,
   };
 }
 
@@ -242,14 +224,19 @@ export function NextMatchesApp() {
             {state.season != null ? `${state.season}/${String(state.season + 1).slice(2)}` : "…"}.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={state.loading}
-          onClick={() => void loadAll(true)}
-        >
-          {state.loading ? "Refreshing…" : "Refresh"}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "flex-end" }}>
+          <Link href="/upcoming-predictions" className="btn btn-primary">
+            View predictions &amp; ladder →
+          </Link>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={state.loading}
+            onClick={() => void loadAll(true)}
+          >
+            {state.loading ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       <div
