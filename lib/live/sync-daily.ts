@@ -151,7 +151,10 @@ export async function syncSchedule(
     raw: Awaited<ReturnType<LiveFixturesProvider["fetchDateRange"]>>,
     seasonForApply: number
   ): Promise<void> {
-    const applied = await applyApiFixtures(raw, seasonForApply);
+    const applied = await applyApiFixtures(raw, seasonForApply, {
+      expectedLeagueId: leagueId,
+      season: seasonForApply,
+    });
     fetched += applied.fetched;
     inserted += applied.inserted;
     updated += applied.updated;

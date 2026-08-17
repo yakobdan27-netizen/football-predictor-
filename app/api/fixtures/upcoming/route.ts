@@ -84,6 +84,8 @@ export async function GET(request: Request) {
       fixtures: result.fixtures,
       fromCache: result.fromCache,
       warning,
+      filteredCount: result.filteredCount ?? 0,
+      filterReasons: result.filterReasons ?? {},
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load upcoming fixtures";

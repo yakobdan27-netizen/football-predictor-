@@ -17,6 +17,10 @@ import {
 } from "./store";
 import type { LiveApiFixture, LiveBeSoccerEnrichment } from "./types";
 import { sleep } from "@/lib/football-api/client";
+import {
+  buildFixtureEligibilityContext,
+  filterEligibleFixtures,
+} from "@/lib/football-api/fixture-eligibility";
 import type { NewMatchStats } from "@/lib/db/schema";
 
 export async function applyApiFixtures(
@@ -26,6 +30,9 @@ export async function applyApiFixtures(
     hydrateEventsOnFt?: boolean;
     provider?: LiveFixturesProvider;
     beSoccerEnrichments?: Map<number, LiveBeSoccerEnrichment>;
+    /** When set, filter to men's top-flight roster for this league. */
+    expectedLeagueId?: number;
+    season?: number;
   }
 ): Promise<{
   fetched: number;
@@ -37,6 +44,7 @@ export async function applyApiFixtures(
   matchStatsUpserted: number;
   leagues: number;
   normalizeDropped: number;
+  eligibilityDropped: number;
   eventsHydrated: number;
 }> {
   const syncedAt = new Date();
@@ -46,7 +54,20 @@ export async function applyApiFixtures(
   const hydrateEvents = opts?.hydrateEventsOnFt !== false;
   const enrichments = opts?.beSoccerEnrichments;
 
-  for (const row of raw) {
+  let rows = raw;
+  let eligibilityDropped = 0;
+  if (opts?.expectedLeagueId != null) {
+    const season = opts.season ?? seasonFallback;
+    const eligibility = await buildFixtureEligibilityContext(
+      opts.expectedLeagueId,
+      season
+    );
+    const filtered = filterEligibleFixtures<LiveApiFixture>(rows, eligibility);
+    eligibilityDropped = filtered.dropped;
+    rows = filtered.kept;
+  }
+
+  for (const row of rows) {
     const league = normalizeLeague(row, seasonFallback);
     if (league) leaguesSeen.set(league.leagueId, league);
     const enrich = enrichments?.get(row.fixture?.id) ?? null;
@@ -133,7 +154,7 @@ export async function applyApiFixtures(
 
   let eventsHydrated = 0;
   if (hydrateEvents) {
-    for (const row of raw) {
+    for (const row of rows) {
       const status = (row.fixture?.status?.short ?? "").toUpperCase();
       const id = row.fixture?.id;
       if (!id || !isFinishedStatus(status)) continue;
@@ -162,7 +183,8 @@ export async function applyApiFixtures(
     settledEmitted: result.settledEmitted,
     matchStatsUpserted,
     leagues: leaguesSeen.size,
-    normalizeDropped: raw.length - fixtures.length,
+    normalizeDropped: rows.length - fixtures.length,
+    eligibilityDropped,
     eventsHydrated,
   };
 }

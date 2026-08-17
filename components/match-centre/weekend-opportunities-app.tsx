@@ -15,6 +15,7 @@ type WeekendApiResponse = {
   insufficientPool?: boolean;
   rows?: WeekendOpportunityRow[];
   warnings?: string[];
+  filteredCount?: number;
 };
 
 function toneStyle(confidence: number): React.CSSProperties {
@@ -187,6 +188,21 @@ export function WeekendOpportunitiesApp() {
           {w}
         </p>
       ))}
+
+      {(data?.filteredCount ?? 0) > 0 && (
+        <p
+          style={{
+            padding: "0.65rem 0.85rem",
+            marginBottom: "0.75rem",
+            background: "rgba(234, 179, 8, 0.12)",
+            borderRadius: 8,
+            fontSize: "0.9rem",
+          }}
+        >
+          {data!.filteredCount} non-league / out-of-roster fixtures hidden (men&apos;s
+          top flight only).
+        </p>
+      )}
 
       {!loading && rows.length === 0 && !error && (
         <div

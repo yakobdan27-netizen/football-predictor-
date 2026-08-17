@@ -2,6 +2,10 @@ import { getJson, setJsonEx } from "@/lib/prediction-log/kv";
 import { KV_KEYS } from "@/lib/prediction-log/kv-keys";
 import { apiFootballGet } from "./client";
 import {
+  buildFixtureEligibilityContext,
+  filterEligibleFixtures,
+} from "./fixture-eligibility";
+import {
   apiDateOnly,
   apiLeagueId,
   apiSeasonFromDate,
@@ -44,7 +48,16 @@ export async function fetchFixturesCached(params: {
   }
 
   const fixtures = await apiFootballGet<ApiFootballFixture[]>("/fixtures", query);
-  const finished = (fixtures ?? []).filter(isFinishedFixture);
+  let finished = (fixtures ?? []).filter(isFinishedFixture);
+
+  if (params.leagueId != null) {
+    const eligibility = await buildFixtureEligibilityContext(
+      params.leagueId,
+      params.season
+    );
+    finished = filterEligibleFixtures(finished, eligibility).kept;
+  }
+
   await setJsonEx(kvKey, finished, API_FOOTBALL_CACHE_TTL_SECONDS);
   return finished;
 }

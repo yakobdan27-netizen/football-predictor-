@@ -4,6 +4,10 @@
  */
 import { sleep } from "@/lib/football-api/client";
 import { LEAGUE_API_IDS, apiSeasonFromDate } from "@/lib/football-api/leagues";
+import {
+  buildFixtureEligibilityContext,
+  filterEligibleFixtures,
+} from "@/lib/football-api/fixture-eligibility";
 import { ensureBetSettlementRegistered } from "@/lib/bets/register-settlement";
 import { settleAllOpenFinished } from "@/lib/bets/settle";
 import { LIVE_SYNC_LEAGUES } from "@/lib/live/constants";
@@ -73,7 +77,9 @@ export async function registerTodayFixturesFromLeagues(): Promise<number> {
       if (!raw.length) {
         raw = await apiSportsLiveProvider.fetchNext(leagueId, season, 15);
       }
-      for (const f of raw) {
+      const eligibility = await buildFixtureEligibilityContext(leagueId, season);
+      const { kept } = filterEligibleFixtures<typeof raw[number]>(raw, eligibility);
+      for (const f of kept) {
         const row = mapApiFixtureToInput(f, name);
         if (row) inputs.push(row);
       }
@@ -118,6 +124,8 @@ export async function syncMatchCentreFinishedCatchUp(): Promise<{
       );
       const applied = await applyApiFixtures(raw, season, {
         hydrateEventsOnFt: true,
+        expectedLeagueId: leagueId,
+        season,
       });
       fetched += applied.fetched;
       upserted += applied.upserted;

@@ -11,6 +11,10 @@ import { apiDateOnly, apiLeagueId, apiSeasonFromDate } from "./leagues";
 import type { ApiFootballFixture } from "./map-fixture-to-match";
 import { fixturePairKey } from "./team-resolve";
 import { resolveApiTeamId } from "./team-id-map";
+import {
+  buildFixtureEligibilityContext,
+  filterEligibleFixtures,
+} from "./fixture-eligibility";
 
 const RESOLVE_CACHE_TTL_SECONDS = 30 * 60;
 
@@ -98,6 +102,16 @@ function addDaysIso(isoDate: string, days: number): string {
   if (Number.isNaN(d.getTime())) return isoDate;
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+async function filterTeamFixtures(
+  fixtures: ApiFootballFixture[],
+  leagueId: number | null,
+  season: number
+): Promise<ApiFootballFixture[]> {
+  if (leagueId == null) return fixtures;
+  const eligibility = await buildFixtureEligibilityContext(leagueId, season);
+  return filterEligibleFixtures(fixtures, eligibility).kept;
 }
 
 async function fetchUpcomingForTeam(
@@ -255,20 +269,21 @@ export async function resolveUpcomingFixture(opts: {
 
   try {
     let fixtures = await fetchUpcomingForTeam(home.teamId, leagueId, home.season);
+    fixtures = await filterTeamFixtures(fixtures, leagueId, home.season);
     let picked = selectNearestUpcomingFixture(fixtures, home.teamId, away.teamId);
 
     if (!picked) {
-      const h2h = await fetchH2hUpcoming(home.teamId, away.teamId);
+      let h2h = await fetchH2hUpcoming(home.teamId, away.teamId);
+      h2h = await filterTeamFixtures(h2h, leagueId, home.season);
       picked = selectNearestUpcomingFixture(h2h, home.teamId, away.teamId);
     }
 
     // Name-pair fallback if IDs present but orientation filtered nothing from next=
     if (!picked) {
       const pair = fixturePairKey(homeTeam, awayTeam);
-      const all = [
-        ...fixtures,
-        ...(await fetchH2hUpcoming(home.teamId, away.teamId)),
-      ];
+      let h2hAll = await fetchH2hUpcoming(home.teamId, away.teamId);
+      h2hAll = await filterTeamFixtures(h2hAll, leagueId, home.season);
+      const all = [...fixtures, ...h2hAll];
       const byName = all.filter((f) => {
         if (!isUpcomingStatus(f.fixture?.status?.short ?? "")) return false;
         const ko = kickoffMs(f.fixture.date);

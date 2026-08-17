@@ -13,7 +13,14 @@ export interface ApiFootballFixture {
     status: { short: string };
     venue?: { name?: string | null; city?: string | null };
   };
-  league?: { id?: number; name?: string; logo?: string };
+  league?: {
+    id?: number;
+    name?: string;
+    logo?: string;
+    type?: string;
+    round?: string;
+    season?: number;
+  };
   teams: {
     home: { id?: number; name: string; logo?: string };
     away: { id?: number; name: string; logo?: string };

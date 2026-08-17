@@ -16,6 +16,7 @@ import {
   estimateBatchCanonicalAsync,
 } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { fitSlipCalibrator } from "@/lib/slip-builder/slip-calibration";
+import { sumFilterReasons } from "@/lib/football-api/fixture-eligibility";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -38,11 +39,20 @@ export async function GET(request: Request) {
           >["fixtures"],
           fromCache: false,
           warning: e instanceof Error ? e.message : String(e),
+          filteredCount: 0,
+          filterReasons: {},
         }))
       )
     );
 
     const allFixtures = leagueResults.flatMap((r) => r.fixtures);
+    const filteredCount = leagueResults.reduce(
+      (n, r) => n + (r.filteredCount ?? 0),
+      0
+    );
+    const filterReasons = sumFilterReasons(
+      leagueResults.map((r) => r.filterReasons ?? {})
+    );
     const weekendFixtures = filterWeekendFixtures(allFixtures);
 
     if (weekendFixtures.length > 0) {
@@ -79,6 +89,8 @@ export async function GET(request: Request) {
         leagueErrors: leagueResults
           .filter((r) => r.warning)
           .map((r) => `${r.league}: ${r.warning}`),
+        filteredCount,
+        filterReasons,
       });
     }
 
@@ -123,6 +135,8 @@ export async function GET(request: Request) {
       insufficientPool: result.insufficientPool,
       rows: result.rows,
       warnings,
+      filteredCount,
+      filterReasons,
     });
   } catch (e) {
     return NextResponse.json(

@@ -13,6 +13,7 @@ export type UpcomingLeagueFetchResult = {
   fixtures: UpcomingFixtureRow[];
   error: string | null;
   fromCache?: boolean;
+  filteredCount?: number;
 };
 
 export const UPCOMING_API_UNAVAILABLE_COPY =
@@ -36,6 +37,7 @@ export async function fetchUpcomingLeagueClient(
     season?: number;
     fixtures?: UpcomingFixtureRow[];
     fromCache?: boolean;
+    filteredCount?: number;
   };
   if (!res.ok) {
     return {
@@ -52,6 +54,7 @@ export async function fetchUpcomingLeagueClient(
     fixtures: data.fixtures ?? [],
     error: data.warning ? UPCOMING_API_UNAVAILABLE_COPY : null,
     fromCache: data.fromCache,
+    filteredCount: data.filteredCount ?? 0,
   };
 }
 

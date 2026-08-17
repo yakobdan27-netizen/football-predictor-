@@ -26,7 +26,7 @@ export const KV_KEYS = {
   apiFootballResolve: (key: string) => `apiFootball:resolve:v1:${key}`,
   /** Cached upcoming fixtures for a league+season+next. */
   apiFootballUpcoming: (leagueId: number, season: number, next: number) =>
-    `apiFootball:upcoming:v1:${leagueId}:${season}:n${next}`,
+    `apiFootball:upcoming:v2:${leagueId}:${season}:n${next}`,
   /** Cached GET /teams/statistics by league+season+team. */
   apiFootballTeamStatistics: (
     leagueId: number,

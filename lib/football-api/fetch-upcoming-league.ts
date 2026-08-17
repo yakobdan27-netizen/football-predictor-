@@ -6,6 +6,11 @@ import { KV_KEYS } from "@/lib/prediction-log/kv-keys";
 import { todayIsoDate } from "@/lib/prediction-log/batch-date";
 import type { LeagueOption } from "@/lib/prediction-log/markets-config";
 import { apiFootballGet } from "./client";
+import {
+  buildFixtureEligibilityContext,
+  filterEligibleFixtures,
+  type FixtureDropReason,
+} from "./fixture-eligibility";
 import { apiDateOnly, apiLeagueId, apiSeasonFromDate } from "./leagues";
 import type { ApiFootballFixture } from "./map-fixture-to-match";
 import { isUpcomingFixtureStatus } from "./resolve-upcoming-fixture";
@@ -44,6 +49,9 @@ export interface UpcomingFixturesResult {
   fromCache: boolean;
   /** Set when live fetch failed but stale cache was served. */
   warning?: string;
+  /** Fixtures removed by men's top-flight eligibility filter. */
+  filteredCount?: number;
+  filterReasons?: Partial<Record<FixtureDropReason, number>>;
 }
 
 function kickoffMs(iso: string): number {
@@ -124,7 +132,18 @@ export async function fetchUpcomingForLeague(opts: {
 
   try {
     const rows = await fetchUpcomingFixtureRows(leagueId, season, next, asOf);
-    const selected = selectUpcomingFixtures(rows, next);
+    const eligibility = await buildFixtureEligibilityContext(leagueId, season);
+    const { kept, dropped, reasonsByCode } = filterEligibleFixtures(
+      rows,
+      eligibility
+    );
+    if (dropped > 0) {
+      console.info(
+        `[fetch-upcoming] ${opts.league}: filtered ${dropped} non-eligible fixtures`,
+        reasonsByCode
+      );
+    }
+    const selected = selectUpcomingFixtures(kept, next);
     const fixtures = selected.map((f) =>
       mapFixtureToUpcomingRow(f, opts.league, leagueId)
     );
@@ -135,6 +154,10 @@ export async function fetchUpcomingForLeague(opts: {
       leagueId,
       fixtures,
       fromCache: false,
+      filteredCount: dropped,
+      filterReasons: reasonsByCode as Partial<
+        Record<FixtureDropReason, number>
+      >,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "API unavailable";

@@ -42,7 +42,10 @@ export async function runPrematchRefresh(
           from,
           to
         );
-        const a = await applyApiFixtures(range, season);
+        const a = await applyApiFixtures(range, season, {
+          expectedLeagueId: leagueId,
+          season,
+        });
         upserted += a.upserted;
         settledEmitted += a.settledEmitted;
       } catch (e) {

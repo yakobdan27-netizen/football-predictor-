@@ -14,6 +14,8 @@ export interface LiveApiFixture {
     name?: string;
     country?: string;
     logo?: string | null;
+    type?: string;
+    round?: string;
     season?: number;
   };
   teams: {

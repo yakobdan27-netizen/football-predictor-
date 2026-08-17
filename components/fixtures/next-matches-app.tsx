@@ -21,6 +21,7 @@ type LeagueState = {
   season: number | null;
   fixtures: UpcomingFixtureRow[];
   fromCache?: boolean;
+  filteredCount?: number;
 };
 
 function emptyLeagueState(): LeagueState {
@@ -130,6 +131,7 @@ async function fetchLeague(
     season: result.season,
     fixtures: result.fixtures,
     fromCache: result.fromCache,
+    filteredCount: result.filteredCount ?? 0,
   };
 }
 
@@ -304,6 +306,10 @@ export function NextMatchesApp() {
   }, [active, loadRecent]);
 
   const state = byLeague[active] ?? emptyLeagueState();
+  const totalFilteredCount = NEXT_MATCHES_LEAGUES.reduce(
+    (n, league) => n + (byLeague[league]?.filteredCount ?? 0),
+    0
+  );
 
   async function openInDecisionMaker(row: UpcomingFixtureRow) {
     setOpenError(null);
@@ -374,6 +380,21 @@ export function NextMatchesApp() {
           </button>
         </div>
       </div>
+
+      {totalFilteredCount > 0 && (
+        <p
+          style={{
+            padding: "0.65rem 0.85rem",
+            marginBottom: "0.75rem",
+            background: "rgba(234, 179, 8, 0.12)",
+            borderRadius: 8,
+            fontSize: "0.9rem",
+          }}
+        >
+          {totalFilteredCount} non-league / out-of-roster fixtures hidden (men&apos;s
+          top flight only).
+        </p>
+      )}
 
       <div
         role="tablist"
