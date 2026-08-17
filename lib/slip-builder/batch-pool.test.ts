@@ -56,8 +56,8 @@ describe("loadBatchFixturePool sourceBatchId", () => {
     },
   ]);
 
-  it("scopes pool to one batch when sourceBatchId is set", () => {
-    const pool = loadBatchFixturePool([batchA, batchB], {
+  it("scopes pool to one batch when sourceBatchId is set", async () => {
+    const pool = await loadBatchFixturePool([batchA, batchB], {
       ...DEFAULT_SLIP_PREFERENCES,
       sourceBatchId: "batch-a",
     });

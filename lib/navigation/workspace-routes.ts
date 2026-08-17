@@ -35,7 +35,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
       { id: "bets-coupon", label: "Bets Coupon" },
       { id: "next-match", label: "Next Match" },
       { id: "play-coupon", label: "Play Coupon" },
-      { id: "slip-builder", label: "Slip Builder" },
+      { id: "slip-builder", label: "Weekend Picks" },
     ],
   },
   {

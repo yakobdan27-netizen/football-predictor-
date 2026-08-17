@@ -74,3 +74,48 @@ export async function fetchAllUpcomingLeaguesClient(
 }
 
 export { NEXT_MATCHES_LEAGUES };
+
+export type RecentResultGoal = {
+  minute: number | null;
+  team: string | null;
+  type: string | null;
+  player: string | null;
+};
+
+export type RecentMatchCentreResult = {
+  fixtureId: number;
+  leagueId: number;
+  leagueName: string | null;
+  homeTeam: string;
+  awayTeam: string;
+  kickoffUtc: string;
+  status: string;
+  homeGoals: number | null;
+  awayGoals: number | null;
+  homeGoals1h: number | null;
+  awayGoals1h: number | null;
+  homeCorners: number | null;
+  awayCorners: number | null;
+  goals: RecentResultGoal[];
+};
+
+export async function fetchRecentResultsClient(
+  league: NextMatchesLeague,
+  hours = 48
+): Promise<{ results: RecentMatchCentreResult[]; error: string | null }> {
+  const q = new URLSearchParams({ league, hours: String(hours), limit: "15" });
+  try {
+    const res = await fetch(`/api/fixtures/recent-results?${q}`);
+    const data = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      results?: RecentMatchCentreResult[];
+    };
+    if (!res.ok) {
+      return { results: [], error: data.error ?? "Could not load recent results" };
+    }
+    return { results: data.results ?? [], error: null };
+  } catch {
+    return { results: [], error: "Could not load recent results" };
+  }
+}

@@ -4,7 +4,11 @@
  * - attach Dixon-Coles / seed score grids when missing
  */
 import { scoreGridForMatch } from "./correct-score-freeze";
-import { estimateBatchCanonical } from "./canonical-fixture-estimate";
+import {
+  estimateBatchCanonical,
+  estimateBatchCanonicalAsync,
+  type BatchCanonicalEstimateOpts,
+} from "./canonical-fixture-estimate";
 import { matchLeague } from "./match-league";
 import { RECO_ENGINE_VERSION } from "./recommendation-config";
 import { singleMarketKey, resolveMarketMode } from "./match-entry-helpers";
@@ -215,13 +219,53 @@ export function attachComboScoreGrids(
   clubRecords: Record<string, ClubRecord>,
   clubIndex: ClubIndex | null,
   allBatches: PredictionBatch[],
-  histGrids?: Record<string, number[][]>
+  histGrids?: Record<string, number[][]>,
+  opts?: BatchCanonicalEstimateOpts
 ): PredictionBatch {
   const shelled = ensureComboRecommendedShell(batch);
   if (!shelled.recommended) return shelled;
 
-  // Prefer canonicalFixtureEstimate score matrix (same FT SoT as HSH/ladder).
-  const cfeList = estimateBatchCanonical(shelled, allBatches);
+  const cfeList = estimateBatchCanonical(shelled, allBatches, opts);
+  return attachComboScoreGridsFromEstimates(
+    shelled,
+    cfeList,
+    clubRecords,
+    clubIndex,
+    allBatches,
+    histGrids
+  );
+}
+
+export async function attachComboScoreGridsAsync(
+  batch: PredictionBatch,
+  clubRecords: Record<string, ClubRecord>,
+  clubIndex: ClubIndex | null,
+  allBatches: PredictionBatch[],
+  histGrids?: Record<string, number[][]>
+): Promise<PredictionBatch> {
+  const shelled = ensureComboRecommendedShell(batch);
+  if (!shelled.recommended) return shelled;
+
+  const cfeList = await estimateBatchCanonicalAsync(shelled, allBatches);
+  return attachComboScoreGridsFromEstimates(
+    shelled,
+    cfeList,
+    clubRecords,
+    clubIndex,
+    allBatches,
+    histGrids
+  );
+}
+
+function attachComboScoreGridsFromEstimates(
+  shelled: PredictionBatch,
+  cfeList: ReturnType<typeof estimateBatchCanonical>,
+  clubRecords: Record<string, ClubRecord>,
+  clubIndex: ClubIndex | null,
+  allBatches: PredictionBatch[],
+  histGrids?: Record<string, number[][]>
+): PredictionBatch {
+  if (!shelled.recommended) return shelled;
   const cfeById = new Map(
     shelled.matches.map((m, i) => [m.id, cfeList[i]!] as const)
   );

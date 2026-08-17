@@ -53,7 +53,7 @@ export async function POST(request: Request) {
 
     let leg = body.leg ?? null;
     if (!leg && body.fixtureId && body.family && body.selectionKey) {
-      const fixtures = loadBatchFixturePool(allBatches, result.preferences);
+      const fixtures = await loadBatchFixturePool(allBatches, result.preferences);
       const fixture = fixtures.find((f) => f.fixtureId === body.fixtureId);
       const calibrator = fitSlipCalibrator(allBatches, bayesianLog);
       if (fixture) {

@@ -1,7 +1,7 @@
 /**
  * Local burst drain for hist coverage gaps (complements daily Vercel cron).
  * Cron default: /api/cron/hist-backfill several times/day with gapPriority.
- * Run: npx tsx scripts/drain-hist-gaps.ts [--max-chunks=200] [--enrich=50]
+ * Run: npx tsx scripts/drain-hist-gaps.ts [--max-chunks=200] [--enrich=50] [--league=140]
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -39,9 +39,32 @@ function argNum(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function argStr(name: string): string | undefined {
+  const hit = process.argv.find((a) => a.startsWith(`${name}=`));
+  if (!hit) return undefined;
+  const val = hit.slice(name.length + 1).trim();
+  return val || undefined;
+}
+
+async function resolveLeagueId(raw?: string): Promise<number | undefined> {
+  if (!raw) return undefined;
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) return n;
+  const { HIST_LEAGUES } = await import("../lib/hist/seasons");
+  const hit = HIST_LEAGUES.find(
+    (l) => l.name.toLowerCase() === raw.toLowerCase()
+  );
+  if (!hit) {
+    console.error(`Unknown league "${raw}" — use API id or HIST_LEAGUES name`);
+    process.exit(1);
+  }
+  return hit.id;
+}
+
 async function main() {
   const maxChunks = argNum("--max-chunks", 200);
   const enrich = argNum("--enrich", 50);
+  const leagueId = await resolveLeagueId(argStr("--league"));
   process.env.HIST_MAX_ENRICH_PER_CHUNK = String(enrich);
 
   const { ensureSchema } = await import("../lib/db/init");
@@ -51,18 +74,31 @@ async function main() {
     gapQueueFromCoverage,
   } = await import("../lib/hist/coverage-audit");
   const { runHistBackfillChunk } = await import("../lib/hist/backfill");
+  const { HIST_LEAGUES } = await import("../lib/hist/seasons");
 
   await ensureSchema();
   let before = await auditHistCoverage();
   const passCount = (r: typeof before) =>
     r.buckets.filter((b) => b.inventoryPass).length;
 
+  const leagueLabel =
+    leagueId != null
+      ? (HIST_LEAGUES.find((l) => l.id === leagueId)?.name ?? `id=${leagueId}`)
+      : null;
+
   console.log("=== Drain hist gaps until inventory gate ===");
+  if (leagueLabel) {
+    console.log(`league filter: ${leagueLabel} (${leagueId})`);
+  }
   console.log(
     `start: full=${before.summary.full} partial=${before.summary.partial} missing=${before.summary.missing} inventoryPass=${passCount(before)}/66 providerHoles=${before.summary.providerHoles} enrich/chunk=${enrich}`
   );
-  const queued = gapQueueFromCoverage(before);
-  console.log(`gaps queued: ${queued.length}`);
+  const allQueued = gapQueueFromCoverage(before);
+  const queued =
+    leagueId != null
+      ? allQueued.filter((g) => g.leagueId === leagueId)
+      : allQueued;
+  console.log(`gaps queued: ${queued.length}${leagueLabel ? ` (${leagueLabel} only)` : ""}`);
   console.log(
     "next:",
     queued
@@ -83,7 +119,10 @@ async function main() {
   for (let i = 0; i < maxChunks; i++) {
     let summary: Awaited<ReturnType<typeof runHistBackfillChunk>>;
     try {
-      summary = await runHistBackfillChunk({ gapPriority: true });
+      summary = await runHistBackfillChunk({
+        gapPriority: true,
+        leagueId,
+      });
       neonRetries = 0;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

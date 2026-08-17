@@ -8,6 +8,7 @@ import {
 import type { DiehMarkets } from "@/lib/prediction-log/dieh-probability";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import type { HalfParamsStore } from "@/lib/hist/half-params-types";
+import { useMatchCentreRatesCache } from "./use-match-centre-rates-cache";
 
 export type DiehRow = {
   matchId: string;
@@ -27,12 +28,15 @@ export function useDiehPredictions(
   rows: DiehRow[];
   estimatesById: Record<string, CanonicalFixtureEstimate>;
 } {
+  const matchCentreCache = useMatchCentreRatesCache(batch, allBatches);
+
   return useMemo(() => {
     const empty: Record<string, CanonicalFixtureEstimate> = {};
     if (!batch) return { rows: [] as DiehRow[], estimatesById: empty };
 
     const estimates = estimateBatchCanonical(batch, allBatches, {
       halfParamsStore,
+      matchCentreCache,
     });
     const byId: Record<string, CanonicalFixtureEstimate> = {};
     const rows: DiehRow[] = [];
@@ -51,5 +55,5 @@ export function useDiehPredictions(
       });
     }
     return { rows, estimatesById: byId };
-  }, [batch, allBatches, halfParamsStore]);
+  }, [batch, allBatches, halfParamsStore, matchCentreCache]);
 }

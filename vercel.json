@@ -37,6 +37,14 @@
       "schedule": "0 21 * * *"
     },
     {
+      "path": "/api/cron/match-centre-results",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/match-centre-results",
+      "schedule": "*/30 10-23 * * *"
+    },
+    {
       "path": "/api/cron/live-prematch",
       "schedule": "0 15 * * *"
     }
@@ -102,6 +110,9 @@
     "app/api/cron/hist-backfill/route.ts": {
       "maxDuration": 60
     },
+    "app/api/cron/match-centre-results/route.ts": {
+      "maxDuration": 60
+    },
     "app/api/hist/backfill/route.ts": {
       "maxDuration": 60
     },
@@ -155,6 +166,9 @@
     },
     "app/api/fixtures/upcoming/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/fixtures/recent-results/route.ts": {
+      "maxDuration": 30
     },
     "app/api/fixtures/open-in-dm/route.ts": {
       "maxDuration": 60

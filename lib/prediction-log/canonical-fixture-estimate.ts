@@ -55,10 +55,13 @@ import {
   type TotalGoalsMarkets,
 } from "./total-goals-markets";
 import { matchLeague } from "./match-league";
+import { matchCentreRatesCacheKey } from "./api-season-blend";
 import {
   loadClubHalfAttackDefence,
   loadLeagueAfBaselines,
+  type ClubHalfAttackDefence,
 } from "./hsh-half-rates";
+import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
 import { estimateTempoProfile } from "./half-tempo";
 import type { TwoHHeavyResult } from "./two-h-heavy/types";
 import type { PredictionBatch } from "./types";
@@ -102,6 +105,8 @@ export type CanonicalFixtureEstimate = {
     matches_used: number;
     ess: number;
     sourceBreakdown: "blended" | "api_only" | "manual_ai_only";
+    apiSeasonBlend?: "60_40" | "prior_only";
+    apiSeasonCurrentN?: number;
   };
   coverage: { ht_pct: number | null; corners_pct: number | null };
   confidence_tier: "high" | "medium" | "low";
@@ -313,6 +318,19 @@ export function canonicalFixtureEstimateSync(
       ? "blended"
       : homeBlend.source;
 
+  const apiSeasonBlend =
+    input.hshCtx.homeRates.apiSeasonBlend === "60_40" ||
+    input.hshCtx.awayRates.apiSeasonBlend === "60_40"
+      ? "60_40"
+      : input.hshCtx.homeRates.apiSeasonBlend === "prior_only" ||
+          input.hshCtx.awayRates.apiSeasonBlend === "prior_only"
+        ? "prior_only"
+        : undefined;
+  const apiSeasonCurrentN = Math.max(
+    input.hshCtx.homeRates.apiSeasonCurrentN ?? 0,
+    input.hshCtx.awayRates.apiSeasonCurrentN ?? 0
+  );
+
   // When NegBin is active, rewrite totalGoals.lines from NegBin PMF already done;
   // when Poisson, keep totalGoals from DC path but force 2.5 identity with markets.
   if (!useNegBin) {
@@ -363,6 +381,13 @@ export function canonicalFixtureEstimateSync(
       matches_used: matchesUsed,
       ess,
       sourceBreakdown: source,
+      ...(apiSeasonBlend
+        ? {
+            apiSeasonBlend,
+            apiSeasonCurrentN:
+              apiSeasonCurrentN > 0 ? apiSeasonCurrentN : undefined,
+          }
+        : {}),
     },
     coverage: {
       ht_pct: input.coverage?.ht_pct ?? null,
@@ -424,32 +449,88 @@ export async function canonicalFixtureEstimate(
   });
 }
 
+export type BatchCanonicalEstimateOpts = {
+  modelParams?: ModelParamsStore;
+  halfParamsStore?: HalfParamsStore | null;
+  matchCentreCache?: Map<string, ClubHalfAttackDefence>;
+};
+
+/** Unique (team, league) pairs for Match Centre preload. */
+export function collectBatchTeamLeaguePairs(
+  batch: PredictionBatch
+): { team: string; league: string }[] {
+  const seen = new Set<string>();
+  const out: { team: string; league: string }[] = [];
+  for (const match of batch.matches) {
+    const league = matchLeague(match, batch.league);
+    for (const team of [match.homeTeam, match.awayTeam]) {
+      const key = matchCentreRatesCacheKey(team, league);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ team, league });
+    }
+  }
+  return out;
+}
+
+function buildHshCtxForMatch(
+  match: PredictionBatch["matches"][number],
+  batch: PredictionBatch,
+  allBatches: PredictionBatch[],
+  matchCentreCache?: Map<string, ClubHalfAttackDefence>
+): HshMatchContext {
+  const league = matchLeague(match, batch.league);
+  const rateOpts = {
+    beforeDate: batch.date,
+    matchCentreCache,
+  };
+  const homeRates = loadClubHalfAttackDefence(
+    match.homeTeam,
+    league,
+    allBatches,
+    rateOpts
+  );
+  const awayRates = loadClubHalfAttackDefence(
+    match.awayTeam,
+    league,
+    allBatches,
+    rateOpts
+  );
+  const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
+  return {
+    matchId: match.id,
+    homeTeam: match.homeTeam,
+    awayTeam: match.awayTeam,
+    league,
+    homeRates,
+    awayRates,
+    lgAf1,
+    lgAf2,
+    homeTempo: estimateTempoProfile(allBatches, match.homeTeam, {
+      beforeDate: batch.date,
+    }),
+    awayTempo: estimateTempoProfile(allBatches, match.awayTeam, {
+      beforeDate: batch.date,
+    }),
+  };
+}
+
 /** One-pass batch estimates for ladder / reco (no per-match engine hop). */
 export function estimateBatchCanonical(
   batch: PredictionBatch,
   allBatches: PredictionBatch[],
-  opts?: {
-    modelParams?: ModelParamsStore;
-    halfParamsStore?: HalfParamsStore | null;
-  }
+  opts?: BatchCanonicalEstimateOpts
 ): CanonicalFixtureEstimate[] {
   const params = opts?.modelParams ?? cachedParams ?? defaultModelParams();
   const halfStore = opts?.halfParamsStore ?? getCachedHalfParams();
   return batch.matches.map((match) => {
     const league = matchLeague(match, batch.league);
-    const homeRates = loadClubHalfAttackDefence(
-      match.homeTeam,
-      league,
+    const hshCtx = buildHshCtxForMatch(
+      match,
+      batch,
       allBatches,
-      { beforeDate: batch.date }
+      opts?.matchCentreCache
     );
-    const awayRates = loadClubHalfAttackDefence(
-      match.awayTeam,
-      league,
-      allBatches,
-      { beforeDate: batch.date }
-    );
-    const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
     return canonicalFixtureEstimateSync(
       {
         matchId: match.id,
@@ -458,25 +539,32 @@ export function estimateBatchCanonical(
         league,
         batches: allBatches,
         beforeDate: batch.date,
-        hshCtx: {
-          matchId: match.id,
-          homeTeam: match.homeTeam,
-          awayTeam: match.awayTeam,
-          league,
-          homeRates,
-          awayRates,
-          lgAf1,
-          lgAf2,
-          homeTempo: estimateTempoProfile(allBatches, match.homeTeam, {
-            beforeDate: batch.date,
-          }),
-          awayTempo: estimateTempoProfile(allBatches, match.awayTeam, {
-            beforeDate: batch.date,
-          }),
-        },
+        hshCtx,
       },
       { modelParams: params, halfParamsStore: halfStore }
     );
+  });
+}
+
+/** Server-side batch estimates with Match Centre 2026/27 preload. */
+export async function estimateBatchCanonicalAsync(
+  batch: PredictionBatch,
+  allBatches: PredictionBatch[],
+  opts?: BatchCanonicalEstimateOpts
+): Promise<CanonicalFixtureEstimate[]> {
+  let matchCentreCache = opts?.matchCentreCache;
+  if (!matchCentreCache) {
+    try {
+      matchCentreCache = await preloadMatchCentreHalfRates(
+        collectBatchTeamLeaguePairs(batch)
+      );
+    } catch {
+      matchCentreCache = undefined;
+    }
+  }
+  return estimateBatchCanonical(batch, allBatches, {
+    ...opts,
+    matchCentreCache,
   });
 }
 
@@ -491,40 +579,18 @@ export type LadderRankFromCfe = TwoHHeavyResult & {
 export function ladderRanksFromBatchEstimates(
   estimates: CanonicalFixtureEstimate[],
   batch: PredictionBatch,
-  allBatches: PredictionBatch[]
+  allBatches: PredictionBatch[],
+  opts?: { matchCentreCache?: Map<string, ClubHalfAttackDefence> }
 ): LadderRankFromCfe[] {
   const rows: LadderRankFromCfe[] = estimates.map((est, i) => {
     const match = batch.matches[i]!;
-    const league = matchLeague(match, batch.league);
-    const homeRates = loadClubHalfAttackDefence(
-      match.homeTeam,
-      league,
+    const hshCtx = buildHshCtxForMatch(
+      match,
+      batch,
       allBatches,
-      { beforeDate: batch.date }
+      opts?.matchCentreCache
     );
-    const awayRates = loadClubHalfAttackDefence(
-      match.awayTeam,
-      league,
-      allBatches,
-      { beforeDate: batch.date }
-    );
-    const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
-    const pred = computeCanonicalHshPrediction({
-      matchId: match.id,
-      homeTeam: match.homeTeam,
-      awayTeam: match.awayTeam,
-      league,
-      homeRates,
-      awayRates,
-      lgAf1,
-      lgAf2,
-      homeTempo: estimateTempoProfile(allBatches, match.homeTeam, {
-        beforeDate: batch.date,
-      }),
-      awayTempo: estimateTempoProfile(allBatches, match.awayTeam, {
-        beforeDate: batch.date,
-      }),
-    });
+    const pred = computeCanonicalHshPrediction(hshCtx);
     // Force displayed half probs from CFE markets (identity with HSH Stage B).
     const aligned = {
       ...pred,

@@ -86,7 +86,7 @@ export function blendBadgeLabel(source: BlendSource): string {
 export function blendBadgeTitle(source: BlendSource): string {
   switch (source) {
     case "blended":
-      return "Blended estimate: API-DB history/Poisson (hist_*, live_*) weighted 60%; AI learner + manual signals weighted 40%.";
+      return "Blended estimate: API-DB (60% Match Centre 2026/27 + 40% prior seasons when n≥6; else prior only) weighted 60%; AI learner + manual signals weighted 40%.";
     case "api_only":
       return "API-DB only — Manual/AI side missing for this match; no invented manual numbers.";
     case "manual_ai_only":

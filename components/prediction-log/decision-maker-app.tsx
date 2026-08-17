@@ -12,6 +12,7 @@ import {
   type ScoredDecisionMarket,
   type UserMarketEvaluation,
 } from "@/lib/prediction-log/decision-maker";
+import { useMatchCentreRatesCache } from "@/components/prediction-log/use-match-centre-rates-cache";
 import type { ComboCandidate } from "@/lib/prediction-log/combo-selection";
 import { blendBadgeLabel, blendBadgeTitle } from "@/lib/prediction-log/prediction-weights";
 import {
@@ -433,6 +434,8 @@ export function DecisionMakerApp() {
 
   const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
 
+  const matchCentreCache = useMatchCentreRatesCache(batch, batches);
+
   const decisions = useMemo(() => {
     if (!batch) return [] as MatchDecisionRow[];
     return processBatchDecisions({
@@ -443,8 +446,18 @@ export function DecisionMakerApp() {
       teamsQuality,
       learnerStats,
       leaguePriors,
+      matchCentreCache,
     });
-  }, [batch, batches, comboSettings, analysis, teamsQuality, learnerStats, leaguePriors]);
+  }, [
+    batch,
+    batches,
+    comboSettings,
+    analysis,
+    teamsQuality,
+    learnerStats,
+    leaguePriors,
+    matchCentreCache,
+  ]);
 
   const registry = listRegisteredResultPages();
 

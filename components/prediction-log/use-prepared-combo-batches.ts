@@ -7,6 +7,7 @@ import {
   ensureComboRecommendedShell,
   matchesNeedingComboGrid,
 } from "@/lib/prediction-log/prepare-batch-combos";
+import { fetchMatchCentreRatesCache } from "@/components/prediction-log/use-match-centre-rates-cache";
 import { loadClubRecordsForBatch } from "@/lib/prediction-log/club-record-insights";
 import {
   fetchClubRecord,
@@ -48,11 +49,14 @@ export function usePreparedComboBatches(batches: PredictionBatch[]) {
             const clubRecords =
               (await loadClubRecordsForBatchFromCache(shelled).catch(() => null)) ??
               (await loadClubRecordsForBatch(shelled, clubIndex, fetchClubRecord));
+            const matchCentreCache = await fetchMatchCentreRatesCache(shelled);
             let withGrids = attachComboScoreGrids(
               shelled,
               clubRecords,
               clubIndex,
-              batches
+              batches,
+              undefined,
+              { matchCentreCache }
             );
             const needHist = matchesNeedingComboGrid(withGrids);
             if (needHist.length > 0) {
@@ -72,7 +76,8 @@ export function usePreparedComboBatches(batches: PredictionBatch[]) {
                       clubRecords,
                       clubIndex,
                       batches,
-                      data.grids
+                      data.grids,
+                      { matchCentreCache }
                     );
                   }
                 }

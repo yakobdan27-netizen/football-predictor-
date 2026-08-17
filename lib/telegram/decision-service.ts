@@ -1,5 +1,5 @@
 import { defaultCombinedOddsSettings } from "@/lib/prediction-log/combo-settings";
-import { formatUserMarketEvalLine, processBatchDecisions } from "@/lib/prediction-log/decision-maker";
+import { formatUserMarketEvalLine, processBatchDecisionsAsync } from "@/lib/prediction-log/decision-maker";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
 import { loadLearnerStatsStore } from "@/lib/prediction-log/learner-stats-store";
@@ -78,7 +78,7 @@ export async function runDecisionForOwnedBatch(
   const learnerStats = await loadLearnerStatsStore().catch(() => null);
   const leaguePriors = await loadLeaguePriorsStore().catch(() => null);
 
-  const rows = processBatchDecisions({
+  const rows = await processBatchDecisionsAsync({
     batch,
     allBatches: allBatches.length ? allBatches : [batch],
     comboSettings,

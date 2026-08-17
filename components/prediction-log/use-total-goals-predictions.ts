@@ -8,6 +8,7 @@ import {
 import type { TotalGoalsMarkets } from "@/lib/prediction-log/total-goals-markets";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import type { HalfParamsStore } from "@/lib/hist/half-params-types";
+import { useMatchCentreRatesCache } from "./use-match-centre-rates-cache";
 
 export type TotalGoalsRow = {
   matchId: string;
@@ -27,12 +28,15 @@ export function useTotalGoalsPredictions(
   rows: TotalGoalsRow[];
   estimatesById: Record<string, CanonicalFixtureEstimate>;
 } {
+  const matchCentreCache = useMatchCentreRatesCache(batch, allBatches);
+
   return useMemo(() => {
     const empty: Record<string, CanonicalFixtureEstimate> = {};
     if (!batch) return { rows: [] as TotalGoalsRow[], estimatesById: empty };
 
     const estimates = estimateBatchCanonical(batch, allBatches, {
       halfParamsStore,
+      matchCentreCache,
     });
     const byId: Record<string, CanonicalFixtureEstimate> = {};
     const rows: TotalGoalsRow[] = [];
@@ -51,5 +55,5 @@ export function useTotalGoalsPredictions(
       });
     }
     return { rows, estimatesById: byId };
-  }, [batch, allBatches, halfParamsStore]);
+  }, [batch, allBatches, halfParamsStore, matchCentreCache]);
 }

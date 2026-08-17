@@ -2,7 +2,7 @@
  * Fixture pool from saved prediction-log batches only.
  */
 import {
-  estimateBatchCanonical,
+  estimateBatchCanonicalAsync,
   type CanonicalFixtureEstimate,
 } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { matchLeague } from "@/lib/prediction-log/match-league";
@@ -65,13 +65,13 @@ function dateInWindow(dateIso: string, start: string, end: string): boolean {
 /**
  * Flatten + dedupe matches from saved batches, compute CFE once per fixture.
  */
-export function loadBatchFixturePool(
+export async function loadBatchFixturePool(
   allBatches: PredictionBatch[],
   prefs: SlipPreferences,
   opts?: {
     excludeFixtureIds?: string[];
   }
-): PoolFixture[] {
+): Promise<PoolFixture[]> {
   const batchScoped = Boolean(prefs.sourceBatchId?.trim());
   const { start, end } = batchScoped
     ? { start: "", end: "" }
@@ -158,7 +158,7 @@ export function loadBatchFixturePool(
       ...batch,
       matches: batch.matches.filter((m) => needed.has(m.id)),
     };
-    const estimates = estimateBatchCanonical(shelled, allBatches);
+    const estimates = await estimateBatchCanonicalAsync(shelled, allBatches);
     const estByMatch = new Map<string, CanonicalFixtureEstimate>();
     for (let i = 0; i < shelled.matches.length; i++) {
       estByMatch.set(shelled.matches[i]!.id, estimates[i]!);

@@ -5,11 +5,16 @@ import { estimateTempoProfile } from "../half-tempo";
 import {
   loadClubHalfAttackDefence,
   loadLeagueAfBaselines,
+  type ClubHalfAttackDefence,
 } from "../hsh-half-rates";
-import { predictHighestScoringHalf } from "../hsh-model";
-import { estimateBatchCanonical } from "../canonical-fixture-estimate";
+import {
+  estimateBatchCanonical,
+  collectBatchTeamLeaguePairs,
+} from "../canonical-fixture-estimate";
+import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
 import { getCachedHalfParams } from "@/lib/hist/half-params-types";
 import { matchLeague } from "../match-league";
+import { predictHighestScoringHalf } from "../hsh-model";
 import type {
   AnalysisHistory,
   CombinedOddsSettings,
@@ -33,6 +38,7 @@ export function buildDecisionBatchCaches(params: {
   analysis: AnalysisHistory | null;
   teamsQuality: TeamsQualityStore | null;
   learnerStats: LearnerStatsStore | null;
+  matchCentreCache?: Map<string, ClubHalfAttackDefence>;
 }): DecisionBatchCaches {
   const {
     batch,
@@ -41,6 +47,7 @@ export function buildDecisionBatchCaches(params: {
     analysis,
     teamsQuality,
     learnerStats,
+    matchCentreCache,
   } = params;
 
   const caches: DecisionBatchCaches = {
@@ -54,6 +61,7 @@ export function buildDecisionBatchCaches(params: {
   try {
     const estimates = estimateBatchCanonical(batch, allBatches, {
       halfParamsStore: getCachedHalfParams(),
+      matchCentreCache,
     });
     for (let i = 0; i < batch.matches.length; i++) {
       caches.cfeByMatchId.set(batch.matches[i]!.id, estimates[i]!);
@@ -67,9 +75,11 @@ export function buildDecisionBatchCaches(params: {
       const league = matchLeague(match, batch.league);
       const homeRates = loadClubHalfAttackDefence(match.homeTeam, league, allBatches, {
         beforeDate: batch.date,
+        matchCentreCache,
       });
       const awayRates = loadClubHalfAttackDefence(match.awayTeam, league, allBatches, {
         beforeDate: batch.date,
+        matchCentreCache,
       });
       const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
       const homeTempo = estimateTempoProfile(allBatches, match.homeTeam, {
@@ -148,4 +158,23 @@ export function buildDecisionBatchCaches(params: {
   }
 
   return caches;
+}
+
+export async function buildDecisionBatchCachesAsync(params: {
+  batch: PredictionBatch;
+  allBatches: PredictionBatch[];
+  comboSettings: CombinedOddsSettings;
+  analysis: AnalysisHistory | null;
+  teamsQuality: TeamsQualityStore | null;
+  learnerStats: LearnerStatsStore | null;
+}): Promise<DecisionBatchCaches> {
+  let matchCentreCache: Map<string, ClubHalfAttackDefence> | undefined;
+  try {
+    matchCentreCache = await preloadMatchCentreHalfRates(
+      collectBatchTeamLeaguePairs(params.batch)
+    );
+  } catch {
+    matchCentreCache = undefined;
+  }
+  return buildDecisionBatchCaches({ ...params, matchCentreCache });
 }

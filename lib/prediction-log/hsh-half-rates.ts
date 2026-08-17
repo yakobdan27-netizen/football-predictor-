@@ -3,6 +3,12 @@
  * Scoring seed (match half totals → /2) + conceded seed, blended with live HT.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  blendApiSeasonRates,
+  isInCurrentApiSeasonWindow,
+  matchCentreRatesCacheKey,
+  type ApiSeasonBlendMode,
+} from "./api-season-blend";
 import { blendSeedAndLive } from "./conceded-half-baselines";
 import { lookupClubConcededRecencyBlend } from "./conceded-half-baselines";
 import {
@@ -25,6 +31,10 @@ export interface ClubHalfAttackDefence {
   seasonCount: number;
   seedOnly: boolean;
   sourceNote: string | null;
+  /** Nested API season blend mode when Match Centre cache is supplied. */
+  apiSeasonBlend?: ApiSeasonBlendMode;
+  /** Finished 2026/27 Match Centre matches used for current-season side. */
+  apiSeasonCurrentN?: number;
 }
 
 export interface LeagueAfBaselines {
@@ -75,7 +85,7 @@ function collectLiveRates(
   batches: PredictionBatch[],
   team: string,
   league: string,
-  opts?: { beforeDate?: string }
+  opts?: { beforeDate?: string; excludeCurrentApiSeason?: boolean }
 ): { n: number; af1: number; af2: number; da1: number; da2: number } {
   const key = teamKey(team);
   let n = 0;
@@ -88,6 +98,12 @@ function collectLiveRates(
     for (const match of batch.matches) {
       const matchDate = match.matchDate ?? batch.date;
       if (opts?.beforeDate && matchDate >= opts.beforeDate) continue;
+      if (
+        opts?.excludeCurrentApiSeason &&
+        isInCurrentApiSeasonWindow(matchDate)
+      ) {
+        continue;
+      }
       if (matchLeague(match, batch.league) !== league) continue;
       const venue =
         teamKey(match.homeTeam) === key
@@ -134,7 +150,7 @@ export function loadLeagueAfBaselines(league: string): LeagueAfBaselines {
   return { lgAf1: 0.62, lgAf2: 0.78 };
 }
 
-export function loadClubHalfAttackDefence(
+function loadClubHalfAttackDefencePrior(
   club: string,
   league: string,
   batches: PredictionBatch[],
@@ -142,7 +158,10 @@ export function loadClubHalfAttackDefence(
 ): ClubHalfAttackDefence {
   const scoring = lookupClubScoringRecencyBlend(club, league);
   const conceded = lookupClubConcededRecencyBlend(club, league);
-  const live = collectLiveRates(batches, club, league, opts);
+  const live = collectLiveRates(batches, club, league, {
+    ...opts,
+    excludeCurrentApiSeason: true,
+  });
 
   const seedAf1 = scoring ? scoring.avg1h / 2 : 0.55;
   const seedAf2 = scoring ? scoring.avg2h / 2 : 0.75;
@@ -162,14 +181,17 @@ export function loadClubHalfAttackDefence(
   const da2 =
     live.n > 0 ? blendSeedAndLive(seedDa2, seedN, live.da2, live.n) : seedDa2;
 
-  const seasonCount = Math.max(scoring?.seasonCount ?? 0, conceded?.seasonCount ?? 0);
+  const seasonCount = Math.max(
+    scoring?.seasonCount ?? 0,
+    conceded?.seasonCount ?? 0
+  );
   const nMatches = live.n > 0 ? live.n + seedN : seedN;
   const seedOnly = live.n === 0;
 
   const notes: string[] = [];
   if (scoring) notes.push(scoring.sourceLabel);
   if (conceded) notes.push(conceded.sourceLabel.replace("seed:", "conceded:"));
-  if (live.n > 0) notes.push(`live n=${live.n}`);
+  if (live.n > 0) notes.push(`prior-live n=${live.n}`);
 
   return {
     clubName: standardizeTeamName(club),
@@ -182,6 +204,59 @@ export function loadClubHalfAttackDefence(
     seasonCount,
     seedOnly,
     sourceNote: notes.length ? notes.join(" · ") : null,
+  };
+}
+
+export function loadClubHalfAttackDefence(
+  club: string,
+  league: string,
+  batches: PredictionBatch[],
+  opts?: {
+    beforeDate?: string;
+    matchCentreCache?: Map<string, ClubHalfAttackDefence>;
+  }
+): ClubHalfAttackDefence {
+  const prior = loadClubHalfAttackDefencePrior(club, league, batches, opts);
+
+  const cacheKey = matchCentreRatesCacheKey(club, league);
+  const mc =
+    opts?.matchCentreCache?.get(cacheKey) ??
+    opts?.matchCentreCache?.get(
+      matchCentreRatesCacheKey(standardizeTeamName(club), league)
+    ) ??
+    null;
+
+  if (!mc || mc.nMatches <= 0) {
+    return prior;
+  }
+
+  const blended = blendApiSeasonRates(
+    { af1: prior.af1, af2: prior.af2, da1: prior.da1, da2: prior.da2 },
+    { af1: mc.af1, af2: mc.af2, da1: mc.da1, da2: mc.da2 },
+    mc.nMatches
+  );
+
+  const notes = [...(prior.sourceNote ? [prior.sourceNote] : [])];
+  if (mc.sourceNote) notes.push(mc.sourceNote);
+  notes.push(
+    blended.mode === "60_40"
+      ? `api-season: 60/40 mc n=${blended.nCurrent}`
+      : `api-season: prior_only mc n=${blended.nCurrent}`
+  );
+
+  return {
+    clubName: prior.clubName,
+    league: prior.league,
+    af1: blended.af1,
+    af2: blended.af2,
+    da1: blended.da1,
+    da2: blended.da2,
+    nMatches: prior.nMatches + blended.nCurrent,
+    seasonCount: prior.seasonCount,
+    seedOnly: prior.seedOnly && blended.mode === "prior_only",
+    sourceNote: notes.join(" · "),
+    apiSeasonBlend: blended.mode,
+    apiSeasonCurrentN: blended.nCurrent,
   };
 }
 

@@ -27,7 +27,7 @@ export {
   RESULT_PAGE_REGISTRY,
   listRegisteredResultPages,
 } from "./result-page-registry";
-export { buildDecisionBatchCaches } from "./build-batch-caches";
+export { buildDecisionBatchCaches, buildDecisionBatchCachesAsync } from "./build-batch-caches";
 export {
   aggregateMatchData,
   ensureThreeMarkets,
@@ -38,6 +38,7 @@ export {
 export {
   processAllBatchesDecisions,
   processBatchDecisions,
+  processBatchDecisionsAsync,
 } from "./process-batch";
 export {
   comboOverlapsTopThree,

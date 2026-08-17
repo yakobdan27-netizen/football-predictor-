@@ -38,7 +38,7 @@ export async function generateSlipBatch(input: {
   // Q9 must never influence computation — strip before optimise path is already record-only
   const prefsForEngine: SlipPreferences = { ...prefs };
 
-  const fixtures = loadBatchFixturePool(input.allBatches, prefsForEngine, {
+  const fixtures = await loadBatchFixturePool(input.allBatches, prefsForEngine, {
     excludeFixtureIds: input.excludeFixtureIds,
   });
 

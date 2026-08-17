@@ -16,7 +16,7 @@ export async function buildMutationContext(input: {
   bayesianLog?: BayesianCalibrationLog | null;
   useHeuristicRho?: boolean;
 }): Promise<{ byFamily: FamilyPool[]; rhoLookup: RhoLookup }> {
-  const fixtures = loadBatchFixturePool(input.allBatches, input.prefs);
+  const fixtures = await loadBatchFixturePool(input.allBatches, input.prefs);
   const calibrator = fitSlipCalibrator(
     input.allBatches,
     input.bayesianLog ?? null

@@ -16,6 +16,7 @@ import type {
 import type { LeaguePriorsStore } from "../league-priors";
 import type { TeamsQualityStore } from "../teams-quality-types";
 import { buildDecisionBatchCaches } from "./build-batch-caches";
+import type { ClubHalfAttackDefence } from "../hsh-half-rates";
 import { pickMandatoryCombo } from "./combo-exclude";
 import {
   aggregateMatchData,
@@ -106,6 +107,7 @@ export function processBatchDecisions(params: {
   teamsQuality: TeamsQualityStore | null;
   learnerStats: LearnerStatsStore | null;
   leaguePriors?: LeaguePriorsStore | null;
+  matchCentreCache?: Map<string, ClubHalfAttackDefence>;
 }): MatchDecisionRow[] {
   const {
     batch,
@@ -115,6 +117,7 @@ export function processBatchDecisions(params: {
     teamsQuality,
     learnerStats,
     leaguePriors,
+    matchCentreCache,
   } = params;
 
   const caches = buildDecisionBatchCaches({
@@ -124,6 +127,7 @@ export function processBatchDecisions(params: {
     analysis,
     teamsQuality,
     learnerStats,
+    matchCentreCache,
   });
 
   const batchDisplayId = getBatchDisplayId(batch);
@@ -207,6 +211,32 @@ export function processBatchDecisions(params: {
       incomplete: result.incomplete,
     };
   });
+}
+
+export async function processBatchDecisionsAsync(params: {
+  batch: PredictionBatch;
+  allBatches: PredictionBatch[];
+  comboSettings: CombinedOddsSettings;
+  analysis: AnalysisHistory | null;
+  teamsQuality: TeamsQualityStore | null;
+  learnerStats: LearnerStatsStore | null;
+  leaguePriors?: LeaguePriorsStore | null;
+}): Promise<MatchDecisionRow[]> {
+  let matchCentreCache: Map<string, ClubHalfAttackDefence> | undefined;
+  try {
+    const { collectBatchTeamLeaguePairs } = await import(
+      "../canonical-fixture-estimate"
+    );
+    const { preloadMatchCentreHalfRates } = await import(
+      "@/lib/match-centre/team-half-rates"
+    );
+    matchCentreCache = await preloadMatchCentreHalfRates(
+      collectBatchTeamLeaguePairs(params.batch)
+    );
+  } catch {
+    matchCentreCache = undefined;
+  }
+  return processBatchDecisions({ ...params, matchCentreCache });
 }
 
 export function processAllBatchesDecisions(params: {

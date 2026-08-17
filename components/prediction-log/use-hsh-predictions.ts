@@ -18,6 +18,7 @@ import { estimateTempoProfile } from "@/lib/prediction-log/half-tempo";
 import type { HshPrediction } from "@/lib/prediction-log/hsh-model";
 import type { BlendSource } from "@/lib/prediction-log/prediction-weights";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
+import { useMatchCentreRatesCache } from "./use-match-centre-rates-cache";
 
 export interface HshOverride {
   lambda1h?: number;
@@ -43,24 +44,39 @@ export function useHshPredictions(
   error: string | null;
   estimatesById: Record<string, CanonicalFixtureEstimate>;
 } {
+  const matchCentreCache = useMatchCentreRatesCache(batch, allBatches);
+
   const { predictions, estimatesById } = useMemo(() => {
     const emptyEst: Record<string, CanonicalFixtureEstimate> = {};
     if (!batch) return { predictions: [] as HshPredictionWithBlend[], estimatesById: emptyEst };
 
-    const estimates = estimateBatchCanonical(batch, allBatches);
+    const estimates = estimateBatchCanonical(batch, allBatches, {
+      matchCentreCache,
+    });
     const byId: Record<string, CanonicalFixtureEstimate> = {};
     for (let i = 0; i < batch.matches.length; i++) {
       byId[batch.matches[i]!.id] = estimates[i]!;
     }
 
+    const rateOpts = {
+      beforeDate: batch.date,
+      matchCentreCache,
+    };
+
     const predictions = batch.matches.map((match, i) => {
       const league = matchLeague(match, batch.league);
-      const homeRates = loadClubHalfAttackDefence(match.homeTeam, league, allBatches, {
-        beforeDate: batch.date,
-      });
-      const awayRates = loadClubHalfAttackDefence(match.awayTeam, league, allBatches, {
-        beforeDate: batch.date,
-      });
+      const homeRates = loadClubHalfAttackDefence(
+        match.homeTeam,
+        league,
+        allBatches,
+        rateOpts
+      );
+      const awayRates = loadClubHalfAttackDefence(
+        match.awayTeam,
+        league,
+        allBatches,
+        rateOpts
+      );
       const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
       const homeTempo = estimateTempoProfile(allBatches, match.homeTeam, {
         beforeDate: batch.date,
@@ -86,7 +102,6 @@ export function useHshPredictions(
         manualLambda2h: override?.lambda2h,
       });
 
-      // Without half overrides, display probs are CFE markets (SoT).
       if (!override?.lambda1h && !override?.lambda2h) {
         const aligned: HshPredictionWithBlend = {
           ...pred,
@@ -113,7 +128,7 @@ export function useHshPredictions(
     });
 
     return { predictions, estimatesById: byId };
-  }, [batch, allBatches, overrides]);
+  }, [batch, allBatches, overrides, matchCentreCache]);
 
   return { predictions, loading: false, error: null, estimatesById };
 }

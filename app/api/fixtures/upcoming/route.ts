@@ -6,6 +6,7 @@ import {
   fetchUpcomingForLeague,
   type NextMatchesLeague,
 } from "@/lib/football-api/fetch-upcoming-league";
+import { registerMatchCentreFixtures } from "@/lib/match-centre/register-fixtures";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -41,6 +42,27 @@ export async function GET(request: Request) {
       next: Number.isFinite(next) ? next : DEFAULT_UPCOMING_NEXT,
       refresh,
     });
+
+    if (result.fixtures.length > 0) {
+      registerMatchCentreFixtures(
+        result.fixtures.map((f) => ({
+          apiFixtureId: f.apiFixtureId,
+          kickoffIso: f.kickoffIso,
+          matchDate: f.matchDate,
+          status: f.status,
+          home: f.home,
+          away: f.away,
+          venue: f.venue,
+          leagueId: f.leagueId,
+          league: f.league,
+        }))
+      ).catch((e) => {
+        console.warn(
+          "[fixtures/upcoming] match-centre register failed:",
+          e instanceof Error ? e.message : e
+        );
+      });
+    }
 
     let warning = result.warning;
     if (warning && /quota|limit_day|requests/i.test(warning)) {

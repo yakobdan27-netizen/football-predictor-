@@ -6,6 +6,7 @@ import {
   auditHistCoverage,
   gapQueueFromCoverage,
   isProviderHoleReason as isProviderHoleSkip,
+  type HistCoverageBucket,
 } from "./coverage-audit";
 import { processHistJobChunk, HIST_MAX_ENRICH_PER_CHUNK } from "./import-job";
 import {
@@ -55,16 +56,30 @@ export type HistBackfillChunkSummary = {
 export type HistBackfillOpts = {
   /** Prefer incomplete coverage buckets (missing → core-only → partial). */
   gapPriority?: boolean;
+  /** When set, only drain buckets for this API league id. */
+  leagueId?: number;
 };
+
+function filterGapsByLeague(
+  gaps: HistCoverageBucket[],
+  leagueId?: number
+): HistCoverageBucket[] {
+  if (leagueId == null) return gaps;
+  return gaps.filter((g) => g.leagueId === leagueId);
+}
 
 /**
  * Re-open terminal jobs that still have coverage gaps so gap-priority can drain them.
  */
 async function reopenGapJobs(
-  report: Awaited<ReturnType<typeof auditHistCoverage>>
+  report: Awaited<ReturnType<typeof auditHistCoverage>>,
+  leagueId?: number
 ): Promise<number> {
   // Only reopen the next few queue heads — avoids 66 DB writes + Neon pressure per chunk.
-  const gaps = gapQueueFromCoverage(report).slice(0, 8);
+  const gaps = filterGapsByLeague(gapQueueFromCoverage(report), leagueId).slice(
+    0,
+    8
+  );
   let reopened = 0;
   for (const g of gaps) {
     const job = await getHistJob(g.leagueId, g.season);
@@ -84,7 +99,8 @@ async function reopenGapJobs(
 }
 
 async function pickGapJob(
-  report: Awaited<ReturnType<typeof auditHistCoverage>>
+  report: Awaited<ReturnType<typeof auditHistCoverage>>,
+  leagueId?: number
 ): Promise<{
   leagueId: number;
   season: number;
@@ -92,7 +108,7 @@ async function pickGapJob(
   cursorFixtureId: number | null;
   status: string;
 } | null> {
-  const gaps = gapQueueFromCoverage(report);
+  const gaps = filterGapsByLeague(gapQueueFromCoverage(report), leagueId);
   for (const g of gaps) {
     let job = await getHistJob(g.leagueId, g.season);
     if (!job) {
@@ -131,6 +147,7 @@ export async function runHistBackfillChunk(
   await ensureHistJobs();
 
   const gapPriority = opts?.gapPriority === true;
+  const leagueFilter = opts?.leagueId;
   const preflight = await runHistPreflight();
   const empty = {
     leagueId: null as number | null,
@@ -157,7 +174,10 @@ export async function runHistBackfillChunk(
     );
     const summary = await histJobsSummary().catch(() => null);
     const gaps = gapPriority
-      ? gapQueueFromCoverage(await auditHistCoverage()).length
+      ? filterGapsByLeague(
+          gapQueueFromCoverage(await auditHistCoverage()),
+          leagueFilter
+        ).length
       : undefined;
     return {
       ok: false,
@@ -174,17 +194,20 @@ export async function runHistBackfillChunk(
   // One coverage audit per chunk (reopen + pick share it).
   const gapReport = gapPriority ? await auditHistCoverage() : null;
   if (gapReport) {
-    await reopenGapJobs(gapReport);
+    await reopenGapJobs(gapReport, leagueFilter);
   }
 
   const job = gapPriority
-    ? await pickGapJob(gapReport!)
+    ? await pickGapJob(gapReport!, leagueFilter)
     : ((await listActiveHistJobs())[0] ?? null);
 
   if (!job) {
     const summary = await histJobsSummary();
     const coverage = await auditHistCoverage();
-    const gapsLeft = gapQueueFromCoverage(coverage).length;
+    const gapsLeft = filterGapsByLeague(
+      gapQueueFromCoverage(coverage),
+      leagueFilter
+    ).length;
     await updateHistMetaSummary(
       gapPriority
         ? `gap queue empty (${coverage.summary.full}/${coverage.summary.total} full)`
@@ -230,7 +253,10 @@ export async function runHistBackfillChunk(
       progress = progressFrom(summary.byStatus, summary.fixtures);
       if (gapPriority) {
         const coverage = await auditHistCoverage();
-        gapsLeft = gapQueueFromCoverage(coverage).length;
+        gapsLeft = filterGapsByLeague(
+          gapQueueFromCoverage(coverage),
+          leagueFilter
+        ).length;
       }
     } catch (e) {
       console.warn(

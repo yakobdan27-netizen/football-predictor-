@@ -5,7 +5,7 @@ import { LiveFixturesApp } from "@/components/live/live-fixtures-app";
 import { BetCouponApp } from "@/components/bets/bet-coupon-app";
 import { NextMatchesApp } from "@/components/fixtures/next-matches-app";
 import { PlayApp } from "@/components/ext-bets/play-app";
-import { SlipBuilderApp } from "@/components/slip-builder/slip-builder-app";
+import { WeekendOpportunitiesApp } from "@/components/match-centre/weekend-opportunities-app";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
 import { getWorkspace } from "@/lib/navigation/workspace-routes";
 
@@ -15,7 +15,7 @@ function MatchCentreInner() {
   return (
     <WorkspaceShell
       workspace={workspace}
-      subtitle="Live fixtures, coupons, next matches, play access, and slip builder — each tab keeps its own state."
+      subtitle="Live fixtures, coupons, next matches, play access, and weekend opportunistic picks — each tab keeps its own state."
       panels={[
         { id: "live-fixtures", content: <LiveFixturesApp /> },
         {
@@ -32,7 +32,7 @@ function MatchCentreInner() {
           id: "slip-builder",
           content: (
             <Suspense fallback={<p className="page-sub">Loading…</p>}>
-              <SlipBuilderApp />
+              <WeekendOpportunitiesApp />
             </Suspense>
           ),
         },

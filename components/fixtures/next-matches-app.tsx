@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  fetchRecentResultsClient,
   fetchUpcomingLeagueClient,
   NEXT_MATCHES_LEAGUES,
   UPCOMING_API_UNAVAILABLE_COPY,
+  type RecentMatchCentreResult,
 } from "@/lib/football-api/fetch-upcoming-client";
 import {
   type NextMatchesLeague,
@@ -131,6 +133,127 @@ async function fetchLeague(
   };
 }
 
+type RecentState = {
+  loading: boolean;
+  error: string | null;
+  results: RecentMatchCentreResult[];
+};
+
+function emptyRecentState(): RecentState {
+  return { loading: true, error: null, results: [] };
+}
+
+function scoreOrDash(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return String(v);
+}
+
+function goalEventsOnly(goals: RecentMatchCentreResult["goals"]) {
+  return goals.filter((g) => {
+    const t = (g.type ?? "").toLowerCase();
+    return t.includes("goal") && !t.includes("missed");
+  });
+}
+
+function RecentResultCard({ row }: { row: RecentMatchCentreResult }) {
+  const [open, setOpen] = useState(false);
+  const { date, time } = formatKickoff(row.kickoffUtc);
+  const goals = goalEventsOnly(row.goals);
+  const ht =
+    row.homeGoals1h != null && row.awayGoals1h != null
+      ? `HT ${row.homeGoals1h}–${row.awayGoals1h}`
+      : null;
+
+  return (
+    <div className="card" style={{ padding: "0.85rem", opacity: 0.95 }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0.35rem 0.75rem",
+          alignItems: "center",
+          marginBottom: "0.5rem",
+          fontSize: "0.75rem",
+          color: "var(--muted)",
+        }}
+      >
+        <span style={{ fontWeight: 700, color: "var(--text)" }}>
+          {date} · {time}
+        </span>
+        <span
+          style={{
+            padding: "0.15rem 0.45rem",
+            borderRadius: 999,
+            background: "var(--surface2)",
+            fontWeight: 600,
+          }}
+        >
+          {row.status}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "0.5rem",
+          marginBottom: "0.35rem",
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: "0.9rem", flex: 1 }}>
+          {row.homeTeam}
+        </span>
+        <span style={{ fontWeight: 800, fontSize: "1.05rem", flexShrink: 0 }}>
+          {scoreOrDash(row.homeGoals)} – {scoreOrDash(row.awayGoals)}
+        </span>
+        <span
+          style={{
+            fontWeight: 600,
+            fontSize: "0.9rem",
+            flex: 1,
+            textAlign: "right",
+          }}
+        >
+          {row.awayTeam}
+        </span>
+      </div>
+      <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.35rem" }}>
+        {ht ? `${ht} · ` : ""}
+        Corners {scoreOrDash(row.homeCorners)}–{scoreOrDash(row.awayCorners)}
+      </div>
+      {goals.length > 0 ? (
+        <>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ fontSize: "0.75rem", padding: "0.3rem 0.55rem" }}
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "Hide" : "Show"} goal timings ({goals.length})
+          </button>
+          {open ? (
+            <ul
+              style={{
+                margin: "0.5rem 0 0",
+                paddingLeft: "1.1rem",
+                fontSize: "0.75rem",
+                color: "var(--text)",
+              }}
+            >
+              {goals.map((g, i) => (
+                <li key={`${g.minute}-${g.team}-${i}`}>
+                  {g.minute ?? "?"}&apos; {g.team ?? "—"}
+                  {g.player ? ` (${g.player})` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function NextMatchesApp() {
   const router = useRouter();
   const [active, setActive] = useState<NextMatchesLeague>("Premier League");
@@ -141,6 +264,13 @@ export function NextMatchesApp() {
   });
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [recent, setRecent] = useState<RecentState>(emptyRecentState);
+
+  const loadRecent = useCallback(async (league: NextMatchesLeague) => {
+    setRecent((prev) => ({ ...prev, loading: true, error: null }));
+    const { results, error } = await fetchRecentResultsClient(league);
+    setRecent({ loading: false, error, results });
+  }, []);
 
   const loadAll = useCallback(async (refresh: boolean) => {
     setByLeague((prev) => {
@@ -166,6 +296,12 @@ export function NextMatchesApp() {
   useEffect(() => {
     void loadAll(false);
   }, [loadAll]);
+
+  useEffect(() => {
+    void loadRecent(active);
+    const timer = window.setInterval(() => void loadRecent(active), 5 * 60_000);
+    return () => window.clearInterval(timer);
+  }, [active, loadRecent]);
 
   const state = byLeague[active] ?? emptyLeagueState();
 
@@ -365,6 +501,34 @@ export function NextMatchesApp() {
           );
         })}
       </div>
+
+      <section style={{ marginTop: "1.75rem" }}>
+        <h2 style={{ fontSize: "1rem", margin: "0 0 0.35rem" }}>Recent Results</h2>
+        <p className="page-sub" style={{ marginBottom: "0.75rem" }}>
+          Auto-filled when matches end (scores, corners, goal timings) — separate from
+          Prediction Log.
+        </p>
+        {recent.loading && recent.results.length === 0 ? (
+          <p className="page-sub">Loading recent results…</p>
+        ) : null}
+        {recent.error ? (
+          <div className="alert alert-error" style={{ marginBottom: "0.75rem" }}>
+            {recent.error}
+          </div>
+        ) : null}
+        {!recent.loading && !recent.error && recent.results.length === 0 ? (
+          <div className="card">
+            <p style={{ margin: 0, color: "var(--muted)" }}>
+              No finished matches in the last 48 hours for {active}.
+            </p>
+          </div>
+        ) : null}
+        <div style={{ display: "grid", gap: "0.65rem" }}>
+          {recent.results.map((row) => (
+            <RecentResultCard key={row.fixtureId} row={row} />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

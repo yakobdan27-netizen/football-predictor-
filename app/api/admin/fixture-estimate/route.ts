@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { readAdminSessionFromCookies } from "@/lib/admin/auth";
+import {
+  collectBatchTeamLeaguePairs,
+} from "@/lib/prediction-log/canonical-fixture-estimate";
 import { loadClubHalfAttackDefence, loadLeagueAfBaselines } from "@/lib/prediction-log/hsh-half-rates";
 import { estimateTempoProfile } from "@/lib/prediction-log/half-tempo";
 import { canonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { fetchBatches } from "@/lib/prediction-log/storage";
 import { matchLeague } from "@/lib/prediction-log/match-league";
+import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
 
 export const runtime = "nodejs";
 
@@ -40,11 +44,21 @@ export async function GET(request: Request) {
     }
 
     const league = matchLeague(match, batch.league);
+    let matchCentreCache;
+    try {
+      matchCentreCache = await preloadMatchCentreHalfRates(
+        collectBatchTeamLeaguePairs(batch)
+      );
+    } catch {
+      matchCentreCache = undefined;
+    }
     const homeRates = loadClubHalfAttackDefence(match.homeTeam, league, batches, {
       beforeDate: batch.date,
+      matchCentreCache,
     });
     const awayRates = loadClubHalfAttackDefence(match.awayTeam, league, batches, {
       beforeDate: batch.date,
+      matchCentreCache,
     });
     const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
     const homeTempo = estimateTempoProfile(batches, match.homeTeam, {
