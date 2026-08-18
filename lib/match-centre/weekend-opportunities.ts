@@ -91,6 +91,7 @@ export type WeekendOpportunityTrace = {
   coherenceOk: boolean;
   secondBestPCalibrated?: number;
   marketMargin?: number;
+  marginOk?: boolean;
 };
 
 export type WeekendOpportunityRow = {
@@ -199,8 +200,10 @@ export type BestMarketPick = {
 export function scoreFixtureBestMarket(
   fixture: UpcomingFixtureRow,
   estimate: CanonicalFixtureEstimate,
-  calibrator: BinCalibrator | null
+  calibrator: BinCalibrator | null,
+  opts?: { applyMarginGate?: boolean }
 ): BestMarketPick {
+  const applyMarginGate = opts?.applyMarginGate !== false;
   const candidates: Array<{
     marketLabel: string;
     predictionLabel: string;
@@ -270,7 +273,7 @@ export function scoreFixtureBestMarket(
   const margin =
     second != null ? best.pCalibrated - second.pCalibrated : best.pCalibrated;
 
-  if (margin < WEEKEND_MARKET_MARGIN_MIN) return null;
+  if (applyMarginGate && margin < WEEKEND_MARKET_MARGIN_MIN) return null;
 
   return {
     ...best,
@@ -301,39 +304,80 @@ export function rankWeekendOpportunities(input: {
   const now = input.now ?? new Date();
   const end = new Date(now.getTime() + WEEKEND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const scored: Array<{
+  const strictScored: Array<{
     fixture: UpcomingFixtureRow;
     estimate: CanonicalFixtureEstimate;
     pick: NonNullable<BestMarketPick>;
+    marginOk: boolean;
   }> = [];
+  const relaxedScored: typeof strictScored = [];
 
   for (let i = 0; i < input.fixtures.length; i++) {
     const fixture = input.fixtures[i]!;
     const estimate = input.estimates[i];
     if (!estimate) continue;
 
-    const pick = scoreFixtureBestMarket(
+    const strictPick = scoreFixtureBestMarket(
       fixture,
       estimate,
-      input.calibrator
+      input.calibrator,
+      { applyMarginGate: true }
     );
-    if (!pick) continue;
+    if (strictPick) {
+      strictScored.push({
+        fixture,
+        estimate,
+        pick: strictPick,
+        marginOk: true,
+      });
+      continue;
+    }
 
-    scored.push({ fixture, estimate, pick });
+    const relaxedPick = scoreFixtureBestMarket(
+      fixture,
+      estimate,
+      input.calibrator,
+      { applyMarginGate: false }
+    );
+    if (!relaxedPick) continue;
+    relaxedScored.push({
+      fixture,
+      estimate,
+      pick: relaxedPick,
+      marginOk: false,
+    });
   }
 
-  scored.sort((a, b) => {
+  const sortScored = (
+    a: (typeof strictScored)[number],
+    b: (typeof strictScored)[number]
+  ) => {
     if (b.pick.pCalibrated !== a.pick.pCalibrated) {
       return b.pick.pCalibrated - a.pick.pCalibrated;
     }
     if (b.pick.pRaw !== a.pick.pRaw) return b.pick.pRaw - a.pick.pRaw;
     return kickoffMs(a.fixture.kickoffIso) - kickoffMs(b.fixture.kickoffIso);
-  });
+  };
+
+  strictScored.sort(sortScored);
+  relaxedScored.sort(sortScored);
+
+  let scored = [...strictScored];
+  if (scored.length < WEEKEND_PICK_MIN) {
+    for (const row of relaxedScored) {
+      if (scored.length >= WEEKEND_PICK_MIN) break;
+      scored.push(row);
+    }
+  }
+  if (scored.length < WEEKEND_PICK_MIN) {
+    scored = [...strictScored, ...relaxedScored].sort(sortScored);
+  }
 
   const { count, insufficientPool } = selectWeekendPickCount(scored.length);
   const top = scored.slice(0, count);
 
-  const rows: WeekendOpportunityRow[] = top.map(({ fixture, estimate, pick }, idx) => ({
+  const rows: WeekendOpportunityRow[] = top.map(
+    ({ fixture, estimate, pick, marginOk }, idx) => ({
     apiFixtureId: fixture.apiFixtureId,
     league: fixture.league,
     kickoffIso: fixture.kickoffIso,
@@ -358,8 +402,10 @@ export function rankWeekendOpportunities(input: {
       coherenceOk: pick.coherenceOk,
       secondBestPCalibrated: pick.secondBestPCalibrated,
       marketMargin: pick.marketMargin,
+      marginOk,
     },
-  }));
+  })
+  );
 
   return {
     rows,

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import {
   fetchUpcomingForLeague,
   NEXT_MATCHES_LEAGUES,
@@ -7,6 +8,7 @@ import { registerMatchCentreFixtures } from "@/lib/match-centre/register-fixture
 import {
   filterWeekendFixtures,
   rankWeekendOpportunities,
+  WEEKEND_PICK_MIN,
 } from "@/lib/match-centre/weekend-opportunities";
 import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
@@ -20,6 +22,8 @@ import { sumFilterReasons } from "@/lib/football-api/fixture-eligibility";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
+
+const WEEKEND_CACHE_SECONDS = 300;
 
 export async function GET(request: Request) {
   try {
@@ -94,33 +98,46 @@ export async function GET(request: Request) {
       });
     }
 
-    let matchCentreCache;
-    try {
-      matchCentreCache = await preloadMatchCentreHalfRates(
-        collectBatchTeamLeaguePairs(batch)
-      );
-    } catch {
-      matchCentreCache = undefined;
-    }
+    const runScoring = async () => {
+      const [matchCentreCache, allBatches] = await Promise.all([
+        preloadMatchCentreHalfRates(collectBatchTeamLeaguePairs(batch)).catch(
+          () => undefined
+        ),
+        loadAllBatches().catch(() => [] as Awaited<
+          ReturnType<typeof loadAllBatches>
+        >),
+      ]);
 
-    const estimates = await estimateBatchCanonicalAsync(batch, [batch], {
-      matchCentreCache,
-    });
+      const estimates = await estimateBatchCanonicalAsync(batch, [batch], {
+        matchCentreCache,
+      });
+      const calibrator = fitSlipCalibrator(allBatches);
+      return rankWeekendOpportunities({
+        fixtures: weekendFixtures,
+        estimates,
+        calibrator,
+      });
+    };
 
-    const allBatches = await loadAllBatches().catch(() => []);
-    const calibrator = fitSlipCalibrator(allBatches);
-
-    const result = rankWeekendOpportunities({
-      fixtures: weekendFixtures,
-      estimates,
-      calibrator,
-    });
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const result =
+      refresh
+        ? await runScoring()
+        : await unstable_cache(runScoring, ["weekend-opportunities", dayKey], {
+            revalidate: WEEKEND_CACHE_SECONDS,
+          })();
 
     const warnings: string[] = [];
     if (result.insufficientPool) {
-      warnings.push(
-        `Only ${result.fixturePoolCount} weekend fixtures found (minimum target is 10). Showing all available.`
-      );
+      if (result.fixturePoolCount >= WEEKEND_PICK_MIN) {
+        warnings.push(
+          `Only ${result.selectedCount} picks ranked from ${result.fixturePoolCount} weekend fixtures (target is 10–20).`
+        );
+      } else {
+        warnings.push(
+          `Only ${result.fixturePoolCount} weekend fixtures found (minimum target is 10). Showing all available.`
+        );
+      }
     }
     for (const r of leagueResults) {
       if (r.warning) warnings.push(`${r.league}: ${r.warning}`);

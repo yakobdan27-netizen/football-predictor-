@@ -4,6 +4,7 @@ import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-leagu
 import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import {
   filterWeekendFixtures,
+  rankWeekendOpportunities,
   scoreFixtureBestMarket,
   selectWeekendPickCount,
   WEEKEND_DC_TOTAL_COMBO_IDS,
@@ -285,4 +286,55 @@ test("scoreFixtureBestMarket accepts clear leader above margin", () => {
   assert.ok(pick);
   assert.equal(pick!.family, "DIEH");
   assert.ok((pick!.marketMargin ?? 0) >= WEEKEND_MARKET_MARGIN_MIN);
+});
+
+test("rankWeekendOpportunities fills to 10 using relaxed picks when margin gate is tight", () => {
+  const fixtures = Array.from({ length: 15 }, (_, i) =>
+    row(200 + i, "2026-08-22T15:00:00.000Z")
+  );
+  const flatEst = mockEstimate({
+    markets: {
+      ...mockEstimate().markets,
+      home: 0.51,
+      draw: 0.51,
+      away: 0.51,
+      bttsYes: 0.51,
+      bttsNo: 0.51,
+      over25: 0.51,
+      under25: 0.51,
+      p1h: 0.51,
+      p2h: 0.51,
+      pTie: 0.51,
+      p2h_gt_1h: 0.51,
+      cornersOver95: 0.51,
+      cornersUnder95: 0.51,
+      doubleChance: { oneX: 0.51, xTwo: 0.51, oneTwo: 0.51 },
+      dieh: {
+        ...mockEstimate().markets.dieh,
+        diehYes: 0.51,
+        diehNo: 0.51,
+      },
+    },
+  });
+  const clearEst = mockEstimate({
+    markets: {
+      ...mockEstimate().markets,
+      dieh: {
+        ...mockEstimate().markets.dieh,
+        diehYes: 0.92,
+        diehNo: 0.08,
+      },
+      doubleChance: { oneX: 0.72, xTwo: 0.55, oneTwo: 0.72 },
+    },
+  });
+  const estimates = fixtures.map((_, i) =>
+    i === 0 ? clearEst : flatEst
+  );
+  const result = rankWeekendOpportunities({
+    fixtures,
+    estimates,
+    calibrator: null,
+  });
+  assert.ok(result.selectedCount >= WEEKEND_PICK_MIN);
+  assert.equal(result.rows[0]!.trace.marginOk, true);
 });
