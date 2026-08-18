@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Nav } from "@/components/nav";
-import { ManualDataBanner } from "@/components/manual-data-banner";
+import { DataSourceBanner } from "@/components/manual-data-banner";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Football Predictor",
   description:
-    "Fully manual football prediction app — Dixon-Coles engine on user-entered data only",
+    "Football prediction app — Dixon-Coles engine with API-Football sync and manual Prediction Log entry",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -33,7 +33,7 @@ export default function RootLayout({
           <Nav />
           <main className="app-main">
             <div className="mx-auto max-w-6xl">
-              <ManualDataBanner />
+              <DataSourceBanner />
             </div>
             {children}
           </main>

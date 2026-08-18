@@ -1,6 +1,14 @@
 # Football Prediction System — Operating Guide
 
-> **This application is fully manual.** No football APIs or external data sources are used. All match data, predictions, results, and odds come from user input (CSV upload, demo seed, or manual entry in the Prediction Log).
+## Data sources
+
+| Source | Used for |
+|--------|----------|
+| **API-Football** (optional) | Live fixtures, result auto-fill, hist inventory, Match Centre, roster verify |
+| **Manual / KV** | Predictions, odds, batch entry, overrides |
+| **CSV / demo** | Backtest training data |
+
+Set `APISPORTS_KEY` (or `API_FOOTBALL_KEY`) server-side to enable API-Football. Manual entry and overrides always remain available.
 
 This guide maps the seven-stage prediction workflow to this app. The engine produces **probabilities**, not certainties. A realistic ceiling for match-outcome accuracy is roughly **50–55%**.
 

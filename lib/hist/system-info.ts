@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { histMeta } from "@/lib/db/schema";
 import {
   auditHistCoverage,
+  enrichmentGapQueueFromCoverage,
   gapQueueFromCoverage,
   type HistCoverageReport,
 } from "./coverage-audit";
@@ -46,8 +47,9 @@ export type SystemInformation = {
   };
   drain: {
     gapsRemaining: number;
+    enrichmentGapsRemaining: number;
     totalStored: number;
-    mode: "gap-priority";
+    mode: "gap-priority" | "enrichment";
     scheduleUtc: string[];
     scheduleNote: string;
   };
@@ -94,7 +96,11 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
   const inv = coverage.summary.inventoryPass;
   const gatePass = inv >= coverage.summary.total;
   const gapsRemaining = gapQueueFromCoverage(coverage).length;
+  const enrichmentGapsRemaining =
+    enrichmentGapQueueFromCoverage(coverage).length;
   const totalStored = coverage.perCompetition.reduce((n, c) => n + c.stored, 0);
+  const drainMode =
+    gatePass && enrichmentGapsRemaining > 0 ? "enrichment" : "gap-priority";
 
   return {
     generatedAt: new Date().toISOString(),
@@ -117,11 +123,14 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
     },
     drain: {
       gapsRemaining,
+      enrichmentGapsRemaining,
       totalStored,
-      mode: "gap-priority",
+      mode: drainMode,
       scheduleUtc: ["05:00", "09:00", "13:00", "17:00", "21:00"],
       scheduleNote:
-        "Cron /api/cron/hist-backfill · gap-priority · stops at inventoryPass=66 or quota",
+        gatePass && enrichmentGapsRemaining > 0
+          ? `Cron /api/cron/hist-backfill · enrichment phase · ${enrichmentGapsRemaining} HT/corners gaps`
+          : "Cron /api/cron/hist-backfill · gap-priority · inventory until 66/66",
     },
   };
 }

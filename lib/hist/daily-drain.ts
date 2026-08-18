@@ -1,9 +1,11 @@
 /**
  * Daily hist inventory drain — gap-priority, deep-first.
- * Used by cron; stops on quota, gate pass, or max chunks.
+ * After inventory gate (66/66), switches to HT/corners enrichment phase.
+ * Used by cron; stops on quota, completion, or max chunks.
  */
 import {
   auditHistCoverage,
+  enrichmentGapQueueFromCoverage,
   gapQueueFromCoverage,
 } from "./coverage-audit";
 import { runHistBackfillChunk } from "./backfill";
@@ -17,13 +19,18 @@ export type DailyDrainResult = {
   providerHoles: number;
   chunksAttempted: number;
   totalEnriched: number;
+  htFilled: number;
+  cornersFilled: number;
+  phase: "inventory" | "enrichment";
+  enrichmentGapsRemaining: number;
   stoppedReason:
     | "gate_pass"
     | "quota"
     | "done"
     | "max_chunks"
     | "error"
-    | "no_gaps";
+    | "no_gaps"
+    | "enrichment_complete";
   lastChunk: HistBackfillChunkSummary | null;
   error?: string;
 };
@@ -48,6 +55,36 @@ async function refitHalfParamsIfNeeded(
   }
 }
 
+function pickPhase(report: Awaited<ReturnType<typeof auditHistCoverage>>): {
+  phase: "inventory" | "enrichment";
+  hasWork: boolean;
+  enrichmentGapsRemaining: number;
+} {
+  const invPass = report.summary.inventoryPass >= report.summary.total;
+  const inventoryGaps = gapQueueFromCoverage(report).length;
+  const enrichmentGaps = enrichmentGapQueueFromCoverage(report).length;
+
+  if (!invPass && inventoryGaps > 0) {
+    return {
+      phase: "inventory",
+      hasWork: true,
+      enrichmentGapsRemaining: enrichmentGaps,
+    };
+  }
+  if (enrichmentGaps > 0) {
+    return {
+      phase: "enrichment",
+      hasWork: true,
+      enrichmentGapsRemaining: enrichmentGaps,
+    };
+  }
+  return {
+    phase: invPass ? "enrichment" : "inventory",
+    hasWork: false,
+    enrichmentGapsRemaining: 0,
+  };
+}
+
 /**
  * Run up to `maxChunks` gap-priority enrichments (default 1 for serverless).
  */
@@ -56,25 +93,17 @@ export async function runDailyHistDrain(opts?: {
 }): Promise<DailyDrainResult> {
   const maxChunks = Math.max(1, Math.min(20, opts?.maxChunks ?? 1));
   let totalEnriched = 0;
+  let htFilled = 0;
+  let cornersFilled = 0;
   let lastChunk: HistBackfillChunkSummary | null = null;
   let chunksAttempted = 0;
+  let phase: "inventory" | "enrichment" = "inventory";
 
   const before = await auditHistCoverage();
   const inv0 = before.summary.inventoryPass;
-  if (inv0 >= before.summary.total) {
-    return {
-      ok: true,
-      gatePass: true,
-      inventoryPass: inv0,
-      total: before.summary.total,
-      providerHoles: before.summary.providerHoles,
-      chunksAttempted: 0,
-      totalEnriched: 0,
-      stoppedReason: "gate_pass",
-      lastChunk: null,
-    };
-  }
-  if (gapQueueFromCoverage(before).length === 0) {
+  const initial = pickPhase(before);
+
+  if (!initial.hasWork) {
     return {
       ok: true,
       gatePass: inv0 >= before.summary.total,
@@ -83,15 +112,49 @@ export async function runDailyHistDrain(opts?: {
       providerHoles: before.summary.providerHoles,
       chunksAttempted: 0,
       totalEnriched: 0,
-      stoppedReason: "no_gaps",
+      htFilled: 0,
+      cornersFilled: 0,
+      phase: initial.phase,
+      enrichmentGapsRemaining: 0,
+      stoppedReason:
+        inv0 >= before.summary.total
+          ? "enrichment_complete"
+          : "no_gaps",
       lastChunk: null,
     };
   }
 
+  phase = initial.phase;
+
   for (let i = 0; i < maxChunks; i++) {
+    const live = await auditHistCoverage().catch(() => before);
+    const pick = pickPhase(live);
+    phase = pick.phase;
+    if (!pick.hasWork) {
+      await refitHalfParamsIfNeeded(totalEnriched, inv0, live.summary.inventoryPass);
+      return {
+        ok: true,
+        gatePass: live.summary.inventoryPass >= live.summary.total,
+        inventoryPass: live.summary.inventoryPass,
+        total: live.summary.total,
+        providerHoles: live.summary.providerHoles,
+        chunksAttempted,
+        totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase,
+        enrichmentGapsRemaining: 0,
+        stoppedReason: "enrichment_complete",
+        lastChunk,
+      };
+    }
+
     chunksAttempted += 1;
     try {
-      lastChunk = await runHistBackfillChunk({ gapPriority: true });
+      lastChunk = await runHistBackfillChunk({
+        gapPriority: true,
+        mode: phase,
+      });
     } catch (e) {
       return {
         ok: false,
@@ -101,12 +164,18 @@ export async function runDailyHistDrain(opts?: {
         providerHoles: before.summary.providerHoles,
         chunksAttempted,
         totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase,
+        enrichmentGapsRemaining: pick.enrichmentGapsRemaining,
         stoppedReason: "error",
         lastChunk,
         error: e instanceof Error ? e.message : String(e),
       };
     }
     totalEnriched += lastChunk.enriched;
+    htFilled += lastChunk.htFilled;
+    cornersFilled += lastChunk.cornersFilled;
 
     if (lastChunk.quotaAbort || lastChunk.preflight.abort) {
       const after = await auditHistCoverage().catch(() => before);
@@ -123,6 +192,12 @@ export async function runDailyHistDrain(opts?: {
         providerHoles: after.summary.providerHoles,
         chunksAttempted,
         totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase,
+        enrichmentGapsRemaining:
+          lastChunk.enrichmentGapsRemaining ??
+          enrichmentGapQueueFromCoverage(after).length,
         stoppedReason: "quota",
         lastChunk,
       };
@@ -142,12 +217,17 @@ export async function runDailyHistDrain(opts?: {
         providerHoles: after.summary.providerHoles,
         chunksAttempted,
         totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase,
+        enrichmentGapsRemaining:
+          lastChunk.enrichmentGapsRemaining ??
+          enrichmentGapQueueFromCoverage(after).length,
         stoppedReason: "done",
         lastChunk,
       };
     }
     if (!lastChunk.ok && lastChunk.error) {
-      // Soft-continue next cron tick; report this failure.
       const after = await auditHistCoverage().catch(() => before);
       await refitHalfParamsIfNeeded(
         totalEnriched,
@@ -162,6 +242,12 @@ export async function runDailyHistDrain(opts?: {
         providerHoles: after.summary.providerHoles,
         chunksAttempted,
         totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase,
+        enrichmentGapsRemaining:
+          lastChunk.enrichmentGapsRemaining ??
+          enrichmentGapQueueFromCoverage(after).length,
         stoppedReason: "error",
         lastChunk,
         error: lastChunk.error,
@@ -177,6 +263,8 @@ export async function runDailyHistDrain(opts?: {
     after.summary.inventoryPass
   );
 
+  const finalPick = pickPhase(after);
+
   return {
     ok: true,
     gatePass: after.summary.inventoryPass >= after.summary.total,
@@ -185,6 +273,10 @@ export async function runDailyHistDrain(opts?: {
     providerHoles: after.summary.providerHoles,
     chunksAttempted,
     totalEnriched,
+    htFilled,
+    cornersFilled,
+    phase: finalPick.phase,
+    enrichmentGapsRemaining: finalPick.enrichmentGapsRemaining,
     stoppedReason: "max_chunks",
     lastChunk,
   };

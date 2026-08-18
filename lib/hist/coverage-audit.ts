@@ -368,3 +368,63 @@ export function gapQueueFromCoverage(
       return a.season - b.season;
     });
 }
+
+export const ENRICHMENT_HT_MISSING_PCT_THRESHOLD = 10;
+export const ENRICHMENT_CORNERS_MISSING_PCT_THRESHOLD = 15;
+
+export type FixtureEnrichmentState = {
+  htHome: number | null;
+  htAway: number | null;
+  statsRowCount: number;
+  statsRowsWithCorners: number;
+};
+
+/** True when fixture still needs HT score and/or corner stats backfill. */
+export function fixtureNeedsEnrichment(state: FixtureEnrichmentState): {
+  needsHt: boolean;
+  needsCorners: boolean;
+  needsAny: boolean;
+} {
+  const needsHt = state.htHome == null || state.htAway == null;
+  const needsCorners =
+    state.statsRowCount === 0 ||
+    state.statsRowsWithCorners < 2 ||
+    state.statsRowCount > state.statsRowsWithCorners;
+  return { needsHt, needsCorners, needsAny: needsHt || needsCorners };
+}
+
+export function bucketNeedsEnrichment(b: HistCoverageBucket): boolean {
+  if (!b.inventoryPass || b.providerHole || b.stored_fixtures <= 0) {
+    return false;
+  }
+  if (b.completeness !== "full") return true;
+  const htGap =
+    b.htMissingPct != null &&
+    b.htMissingPct > ENRICHMENT_HT_MISSING_PCT_THRESHOLD;
+  const cornersGap =
+    b.cornersMissingPct != null &&
+    b.cornersMissingPct > ENRICHMENT_CORNERS_MISSING_PCT_THRESHOLD;
+  return htGap || cornersGap;
+}
+
+/**
+ * Gap queue after inventory gate: buckets missing HT and/or corners coverage.
+ */
+export function enrichmentGapQueueFromCoverage(
+  report: HistCoverageReport
+): HistCoverageBucket[] {
+  const cupRank = (t: "league" | "cup"): number => (t === "league" ? 0 : 1);
+  const gapScore = (b: HistCoverageBucket): number =>
+    (b.htMissingPct ?? 0) + (b.cornersMissingPct ?? 0);
+
+  return report.buckets
+    .filter(bucketNeedsEnrichment)
+    .sort((a, b) => {
+      const gs = gapScore(b) - gapScore(a);
+      if (gs !== 0) return gs;
+      const c = cupRank(a.compType) - cupRank(b.compType);
+      if (c !== 0) return c;
+      if (a.leagueId !== b.leagueId) return a.leagueId - b.leagueId;
+      return a.season - b.season;
+    });
+}

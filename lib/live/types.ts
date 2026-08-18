@@ -23,6 +23,10 @@ export interface LiveApiFixture {
     away: { id?: number | null; name: string; logo?: string | null };
   };
   goals: { home: number | null; away: number | null };
+  score?: {
+    halftime?: { home?: number | null; away?: number | null };
+    fulltime?: { home?: number | null; away?: number | null };
+  };
 }
 
 export interface LiveApiEvent {

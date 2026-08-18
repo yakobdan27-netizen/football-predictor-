@@ -21,6 +21,9 @@ import {
   hasHistGoals,
   hasHistLineups,
   hasHistStats,
+  getHistFixtureEnrichmentState,
+  hasHistCorners,
+  listFixturesNeedingEnrichment,
   replaceHistGoals,
   replaceHistLineups,
   replaceHistStats,
@@ -70,6 +73,8 @@ export type HistJobChunkResult = {
   skippedFull: number;
   goalsImported: number;
   statsImported: number;
+  htFilled: number;
+  cornersFilled: number;
   done: boolean;
   skipped: boolean;
   skipReason?: string;
@@ -136,6 +141,8 @@ export async function processHistJobChunk(opts: {
     skippedFull: 0,
     goalsImported: 0,
     statsImported: 0,
+    htFilled: 0,
+    cornersFilled: 0,
     done: false,
     skipped: false,
     truncated: false,
@@ -400,6 +407,206 @@ export async function processHistJobChunk(opts: {
     statsImported,
     done: false,
     truncated,
+    quotaAbort,
+  };
+}
+
+/**
+ * Re-fetch HT scores and corner stats for fixtures already in inventory.
+ */
+export async function processHistEnrichmentChunk(opts: {
+  leagueId: number;
+  season: number;
+  leagueName: string;
+  maxEnrich: number;
+}): Promise<HistJobChunkResult> {
+  const { leagueId, season, leagueName } = opts;
+  const maxEnrich = Math.max(
+    1,
+    Math.min(HIST_MAX_ENRICH_PER_CHUNK, opts.maxEnrich)
+  );
+
+  const base = {
+    leagueId,
+    season,
+    leagueName,
+    inventoryFetched: 0,
+    finishedCount: 0,
+    enriched: 0,
+    skippedFull: 0,
+    goalsImported: 0,
+    statsImported: 0,
+    htFilled: 0,
+    cornersFilled: 0,
+    done: false,
+    skipped: false,
+    truncated: false,
+    quotaAbort: false,
+  };
+
+  await updateHistJob(leagueId, season, {
+    status: "in_progress",
+    skipReason: null,
+  });
+
+  const fixtureIds = await listFixturesNeedingEnrichment(
+    leagueId,
+    season,
+    maxEnrich
+  );
+
+  if (!fixtureIds.length) {
+    await updateHistJob(leagueId, season, {
+      status: "done",
+      finishedAt: new Date(),
+    });
+    return {
+      ...base,
+      status: "done",
+      done: true,
+    };
+  }
+
+  let enriched = 0;
+  let htFilled = 0;
+  let cornersFilled = 0;
+  let goalsImported = 0;
+  let statsImported = 0;
+  let quotaAbort = false;
+
+  for (const id of fixtureIds) {
+    if (quotaTooLow()) {
+      quotaAbort = true;
+      break;
+    }
+
+    const before = await getHistFixtureEnrichmentState(id);
+    if (!before.needsAny) {
+      continue;
+    }
+
+    let fx: LiveApiFixture | null = null;
+    try {
+      fx = await withTimeout(
+        apiSportsLiveProvider.fetchById(id),
+        HIST_ENRICH_TIMEOUT_MS,
+        `fixture ${id}`
+      );
+    } catch (e) {
+      console.warn(
+        `[hist] enrichment fetch fixture=${id}`,
+        e instanceof Error ? e.message : e
+      );
+    }
+
+    if (before.needsGoals && !quotaAbort) {
+      try {
+        const events = await withTimeout(
+          apiSportsLiveProvider.fetchEvents(id),
+          HIST_ENRICH_TIMEOUT_MS,
+          `events ${id}`
+        );
+        goalsImported += await replaceHistGoals(id, mapGoalEvents(id, events));
+        await sleep(HIST_ENRICH_SLEEP_MS);
+      } catch (e) {
+        console.warn(
+          `[hist] enrichment events fixture=${id}`,
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+
+    if (before.needsCorners && !quotaAbort) {
+      try {
+        const statsRaw = await withTimeout(
+          apiSportsLiveProvider.fetchStatistics(id),
+          HIST_ENRICH_TIMEOUT_MS,
+          `stats ${id}`
+        );
+        const stats = mapStatistics(id, statsRaw);
+        statsImported += await replaceHistStats(id, stats);
+        await sleep(HIST_ENRICH_SLEEP_MS);
+      } catch (e) {
+        console.warn(
+          `[hist] enrichment stats fixture=${id}`,
+          e instanceof Error ? e.message : e
+        );
+      }
+    }
+
+    if (before.needsLineups && !quotaAbort) {
+      try {
+        const lineupsRaw = await withTimeout(
+          apiSportsLiveProvider.fetchLineups(id),
+          HIST_ENRICH_TIMEOUT_MS,
+          `lineups ${id}`
+        );
+        await replaceHistLineups(id, mapLineups(id, lineupsRaw));
+        await sleep(HIST_ENRICH_SLEEP_MS);
+      } catch {
+        // optional
+      }
+    }
+
+    if (fx) {
+      const f = fx as {
+        score?: { halftime?: { home?: number | null; away?: number | null } };
+        goals?: { home?: number | null; away?: number | null };
+      };
+      const hasG = (await hasHistGoals(id)) || before.needsGoals;
+      const hasS = (await hasHistStats(id)) || before.needsCorners;
+      const hasL = (await hasHistLineups(id)) || before.needsLineups;
+      const hasHt =
+        f.score?.halftime?.home != null && f.score?.halftime?.away != null;
+      const hasFt = f.goals?.home != null && f.goals?.away != null;
+      const hasCornersValue = await hasHistCorners(id);
+      const completeness = inferCompleteness({
+        hasGoals: hasG,
+        hasStats: hasS,
+        hasLineups: hasL,
+        hasHt,
+        hasFt,
+        hasCornersValue,
+      });
+      const core = mapFixtureCore(fx, season, completeness);
+      if (core) {
+        await upsertHistTeams(mapTeamsFromFixture(fx, season));
+        await upsertHistFixture(core);
+      }
+    }
+
+    const after = await getHistFixtureEnrichmentState(id);
+    if (before.needsHt && !after.needsHt) htFilled += 1;
+    if (before.needsCorners && !after.needsCorners) cornersFilled += 1;
+    enriched += 1;
+
+    if (quotaTooLow()) {
+      quotaAbort = true;
+      break;
+    }
+  }
+
+  const remaining = await listFixturesNeedingEnrichment(leagueId, season, 1);
+  const jobDone = remaining.length === 0 && !quotaAbort;
+
+  await updateHistJob(leagueId, season, {
+    status: jobDone ? "done" : "in_progress",
+    fixturesImported: await countFixturesForLeagueSeason(leagueId, season),
+    goalsImported,
+    statsImported,
+    finishedAt: jobDone ? new Date() : null,
+  });
+
+  return {
+    ...base,
+    status: jobDone ? "done" : "in_progress",
+    enriched,
+    htFilled,
+    cornersFilled,
+    goalsImported,
+    statsImported,
+    done: jobDone,
+    truncated: quotaAbort || fixtureIds.length >= maxEnrich,
     quotaAbort,
   };
 }

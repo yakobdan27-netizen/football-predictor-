@@ -1,7 +1,7 @@
 /**
  * Local burst drain for hist coverage gaps (complements daily Vercel cron).
  * Cron default: /api/cron/hist-backfill several times/day with gapPriority.
- * Run: npx tsx scripts/drain-hist-gaps.ts [--max-chunks=200] [--enrich=50] [--league=140]
+ * Run: npx tsx scripts/drain-hist-gaps.ts [--max-chunks=200] [--enrich=50] [--league=140] [--mode=inventory|enrichment|auto]
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -61,10 +61,20 @@ async function resolveLeagueId(raw?: string): Promise<number | undefined> {
   return hit.id;
 }
 
+type DrainMode = "inventory" | "enrichment" | "auto";
+
+function resolveMode(raw?: string): DrainMode {
+  if (!raw || raw === "auto") return "auto";
+  if (raw === "inventory" || raw === "enrichment") return raw;
+  console.error(`Unknown --mode=${raw} — use inventory, enrichment, or auto`);
+  process.exit(1);
+}
+
 async function main() {
   const maxChunks = argNum("--max-chunks", 200);
   const enrich = argNum("--enrich", 50);
   const leagueId = await resolveLeagueId(argStr("--league"));
+  const modeArg = resolveMode(argStr("--mode"));
   process.env.HIST_MAX_ENRICH_PER_CHUNK = String(enrich);
 
   const { ensureSchema } = await import("../lib/db/init");
@@ -72,6 +82,7 @@ async function main() {
     auditHistCoverage,
     formatCoverageTable,
     gapQueueFromCoverage,
+    enrichmentGapQueueFromCoverage,
   } = await import("../lib/hist/coverage-audit");
   const { runHistBackfillChunk } = await import("../lib/hist/backfill");
   const { HIST_LEAGUES } = await import("../lib/hist/seasons");
@@ -86,42 +97,70 @@ async function main() {
       ? (HIST_LEAGUES.find((l) => l.id === leagueId)?.name ?? `id=${leagueId}`)
       : null;
 
-  console.log("=== Drain hist gaps until inventory gate ===");
+  function pickPhase(): "inventory" | "enrichment" {
+    if (modeArg === "inventory") return "inventory";
+    if (modeArg === "enrichment") return "enrichment";
+    const invPass = passCount(before) >= before.summary.total;
+    const invGaps = gapQueueFromCoverage(before).filter(
+      (g) => leagueId == null || g.leagueId === leagueId
+    ).length;
+    const enrichGaps = enrichmentGapQueueFromCoverage(before).filter(
+      (g) => leagueId == null || g.leagueId === leagueId
+    ).length;
+    if (!invPass && invGaps > 0) return "inventory";
+    if (enrichGaps > 0) return "enrichment";
+    return invPass ? "enrichment" : "inventory";
+  }
+
+  let phase = pickPhase();
+
+  console.log(`=== Drain hist gaps (${phase} mode) ===`);
   if (leagueLabel) {
     console.log(`league filter: ${leagueLabel} (${leagueId})`);
   }
   console.log(
-    `start: full=${before.summary.full} partial=${before.summary.partial} missing=${before.summary.missing} inventoryPass=${passCount(before)}/66 providerHoles=${before.summary.providerHoles} enrich/chunk=${enrich}`
+    `start: full=${before.summary.full} partial=${before.summary.partial} missing=${before.summary.missing} inventoryPass=${passCount(before)}/66 providerHoles=${before.summary.providerHoles} enrich/chunk=${enrich} mode=${modeArg}`
   );
-  const allQueued = gapQueueFromCoverage(before);
+  const allQueued =
+    phase === "enrichment"
+      ? enrichmentGapQueueFromCoverage(before)
+      : gapQueueFromCoverage(before);
   const queued =
     leagueId != null
       ? allQueued.filter((g) => g.leagueId === leagueId)
       : allQueued;
-  console.log(`gaps queued: ${queued.length}${leagueLabel ? ` (${leagueLabel} only)` : ""}`);
+  console.log(
+    `${phase} gaps queued: ${queued.length}${leagueLabel ? ` (${leagueLabel} only)` : ""}`
+  );
   console.log(
     "next:",
     queued
       .slice(0, 8)
       .map(
         (g) =>
-          `${g.leagueName} ${g.season} ${g.stored_fixtures}/${g.expected_fixtures} pass=${g.inventoryPass}`
+          `${g.leagueName} ${g.season} ${g.stored_fixtures}/${g.expected_fixtures} pass=${g.inventoryPass} htMiss=${g.htMissingPct ?? "?"}% cornersMiss=${g.cornersMissingPct ?? "?"}%`
       )
       .join(" | ")
   );
 
   let consecutiveSkips = 0;
   let totalEnriched = 0;
+  let totalHtFilled = 0;
+  let totalCornersFilled = 0;
   let neonRetries = 0;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   for (let i = 0; i < maxChunks; i++) {
+    before = await auditHistCoverage().catch(() => before);
+    phase = pickPhase();
+
     let summary: Awaited<ReturnType<typeof runHistBackfillChunk>>;
     try {
       summary = await runHistBackfillChunk({
         gapPriority: true,
         leagueId,
+        mode: phase,
       });
       neonRetries = 0;
     } catch (e) {
@@ -140,15 +179,17 @@ async function main() {
           `transient DB/network error (retry ${neonRetries}/8 in ${wait}ms): ${msg}`
         );
         await sleep(wait);
-        i -= 1; // retry same chunk index
+        i -= 1;
         continue;
       }
       throw e;
     }
 
     totalEnriched += summary.enriched;
+    totalHtFilled += summary.htFilled;
+    totalCornersFilled += summary.cornersFilled;
     console.log(
-      `chunk ${i + 1}/${maxChunks}: ok=${summary.ok} ${summary.leagueName ?? "-"} ${summary.season ?? ""} enriched=${summary.enriched} gapsLeft=${summary.gapsRemaining ?? "?"} quotaAbort=${summary.quotaAbort} skipped=${summary.skippedJob} warn=${summary.warning ?? ""} err=${summary.error ?? ""}`
+      `chunk ${i + 1}/${maxChunks} [${phase}]: ok=${summary.ok} ${summary.leagueName ?? "-"} ${summary.season ?? ""} enriched=${summary.enriched} ht=${summary.htFilled} corners=${summary.cornersFilled} gapsLeft=${summary.gapsRemaining ?? "?"} enrichGaps=${summary.enrichmentGapsRemaining ?? "?"} quotaAbort=${summary.quotaAbort} skipped=${summary.skippedJob} warn=${summary.warning ?? ""} err=${summary.error ?? ""}`
     );
 
     if (summary.quotaAbort || summary.preflight.abort) {
@@ -156,7 +197,6 @@ async function main() {
       break;
     }
     if (!summary.ok) {
-      // Neon often dies after fixtures were written — retry same gap head.
       neonRetries += 1;
       if (neonRetries <= 12) {
         const wait = Math.min(90_000, 4000 * neonRetries);
@@ -188,11 +228,20 @@ async function main() {
       consecutiveSkips = 0;
     }
     if (summary.done) {
-      console.log("STOP: gap queue reports done");
+      console.log(`STOP: ${phase} queue reports done`);
+      if (modeArg === "auto") {
+        const invPass = passCount(before) >= before.summary.total;
+        const enrichLeft = enrichmentGapQueueFromCoverage(before).filter(
+          (g) => leagueId == null || g.leagueId === leagueId
+        ).length;
+        if (phase === "inventory" && invPass && enrichLeft > 0) {
+          console.log(`Switching to enrichment (${enrichLeft} gaps)`);
+          continue;
+        }
+      }
       break;
     }
 
-    // Refresh pass count every 5 chunks
     if ((i + 1) % 5 === 0) {
       for (let a = 0; a < 5; a++) {
         try {
@@ -203,12 +252,15 @@ async function main() {
         }
       }
       const pass = passCount(before);
+      const enrichLeft = enrichmentGapQueueFromCoverage(before).length;
       console.log(
-        `checkpoint: full=${before.summary.full} inventoryPass=${pass}/66 holes=${before.summary.providerHoles} enrichedTotal=${totalEnriched}`
+        `checkpoint: full=${before.summary.full} inventoryPass=${pass}/66 holes=${before.summary.providerHoles} enrichGaps=${enrichLeft} enrichedTotal=${totalEnriched} ht=${totalHtFilled} corners=${totalCornersFilled}`
       );
-      if (pass === 66) {
-        console.log("GATE PASS (inventoryPass 66/66)");
-        break;
+      if (modeArg !== "enrichment" && pass === 66 && enrichLeft > 0) {
+        console.log(`GATE PASS — ${enrichLeft} enrichment gaps remain`);
+        if (modeArg === "auto") {
+          phase = "enrichment";
+        }
       }
     }
   }
@@ -217,11 +269,11 @@ async function main() {
   console.log("--- AFTER ---");
   console.log(formatCoverageTable(after));
   const inv = passCount(after);
+  const enrichLeft = enrichmentGapQueueFromCoverage(after).length;
   console.log(
-    `inventoryPass=${inv}/66 full=${after.summary.full} partial=${after.summary.partial} missing=${after.summary.missing} providerHoles=${after.summary.providerHoles} enrichedTotal=${totalEnriched}`
+    `inventoryPass=${inv}/66 full=${after.summary.full} partial=${after.summary.partial} missing=${after.summary.missing} providerHoles=${after.summary.providerHoles} enrichGaps=${enrichLeft} enrichedTotal=${totalEnriched} ht=${totalHtFilled} corners=${totalCornersFilled}`
   );
 
-  // Refit half-share / κ for DIEH whenever we imported fixtures today.
   if (totalEnriched > 0 || inv > passCount(before)) {
     try {
       const { fitAndPersistHalfParams } = await import("../lib/hist/fit-half-params");
@@ -242,7 +294,11 @@ async function main() {
     console.log("skip half-params refit (no new enrichments)");
   }
 
-  if (inv < 66) {
+  if (modeArg === "inventory" && inv < 66) {
+    process.exitCode = 2;
+  } else if (modeArg === "enrichment" && enrichLeft > 0) {
+    process.exitCode = 2;
+  } else if (modeArg === "auto" && (inv < 66 || enrichLeft > 0)) {
     process.exitCode = 2;
   }
 }

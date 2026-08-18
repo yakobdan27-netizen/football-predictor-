@@ -142,7 +142,8 @@ export function WeekendOpportunitiesApp() {
           <p className="page-sub" style={{ marginTop: "0.35rem", maxWidth: "42rem" }}>
             Upcoming Sat–Sun fixtures from Match Centre (next 7 days, all five
             leagues). Each row is the single highest-probability market from the
-            full CFE scan — top 10–20 matches ranked globally.
+            full CFE scan — top 10–20 matches ranked globally. Combo picks:
+            Double Chance + BTTS, BTTS + Total, Win + Total only.
           </p>
           {data && (
             <p className="page-sub" style={{ marginTop: "0.25rem" }}>

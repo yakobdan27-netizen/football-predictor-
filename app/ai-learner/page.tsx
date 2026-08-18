@@ -5,7 +5,7 @@ export default function AiLearnerPage() {
     <div>
       <h1 className="page-title">AI Learner</h1>
       <p className="page-sub">
-        What the system has learned from your saved predictions and results — fully manual, local only.
+        Learned from your saved batches and results (KV-backed; complements API-Football fixture data when configured).
       </p>
       <AiLearnerApp />
     </div>

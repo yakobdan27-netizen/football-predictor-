@@ -4,11 +4,16 @@
 import { ensureSchema } from "@/lib/db/init";
 import {
   auditHistCoverage,
+  enrichmentGapQueueFromCoverage,
   gapQueueFromCoverage,
   isProviderHoleReason as isProviderHoleSkip,
   type HistCoverageBucket,
 } from "./coverage-audit";
-import { processHistJobChunk, HIST_MAX_ENRICH_PER_CHUNK } from "./import-job";
+import {
+  processHistEnrichmentChunk,
+  processHistJobChunk,
+  HIST_MAX_ENRICH_PER_CHUNK,
+} from "./import-job";
 import {
   runHistPreflight,
   updateHistMetaSummary,
@@ -35,13 +40,17 @@ export type HistBackfillChunkSummary = {
   skippedFull: number;
   goalsImported: number;
   statsImported: number;
+  htFilled: number;
+  cornersFilled: number;
   truncated: boolean;
   quotaAbort: boolean;
   skippedJob: boolean;
   done: boolean;
   allJobsTerminal: boolean;
   gapPriority?: boolean;
+  mode?: "inventory" | "enrichment";
   gapsRemaining?: number;
+  enrichmentGapsRemaining?: number;
   progress?: {
     pending: number;
     in_progress: number;
@@ -58,6 +67,8 @@ export type HistBackfillOpts = {
   gapPriority?: boolean;
   /** When set, only drain buckets for this API league id. */
   leagueId?: number;
+  /** Inventory fixture gaps (default) or HT/corners enrichment after gate pass. */
+  mode?: "inventory" | "enrichment";
 };
 
 function filterGapsByLeague(
@@ -66,6 +77,18 @@ function filterGapsByLeague(
 ): HistCoverageBucket[] {
   if (leagueId == null) return gaps;
   return gaps.filter((g) => g.leagueId === leagueId);
+}
+
+function gapsForMode(
+  report: Awaited<ReturnType<typeof auditHistCoverage>>,
+  mode: "inventory" | "enrichment",
+  leagueId?: number
+): HistCoverageBucket[] {
+  const queue =
+    mode === "enrichment"
+      ? enrichmentGapQueueFromCoverage(report)
+      : gapQueueFromCoverage(report);
+  return filterGapsByLeague(queue, leagueId);
 }
 
 /**
@@ -91,6 +114,30 @@ async function reopenGapJobs(
       status: "pending",
       cursorFixtureId: null,
       skipReason: `reopened for coverage=${g.completeness}`,
+      finishedAt: null,
+    });
+    reopened += 1;
+  }
+  return reopened;
+}
+
+async function reopenEnrichmentJobs(
+  report: Awaited<ReturnType<typeof auditHistCoverage>>,
+  leagueId?: number
+): Promise<number> {
+  const gaps = filterGapsByLeague(
+    enrichmentGapQueueFromCoverage(report),
+    leagueId
+  ).slice(0, 8);
+  let reopened = 0;
+  for (const g of gaps) {
+    const job = await getHistJob(g.leagueId, g.season);
+    if (!job) continue;
+    if (job.status === "pending" || job.status === "in_progress") continue;
+    if (job.status === "skipped" && isProviderHoleSkip(job.skipReason)) continue;
+    await updateHistJob(g.leagueId, g.season, {
+      status: "pending",
+      skipReason: "reopened for ht/corners enrichment",
       finishedAt: null,
     });
     reopened += 1;
@@ -140,6 +187,50 @@ async function pickGapJob(
   return null;
 }
 
+async function pickEnrichmentGapJob(
+  report: Awaited<ReturnType<typeof auditHistCoverage>>,
+  leagueId?: number
+): Promise<{
+  leagueId: number;
+  season: number;
+  leagueName: string;
+  cursorFixtureId: number | null;
+  status: string;
+} | null> {
+  const gaps = filterGapsByLeague(
+    enrichmentGapQueueFromCoverage(report),
+    leagueId
+  );
+  for (const g of gaps) {
+    let job = await getHistJob(g.leagueId, g.season);
+    if (!job) {
+      await ensureHistJobs();
+      job = await getHistJob(g.leagueId, g.season);
+    }
+    if (!job) continue;
+    if (job.status === "skipped" && isProviderHoleSkip(job.skipReason)) {
+      continue;
+    }
+    if (job.status === "done" || job.status === "skipped") {
+      await updateHistJob(g.leagueId, g.season, {
+        status: "pending",
+        skipReason: "reopened for ht/corners enrichment",
+        finishedAt: null,
+      });
+      job = await getHistJob(g.leagueId, g.season);
+    }
+    if (!job) continue;
+    return {
+      leagueId: job.leagueId,
+      season: job.season,
+      leagueName: job.leagueName,
+      cursorFixtureId: null as number | null,
+      status: job.status,
+    };
+  }
+  return null;
+}
+
 export async function runHistBackfillChunk(
   opts?: HistBackfillOpts
 ): Promise<HistBackfillChunkSummary> {
@@ -148,6 +239,7 @@ export async function runHistBackfillChunk(
 
   const gapPriority = opts?.gapPriority === true;
   const leagueFilter = opts?.leagueId;
+  const mode = opts?.mode ?? "inventory";
   const preflight = await runHistPreflight();
   const empty = {
     leagueId: null as number | null,
@@ -160,12 +252,15 @@ export async function runHistBackfillChunk(
     skippedFull: 0,
     goalsImported: 0,
     statsImported: 0,
+    htFilled: 0,
+    cornersFilled: 0,
     truncated: false,
     quotaAbort: false,
     skippedJob: false,
     done: false,
     allJobsTerminal: false,
     gapPriority,
+    mode,
   };
 
   if (preflight.abort) {
@@ -173,17 +268,20 @@ export async function runHistBackfillChunk(
       `chunk aborted: ${preflight.reason ?? "quota"}`
     );
     const summary = await histJobsSummary().catch(() => null);
-    const gaps = gapPriority
-      ? filterGapsByLeague(
-          gapQueueFromCoverage(await auditHistCoverage()),
-          leagueFilter
-        ).length
+    const coverage = gapPriority ? await auditHistCoverage() : null;
+    const gaps = coverage
+      ? gapsForMode(coverage, mode, leagueFilter).length
       : undefined;
+    const enrichGaps =
+      coverage && mode === "enrichment"
+        ? gapsForMode(coverage, "enrichment", leagueFilter).length
+        : undefined;
     return {
       ok: false,
       preflight,
       ...empty,
-      gapsRemaining: gaps,
+      gapsRemaining: mode === "inventory" ? gaps : undefined,
+      enrichmentGapsRemaining: enrichGaps ?? gaps,
       allJobsTerminal: terminalAll(summary?.byStatus),
       progress: progressFrom(summary?.byStatus, summary?.fixtures),
       error: preflight.reason ?? "preflight abort",
@@ -194,23 +292,29 @@ export async function runHistBackfillChunk(
   // One coverage audit per chunk (reopen + pick share it).
   const gapReport = gapPriority ? await auditHistCoverage() : null;
   if (gapReport) {
-    await reopenGapJobs(gapReport, leagueFilter);
+    if (mode === "enrichment") {
+      await reopenEnrichmentJobs(gapReport, leagueFilter);
+    } else {
+      await reopenGapJobs(gapReport, leagueFilter);
+    }
   }
 
   const job = gapPriority
-    ? await pickGapJob(gapReport!, leagueFilter)
+    ? mode === "enrichment"
+      ? await pickEnrichmentGapJob(gapReport!, leagueFilter)
+      : await pickGapJob(gapReport!, leagueFilter)
     : ((await listActiveHistJobs())[0] ?? null);
 
   if (!job) {
     const summary = await histJobsSummary();
     const coverage = await auditHistCoverage();
-    const gapsLeft = filterGapsByLeague(
-      gapQueueFromCoverage(coverage),
-      leagueFilter
-    ).length;
+    const gapsLeft = gapsForMode(coverage, "inventory", leagueFilter).length;
+    const enrichLeft = gapsForMode(coverage, "enrichment", leagueFilter).length;
     await updateHistMetaSummary(
       gapPriority
-        ? `gap queue empty (${coverage.summary.full}/${coverage.summary.total} full)`
+        ? mode === "enrichment"
+          ? `enrichment queue empty (${enrichLeft} gaps)`
+          : `gap queue empty (${coverage.summary.full}/${coverage.summary.total} full)`
         : "all hist jobs terminal"
     );
     return {
@@ -220,11 +324,16 @@ export async function runHistBackfillChunk(
       done: true,
       allJobsTerminal: true,
       gapsRemaining: gapsLeft,
+      enrichmentGapsRemaining: enrichLeft,
       progress: progressFrom(summary.byStatus, summary.fixtures),
       warning: gapPriority
-        ? gapsLeft === 0
-          ? "No coverage gaps remaining"
-          : "Gap jobs unavailable"
+        ? mode === "enrichment"
+          ? enrichLeft === 0
+            ? "No enrichment gaps remaining"
+            : "Enrichment jobs unavailable"
+          : gapsLeft === 0
+            ? "No coverage gaps remaining"
+            : "Gap jobs unavailable"
         : "All hist jobs are done or skipped",
     };
   }
@@ -235,16 +344,25 @@ export async function runHistBackfillChunk(
   );
 
   try {
-    const result = await processHistJobChunk({
-      leagueId: job.leagueId,
-      season: job.season,
-      leagueName: job.leagueName,
-      cursorFixtureId: job.cursorFixtureId,
-      maxEnrich,
-      needsCoverageCheck: job.status === "pending",
-    });
+    const result =
+      mode === "enrichment"
+        ? await processHistEnrichmentChunk({
+            leagueId: job.leagueId,
+            season: job.season,
+            leagueName: job.leagueName,
+            maxEnrich,
+          })
+        : await processHistJobChunk({
+            leagueId: job.leagueId,
+            season: job.season,
+            leagueName: job.leagueName,
+            cursorFixtureId: job.cursorFixtureId,
+            maxEnrich,
+            needsCoverageCheck: job.status === "pending",
+          });
 
     let gapsLeft: number | undefined;
+    let enrichLeft: number | undefined;
     let allJobsTerminal = false;
     let progress = progressFrom(undefined, undefined);
     try {
@@ -253,10 +371,8 @@ export async function runHistBackfillChunk(
       progress = progressFrom(summary.byStatus, summary.fixtures);
       if (gapPriority) {
         const coverage = await auditHistCoverage();
-        gapsLeft = filterGapsByLeague(
-          gapQueueFromCoverage(coverage),
-          leagueFilter
-        ).length;
+        gapsLeft = gapsForMode(coverage, "inventory", leagueFilter).length;
+        enrichLeft = gapsForMode(coverage, "enrichment", leagueFilter).length;
       }
     } catch (e) {
       console.warn(
@@ -264,8 +380,14 @@ export async function runHistBackfillChunk(
         e instanceof Error ? e.message : e
       );
     }
-    const note = `${result.leagueName} ${result.season}: enriched=${result.enriched} status=${result.status}${gapPriority ? " [gap]" : ""}`;
+    const tag = gapPriority ? (mode === "enrichment" ? " [enrich]" : " [gap]") : "";
+    const note = `${result.leagueName} ${result.season}: enriched=${result.enriched} ht=${result.htFilled} corners=${result.cornersFilled} status=${result.status}${tag}`;
     await updateHistMetaSummary(note).catch(() => undefined);
+
+    const queueDone =
+      mode === "enrichment"
+        ? (enrichLeft ?? 0) === 0
+        : (gapsLeft ?? 0) === 0;
 
     return {
       ok: true,
@@ -280,13 +402,17 @@ export async function runHistBackfillChunk(
       skippedFull: result.skippedFull,
       goalsImported: result.goalsImported,
       statsImported: result.statsImported,
+      htFilled: result.htFilled,
+      cornersFilled: result.cornersFilled,
       truncated: result.truncated,
       quotaAbort: result.quotaAbort,
       skippedJob: result.skipped,
-      done: gapPriority ? (gapsLeft ?? 0) === 0 : allJobsTerminal,
+      done: gapPriority ? queueDone : allJobsTerminal,
       allJobsTerminal,
       gapPriority,
+      mode,
       gapsRemaining: gapsLeft,
+      enrichmentGapsRemaining: enrichLeft,
       progress,
       warning: result.skipReason,
       error: result.error,

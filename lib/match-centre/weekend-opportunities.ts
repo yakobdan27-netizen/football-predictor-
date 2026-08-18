@@ -20,6 +20,51 @@ import {
 export const WEEKEND_PICK_MIN = 10;
 export const WEEKEND_PICK_MAX = 20;
 export const WEEKEND_WINDOW_DAYS = 7;
+export const WEEKEND_TOTALS_OVER_MIN_LINE = 1.5;
+export const WEEKEND_TOTALS_UNDER_MAX_LINE = 4.5;
+
+export const WEEKEND_COMBO_IDS = new Set([
+  "1x_btts_yes",
+  "x2_btts_yes",
+  "12_btts_yes",
+  "btts_yes_over_2_5",
+  "btts_yes_over_3_5",
+  "btts_no_under_2_5",
+  "btts_no_over_1_5",
+  "btts_no_under_3_5",
+  "home_over_1_5",
+  "home_over_2_5",
+  "home_under_3_5",
+  "away_over_1_5",
+  "away_over_2_5",
+  "away_under_3_5",
+  "draw_under_2_5",
+]);
+
+/** Exclude trivial Total Goals lines (Over 0.5, Under 5.5/6.5) from Weekend Picks. */
+export function weekendTotalsSelectionAllowed(
+  family: MarketFamilyId,
+  selectionKey: string,
+  line?: number
+): boolean {
+  if (family !== "TOTALS" || line == null) return true;
+  if (selectionKey.startsWith("over_")) {
+    return line >= WEEKEND_TOTALS_OVER_MIN_LINE;
+  }
+  if (selectionKey.startsWith("under_")) {
+    return line <= WEEKEND_TOTALS_UNDER_MAX_LINE;
+  }
+  return true;
+}
+
+/** Weekend Picks combos: DC+BTTS, BTTS+Total, Win+Total only (no DC+Total). */
+export function weekendComboSelectionAllowed(
+  family: MarketFamilyId,
+  comboId?: string
+): boolean {
+  if (family !== "COMBO") return true;
+  return comboId != null && WEEKEND_COMBO_IDS.has(comboId);
+}
 
 export type WeekendOpportunityTrace = {
   fixtureSource: "match_centre_upcoming";
@@ -133,6 +178,14 @@ export function scoreFixtureBestMarket(
     if (!familyDataOk(family, estimate)) continue;
 
     for (const sel of enumerateFamilySelections(family)) {
+      if (!weekendComboSelectionAllowed(family, sel.comboId)) {
+        continue;
+      }
+      if (
+        !weekendTotalsSelectionAllowed(family, sel.selectionKey, sel.line)
+      ) {
+        continue;
+      }
       const scored = scoreLegFromCanonical({
         estimate,
         family,

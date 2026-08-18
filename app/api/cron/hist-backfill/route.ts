@@ -6,8 +6,8 @@ export const maxDuration = 60;
 export const runtime = "nodejs";
 
 /**
- * Daily (multi-slot) hist inventory drain.
- * Always gap-priority / deep-first. No-ops once inventoryPass = 66/66.
+ * Daily (multi-slot) hist inventory + HT/corners enrichment drain.
+ * Gap-priority / deep-first. After inventoryPass=66/66, enrichment phase continues.
  */
 async function run(request: Request) {
   if (!authorizeCron(request)) {
@@ -26,9 +26,11 @@ async function run(request: Request) {
   return NextResponse.json(
     {
       ...result,
-      mode: "gapPriority",
+      mode: result.phase === "enrichment" ? "enrichment" : "gapPriority",
       scheduleNote:
-        "Runs several times daily via vercel.json until inventoryPass=66",
+        result.phase === "enrichment"
+          ? "Inventory gate passed — draining HT/corners enrichment gaps"
+          : "Runs several times daily via vercel.json until inventoryPass=66",
     },
     { status }
   );

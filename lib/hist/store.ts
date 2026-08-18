@@ -1,7 +1,7 @@
 /**
  * Idempotent hist_* upserts. Never writes live_, bet_, match_stats, or pred-log.
  */
-import { and, asc, count, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
   histFixtures,
@@ -19,6 +19,7 @@ import {
   type NewHistTeam,
 } from "@/lib/db/schema";
 import { completenessRank, richerCompleteness } from "./map";
+import { fixtureNeedsEnrichment } from "./coverage-audit";
 import { histJobKeys } from "./seasons";
 
 export async function ensureHistJobs(): Promise<number> {
@@ -300,4 +301,90 @@ export async function countFixturesForLeagueSeason(
       )
     );
   return row?.n ?? 0;
+}
+
+export async function hasHistCorners(fixtureId: number): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db
+    .select({ corners: histStats.corners })
+    .from(histStats)
+    .where(eq(histStats.fixtureId, fixtureId));
+  if (rows.length < 2) return false;
+  return rows.every((r) => r.corners != null);
+}
+
+export async function getHistFixtureEnrichmentState(
+  fixtureId: number
+): Promise<{
+  needsHt: boolean;
+  needsCorners: boolean;
+  needsGoals: boolean;
+  needsLineups: boolean;
+  needsAny: boolean;
+}> {
+  const fx = await getHistFixture(fixtureId);
+  const statsRows = fx
+    ? await (async () => {
+        const db = await getDb();
+        return db
+          .select({ corners: histStats.corners })
+          .from(histStats)
+          .where(eq(histStats.fixtureId, fixtureId));
+      })()
+    : [];
+  const needsGoals = !(await hasHistGoals(fixtureId));
+  const needsLineups = !(await hasHistLineups(fixtureId));
+  if (!fx) {
+    return {
+      needsHt: true,
+      needsCorners: true,
+      needsGoals,
+      needsLineups,
+      needsAny: true,
+    };
+  }
+  const { needsHt, needsCorners, needsAny } = fixtureNeedsEnrichment({
+    htHome: fx.htHome,
+    htAway: fx.htAway,
+    statsRowCount: statsRows.length,
+    statsRowsWithCorners: statsRows.filter((r) => r.corners != null).length,
+  });
+  return {
+    needsHt,
+    needsCorners,
+    needsGoals,
+    needsLineups,
+    needsAny: needsAny || needsGoals || needsLineups,
+  };
+}
+
+/** Fixtures missing HT scores and/or complete corner stats for both teams. */
+export async function listFixturesNeedingEnrichment(
+  leagueId: number,
+  season: number,
+  limit: number
+): Promise<number[]> {
+  const db = await getDb();
+  const cap = Math.max(1, Math.min(500, limit));
+  const rows = await db
+    .select({ fixtureId: histFixtures.fixtureId })
+    .from(histFixtures)
+    .where(
+      and(
+        eq(histFixtures.leagueId, leagueId),
+        eq(histFixtures.season, season),
+        or(
+          isNull(histFixtures.htHome),
+          isNull(histFixtures.htAway),
+          sql`(
+            SELECT count(*)::int FROM ${histStats}
+            WHERE ${histStats.fixtureId} = ${histFixtures.fixtureId}
+              AND ${histStats.corners} IS NOT NULL
+          ) < 2`
+        )
+      )
+    )
+    .orderBy(asc(histFixtures.fixtureId))
+    .limit(cap);
+  return rows.map((r) => r.fixtureId);
 }

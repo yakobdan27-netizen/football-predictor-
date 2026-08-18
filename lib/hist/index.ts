@@ -32,6 +32,9 @@ export {
   auditHistCoverage,
   formatCoverageTable,
   gapQueueFromCoverage,
+  enrichmentGapQueueFromCoverage,
+  fixtureNeedsEnrichment,
+  bucketNeedsEnrichment,
   hasEmptyCompetition,
 } from "./coverage-audit";
 export type { HistCoverageReport, HistCoverageBucket } from "./coverage-audit";

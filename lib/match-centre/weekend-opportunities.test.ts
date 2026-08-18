@@ -4,6 +4,8 @@ import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-leagu
 import {
   filterWeekendFixtures,
   selectWeekendPickCount,
+  weekendComboSelectionAllowed,
+  weekendTotalsSelectionAllowed,
   WEEKEND_PICK_MAX,
   WEEKEND_PICK_MIN,
 } from "./weekend-opportunities";
@@ -70,4 +72,43 @@ test("selectWeekendPickCount returns all when pool below minimum", () => {
     count: 0,
     insufficientPool: false,
   });
+});
+
+test("weekendTotalsSelectionAllowed excludes trivial total goals lines", () => {
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_0_5", 0.5), false);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_1_5", 1.5), true);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_2_5", 2.5), true);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_6_5", 6.5), false);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_5_5", 5.5), false);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_4_5", 4.5), true);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_0_5", 0.5), true);
+});
+
+test("weekendTotalsSelectionAllowed passes through non-TOTALS families", () => {
+  assert.equal(weekendTotalsSelectionAllowed("BTTS", "yes", undefined), true);
+  assert.equal(weekendTotalsSelectionAllowed("RESULT_1X2", "home"), true);
+});
+
+test("weekendComboSelectionAllowed restricts combo pool for Weekend Picks", () => {
+  assert.equal(
+    weekendComboSelectionAllowed("COMBO", "1x_over_1_5"),
+    false
+  );
+  assert.equal(
+    weekendComboSelectionAllowed("COMBO", "1x_btts_yes"),
+    true
+  );
+  assert.equal(
+    weekendComboSelectionAllowed("COMBO", "btts_yes_over_2_5"),
+    true
+  );
+  assert.equal(
+    weekendComboSelectionAllowed("COMBO", "home_over_1_5"),
+    true
+  );
+  assert.equal(
+    weekendComboSelectionAllowed("COMBO", "home_btts_yes"),
+    false
+  );
+  assert.equal(weekendComboSelectionAllowed("BTTS", "yes"), true);
 });
