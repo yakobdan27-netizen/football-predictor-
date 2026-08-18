@@ -11,9 +11,12 @@ export const MARKET_FAMILY_IDS = [
   "TEAM_GOALS",
   "BTTS",
   "HALF_GOALS",
+  "HSH",
   "HT_RESULT",
   "DIEH",
+  "WIN_ONE_HALF",
   "CORNERS",
+  "SOT",
   "COMBO",
 ] as const;
 
@@ -34,11 +37,11 @@ export const CONFLICT_GROUPS: ReadonlyArray<{
   },
   {
     id: "G3",
-    members: ["HALF_GOALS", "HT_RESULT", "DIEH"],
+    members: ["HALF_GOALS", "HSH", "HT_RESULT", "DIEH", "WIN_ONE_HALF"],
   },
   {
     id: "G4",
-    members: ["BTTS", "CORNERS", "COMBO"],
+    members: ["BTTS", "CORNERS", "SOT", "COMBO"],
   },
 ] as const;
 

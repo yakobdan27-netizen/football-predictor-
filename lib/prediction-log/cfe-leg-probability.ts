@@ -14,6 +14,8 @@ import {
   outcomeProbsFromMatrix,
 } from "@/lib/predictor/score-matrix";
 import { overUnderFromPmf } from "@/lib/predictor/poisson";
+import { winOneHalfProb } from "@/lib/prediction-log/win-one-half-probability";
+import type { SotMarkets } from "@/lib/prediction-log/sot-model";
 import type { TotalGoalsLine } from "@/lib/prediction-log/total-goals-markets";
 import type { MarketFamilyId } from "@/lib/slip-builder/types";
 
@@ -28,6 +30,8 @@ export type CfeLegEstimateSlice = {
     away_2h: number;
     home_corners: number;
     away_corners: number;
+    home_sot?: number;
+    away_sot?: number;
   };
   score_matrix: number[][];
   markets: {
@@ -53,6 +57,7 @@ export type CfeLegEstimateSlice = {
     totalGoals: {
       lines: Record<number, { over: number; under: number }>;
     };
+    sot?: SotMarkets;
   };
   provenance: { ess: number; matches_used: number };
   rho: number;
@@ -192,6 +197,14 @@ export function resolveCfeLegProbability(input: {
       }
       return fail(`unknown HALF_GOALS key ${selectionKey}`);
     }
+    case "HSH": {
+      const sum = m.p1h + m.p2h + m.pTie;
+      const coherenceOk = Math.abs(sum - 1) < 1e-5;
+      if (selectionKey === "2h_gt_1h") return ok(m.p2h, coherenceOk);
+      if (selectionKey === "1h_gt_2h") return ok(m.p1h, coherenceOk);
+      if (selectionKey === "tie") return ok(m.pTie, coherenceOk);
+      return fail(`unknown HSH key ${selectionKey}`);
+    }
     case "HT_RESULT": {
       const ht = halfTimeScoreGrid(est.lambdas.home, est.lambdas.away);
       const o = outcomeProbsFromMatrix(ht);
@@ -212,12 +225,53 @@ export function resolveCfeLegProbability(input: {
       if (selectionKey === "no") return ok(m.dieh.diehNo, coherenceOk);
       return fail(`unknown DIEH key ${selectionKey}`);
     }
+    case "WIN_ONE_HALF": {
+      const pHome = winOneHalfProb(
+        est.lambdas.home_1h,
+        est.lambdas.away_1h,
+        est.lambdas.home_2h,
+        est.lambdas.away_2h,
+        "home"
+      );
+      const pAway = winOneHalfProb(
+        est.lambdas.home_1h,
+        est.lambdas.away_1h,
+        est.lambdas.home_2h,
+        est.lambdas.away_2h,
+        "away"
+      );
+      const coherenceOk = Math.abs(pHome + pAway - 1) < 0.08;
+      if (selectionKey === "home") return ok(pHome, coherenceOk);
+      if (selectionKey === "away") return ok(pAway, coherenceOk);
+      return fail(`unknown WIN_ONE_HALF key ${selectionKey}`);
+    }
     case "CORNERS": {
       const coherenceOk =
         Math.abs(m.cornersOver95 + m.cornersUnder95 - 1) < 1e-6;
       if (selectionKey === "over_9_5") return ok(m.cornersOver95, coherenceOk);
       if (selectionKey === "under_9_5") return ok(m.cornersUnder95, coherenceOk);
       return fail(`unknown CORNERS key ${selectionKey}`);
+    }
+    case "SOT": {
+      const sot = m.sot;
+      if (!sot || sot.status !== "ok") return fail("SOT unavailable");
+      const line =
+        input.line ??
+        Number(selectionKey.replace(/^.*(over|under)_/, ""));
+      if (!Number.isFinite(line)) return fail("SOT line missing");
+
+      let row: { over: number; under: number } | undefined;
+      if (selectionKey.startsWith("match_")) {
+        row = sot.lines.match[line];
+      } else if (selectionKey.startsWith("home_")) {
+        row = sot.lines.home[line];
+      } else if (selectionKey.startsWith("away_")) {
+        row = sot.lines.away[line];
+      }
+      if (!row) return fail(`SOT line ${line} unavailable`);
+      const side = selectionKey.includes("_under_") ? "under" : "over";
+      const coherenceOk = Math.abs(row.over + row.under - 1) < 1e-6;
+      return ok(side === "over" ? row.over : row.under, coherenceOk);
     }
     case "COMBO": {
       const comboId = input.comboId ?? selectionKey;

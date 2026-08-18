@@ -2,6 +2,10 @@
  * Market family labels and selection enumerators for the slip builder.
  */
 import { DEFAULT_COMBO_MARKETS } from "@/lib/prediction-log/combo-markets-config";
+import {
+  MATCH_SOT_LINES,
+  TEAM_SOT_LINES,
+} from "@/lib/prediction-log/sot-model";
 import { TOTAL_GOALS_LINES } from "@/lib/prediction-log/total-goals-markets";
 import type { FamilySelectionDef, MarketFamilyId } from "./types";
 
@@ -13,9 +17,12 @@ export const FAMILY_LABELS: Record<MarketFamilyId, string> = {
   TEAM_GOALS: "Team Goals",
   BTTS: "Both Teams To Score",
   HALF_GOALS: "Half Goals",
+  HSH: "Highest Scoring Half",
   HT_RESULT: "First-Half Result",
   DIEH: "Draw Either Half",
+  WIN_ONE_HALF: "Win at Least One Half",
   CORNERS: "Corners",
+  SOT: "Shots on Target O/U",
   COMBO: "Combo",
 };
 
@@ -140,6 +147,12 @@ export function enumerateFamilySelections(
           line: 0.5,
         },
       ];
+    case "HSH":
+      return [
+        { selectionKey: "1h_gt_2h", selectionLabel: "1st half highest scoring" },
+        { selectionKey: "2h_gt_1h", selectionLabel: "2nd half highest scoring" },
+        { selectionKey: "tie", selectionLabel: "Halves tied on goals" },
+      ];
     case "HT_RESULT":
       return [
         { selectionKey: "ht_home", selectionLabel: "HT Home" },
@@ -154,6 +167,11 @@ export function enumerateFamilySelections(
         { selectionKey: "yes", selectionLabel: "Draw Either Half — Yes" },
         { selectionKey: "no", selectionLabel: "Draw Either Half — No" },
       ];
+    case "WIN_ONE_HALF":
+      return [
+        { selectionKey: "home", selectionLabel: "Home wins ≥1 half" },
+        { selectionKey: "away", selectionLabel: "Away wins ≥1 half" },
+      ];
     case "CORNERS":
       return [
         {
@@ -167,6 +185,36 @@ export function enumerateFamilySelections(
           line: 9.5,
         },
       ];
+    case "SOT": {
+      const out: FamilySelectionDef[] = [];
+      for (const line of MATCH_SOT_LINES) {
+        out.push({
+          selectionKey: `match_over_${line}`,
+          selectionLabel: `Match SOT Over ${line}`,
+          line,
+        });
+        out.push({
+          selectionKey: `match_under_${line}`,
+          selectionLabel: `Match SOT Under ${line}`,
+          line,
+        });
+      }
+      for (const side of ["home", "away"] as const) {
+        for (const line of TEAM_SOT_LINES) {
+          out.push({
+            selectionKey: `${side}_over_${line}`,
+            selectionLabel: `${side === "home" ? "Home" : "Away"} SOT Over ${line}`,
+            line,
+          });
+          out.push({
+            selectionKey: `${side}_under_${line}`,
+            selectionLabel: `${side === "home" ? "Home" : "Away"} SOT Under ${line}`,
+            line,
+          });
+        }
+      }
+      return out;
+    }
     case "COMBO":
       return DEFAULT_COMBO_MARKETS.filter((c) => c.enabled).map((c) => ({
         selectionKey: c.id,

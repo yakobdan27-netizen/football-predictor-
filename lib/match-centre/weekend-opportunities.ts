@@ -22,11 +22,24 @@ export const WEEKEND_PICK_MAX = 20;
 export const WEEKEND_WINDOW_DAYS = 7;
 export const WEEKEND_TOTALS_OVER_MIN_LINE = 1.5;
 export const WEEKEND_TOTALS_UNDER_MAX_LINE = 4.5;
+/** Minimum calibrated-probability gap between best and 2nd-best market on a fixture. */
+export const WEEKEND_MARKET_MARGIN_MIN = 0.05;
+
+/** Core Double Chance + Over Total combos for Weekend Picks. */
+export const WEEKEND_DC_TOTAL_COMBO_IDS = [
+  "1x_over_1_5",
+  "1x_over_2_5",
+  "x2_over_1_5",
+  "x2_over_2_5",
+  "12_over_1_5",
+  "12_over_2_5",
+] as const;
 
 export const WEEKEND_COMBO_IDS = new Set([
   "1x_btts_yes",
   "x2_btts_yes",
   "12_btts_yes",
+  ...WEEKEND_DC_TOTAL_COMBO_IDS,
   "btts_yes_over_2_5",
   "btts_yes_over_3_5",
   "btts_no_under_2_5",
@@ -57,7 +70,7 @@ export function weekendTotalsSelectionAllowed(
   return true;
 }
 
-/** Weekend Picks combos: DC+BTTS, BTTS+Total, Win+Total only (no DC+Total). */
+/** Weekend Picks combos: DC+BTTS, DC+Total (Over), BTTS+Total, Win+Total. */
 export function weekendComboSelectionAllowed(
   family: MarketFamilyId,
   comboId?: string
@@ -76,6 +89,8 @@ export type WeekendOpportunityTrace = {
   pCalibrated: number;
   nEffective: number;
   coherenceOk: boolean;
+  secondBestPCalibrated?: number;
+  marketMargin?: number;
 };
 
 export type WeekendOpportunityRow = {
@@ -125,11 +140,23 @@ function familyDataOk(
   if (!lambdasComplete(est)) return false;
   if (
     !est.diagnostics.halfSumOk &&
-    (family === "HALF_GOALS" || family === "DIEH" || family === "HT_RESULT")
+    (family === "HALF_GOALS" ||
+      family === "HT_RESULT" ||
+      family === "DIEH" ||
+      family === "WIN_ONE_HALF")
   ) {
     return false;
   }
+  if (family === "HSH") {
+    const sum = est.markets.p1h + est.markets.p2h + est.markets.pTie;
+    if (!(sum > 0.95 && sum < 1.05)) return false;
+    return true;
+  }
   if (family === "DIEH" && est.markets.dieh.status !== "ok") return false;
+  if (family === "SOT") {
+    const sot = est.markets.sot;
+    if (!sot || sot.status !== "ok") return false;
+  }
   if (!est.score_matrix?.length) return false;
   return true;
 }
@@ -165,6 +192,8 @@ export type BestMarketPick = {
   pCalibrated: number;
   nEffective: number;
   coherenceOk: boolean;
+  secondBestPCalibrated?: number;
+  marketMargin?: number;
 } | null;
 
 export function scoreFixtureBestMarket(
@@ -172,7 +201,18 @@ export function scoreFixtureBestMarket(
   estimate: CanonicalFixtureEstimate,
   calibrator: BinCalibrator | null
 ): BestMarketPick {
-  let best: BestMarketPick = null;
+  const candidates: Array<{
+    marketLabel: string;
+    predictionLabel: string;
+    family: MarketFamilyId;
+    selectionKey: string;
+    line?: number;
+    comboId?: string;
+    pRaw: number;
+    pCalibrated: number;
+    nEffective: number;
+    coherenceOk: boolean;
+  }> = [];
 
   for (const family of MARKET_FAMILY_IDS) {
     if (!familyDataOk(family, estimate)) continue;
@@ -201,30 +241,42 @@ export function scoreFixtureBestMarket(
         scored.nEffective,
         calibrator
       );
-      const pCalibrated = cal.pCalibrated;
 
-      if (
-        !best ||
-        pCalibrated > best.pCalibrated ||
-        (pCalibrated === best.pCalibrated && scored.pRaw > best.pRaw)
-      ) {
-        best = {
-          marketLabel: FAMILY_LABELS[family],
-          predictionLabel: sel.selectionLabel,
-          family,
-          selectionKey: sel.selectionKey,
-          line: sel.line,
-          comboId: sel.comboId,
-          pRaw: scored.pRaw,
-          pCalibrated,
-          nEffective: scored.nEffective,
-          coherenceOk: scored.coherenceOk,
-        };
-      }
+      candidates.push({
+        marketLabel: FAMILY_LABELS[family],
+        predictionLabel: sel.selectionLabel,
+        family,
+        selectionKey: sel.selectionKey,
+        line: sel.line,
+        comboId: sel.comboId,
+        pRaw: scored.pRaw,
+        pCalibrated: cal.pCalibrated,
+        nEffective: scored.nEffective,
+        coherenceOk: scored.coherenceOk,
+      });
     }
   }
 
-  return best;
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (b.pCalibrated !== a.pCalibrated) return b.pCalibrated - a.pCalibrated;
+    if (b.pRaw !== a.pRaw) return b.pRaw - a.pRaw;
+    return 0;
+  });
+
+  const best = candidates[0]!;
+  const second = candidates[1];
+  const margin =
+    second != null ? best.pCalibrated - second.pCalibrated : best.pCalibrated;
+
+  if (margin < WEEKEND_MARKET_MARGIN_MIN) return null;
+
+  return {
+    ...best,
+    secondBestPCalibrated: second?.pCalibrated,
+    marketMargin: margin,
+  };
 }
 
 export function selectWeekendPickCount(poolSize: number): {
@@ -304,6 +356,8 @@ export function rankWeekendOpportunities(input: {
       pCalibrated: pick.pCalibrated,
       nEffective: pick.nEffective,
       coherenceOk: pick.coherenceOk,
+      secondBestPCalibrated: pick.secondBestPCalibrated,
+      marketMargin: pick.marketMargin,
     },
   }));
 

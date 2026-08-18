@@ -85,6 +85,15 @@ function TracePanel({ row }: { row: WeekendOpportunityRow }) {
         <strong>Coherence:</strong>{" "}
         {row.trace.coherenceOk ? "ok" : "check grid"}
       </div>
+      {row.trace.marketMargin != null && (
+        <div>
+          <strong>Market margin:</strong>{" "}
+          {(row.trace.marketMargin * 100).toFixed(1)} pp
+          {row.trace.secondBestPCalibrated != null
+            ? ` (2nd best ${(row.trace.secondBestPCalibrated * 100).toFixed(1)}%)`
+            : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -142,8 +151,11 @@ export function WeekendOpportunitiesApp() {
           <p className="page-sub" style={{ marginTop: "0.35rem", maxWidth: "42rem" }}>
             Upcoming Sat–Sun fixtures from Match Centre (next 7 days, all five
             leagues). Each row is the single highest-probability market from the
-            full CFE scan — top 10–20 matches ranked globally. Combo picks:
-            Double Chance + BTTS, BTTS + Total, Win + Total only.
+            full CFE scan — top 10–20 matches ranked globally. Markets include
+            match winner, draw either half, win ≥1 half, highest scoring half,
+            shots on target O/U, plus BTTS, totals, and combos (Double Chance +
+            BTTS, Double Chance + Total Over, BTTS + Total, Win + Total). Only
+            fixtures where the best market leads the 2nd-best by ≥5 pp are shown.
           </p>
           {data && (
             <p className="page-sub" style={{ marginTop: "0.25rem" }}>

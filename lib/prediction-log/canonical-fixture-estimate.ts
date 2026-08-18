@@ -16,6 +16,7 @@ import {
   type HshMatchContext,
 } from "./hsh-model";
 import { predictCornersMatch } from "./corners-model";
+import { predictSotMarkets, type SotMarkets } from "./sot-model";
 import {
   clampLambda,
   HALF_SUM_FT_TOLERANCE,
@@ -76,6 +77,8 @@ export type CanonicalFixtureEstimate = {
     away_2h: number;
     home_corners: number;
     away_corners: number;
+    home_sot: number;
+    away_sot: number;
   };
   score_matrix: number[][];
   markets: {
@@ -96,6 +99,7 @@ export type CanonicalFixtureEstimate = {
     doubleChance: { oneX: number; xTwo: number; oneTwo: number };
     dieh: DiehMarkets;
     totalGoals: TotalGoalsMarkets;
+    sot: SotMarkets;
   };
   provenance: {
     api_pct: number;
@@ -291,6 +295,14 @@ export function canonicalFixtureEstimateSync(
     beforeDate: input.beforeDate,
   });
 
+  const sot = predictSotMarkets({
+    homeTeam: input.homeTeam,
+    awayTeam: input.awayTeam,
+    league: input.league,
+    batches: input.batches,
+    beforeDate: input.beforeDate,
+  });
+
   const seasonsUsed = Math.max(
     input.hshCtx.homeRates.seasonCount,
     input.hshCtx.awayRates.seasonCount
@@ -347,6 +359,8 @@ export function canonicalFixtureEstimateSync(
       away_2h: stageA.lambdaB2,
       home_corners: corners.lambdaHome,
       away_corners: corners.lambdaAway,
+      home_sot: sot.lambdaHome,
+      away_sot: sot.lambdaAway,
     },
     score_matrix: dist.matrix,
     markets: {
@@ -372,6 +386,7 @@ export function canonicalFixtureEstimateSync(
       },
       dieh,
       totalGoals,
+      sot,
     },
     provenance: {
       api_pct: source === "manual_ai_only" ? 0 : homeBlend.apiW * 100,
