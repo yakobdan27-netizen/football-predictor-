@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { authorizeCron } from "@/lib/live/cron-auth";
-import { runDailyHistDrain } from "@/lib/hist/daily-drain";
+import {
+  cronInterleaveEnrichmentFromEnv,
+  cronMaxChunksFromEnv,
+  HIST_CRON_DEADLINE_MS_DEFAULT,
+  runDailyHistDrain,
+} from "@/lib/hist/daily-drain";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -14,8 +19,13 @@ async function run(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Keep to 1 chunk per invoke — fits 60s; vercel.json schedules several slots/day.
-  const result = await runDailyHistDrain({ maxChunks: 1 });
+  const maxChunks = cronMaxChunksFromEnv();
+  const interleave = cronInterleaveEnrichmentFromEnv();
+  const result = await runDailyHistDrain({
+    maxChunks,
+    deadlineMs: HIST_CRON_DEADLINE_MS_DEFAULT,
+    interleaveEnrichment: interleave,
+  });
   const status =
     result.stoppedReason === "quota"
       ? 200
@@ -27,10 +37,14 @@ async function run(request: Request) {
     {
       ...result,
       mode: result.phase === "enrichment" ? "enrichment" : "gapPriority",
+      maxChunks,
+      interleaveEnrichment: interleave,
       scheduleNote:
         result.phase === "enrichment"
           ? "Inventory gate passed — draining HT/corners enrichment gaps"
-          : "Runs several times daily via vercel.json until inventoryPass=66",
+          : interleave
+            ? `Multi-chunk drain (≤${maxChunks} chunks / ${HIST_CRON_DEADLINE_MS_DEFAULT / 1000}s) · inventory-first with interleaved HT/corners`
+            : `Multi-chunk drain (≤${maxChunks} chunks / ${HIST_CRON_DEADLINE_MS_DEFAULT / 1000}s) · inventory until 66/66`,
     },
     { status }
   );

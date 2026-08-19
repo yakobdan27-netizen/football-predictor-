@@ -1,12 +1,13 @@
 /**
  * Daily hist inventory drain — gap-priority, deep-first.
  * After inventory gate (66/66), switches to HT/corners enrichment phase.
- * Used by cron; stops on quota, completion, or max chunks.
+ * Used by cron; stops on quota, completion, deadline, or max chunks.
  */
 import {
   auditHistCoverage,
   enrichmentGapQueueFromCoverage,
   gapQueueFromCoverage,
+  type HistCoverageReport,
 } from "./coverage-audit";
 import { runHistBackfillChunk } from "./backfill";
 import type { HistBackfillChunkSummary } from "./backfill";
@@ -28,12 +29,91 @@ export type DailyDrainResult = {
     | "quota"
     | "done"
     | "max_chunks"
+    | "deadline"
     | "error"
     | "no_gaps"
     | "enrichment_complete";
   lastChunk: HistBackfillChunkSummary | null;
   error?: string;
 };
+
+export type ResolveHistDrainPhaseOpts = {
+  /** When true, run enrichment every 2 inventory chunks while both queues have work. */
+  interleave?: boolean;
+  /** Inventory chunks completed since the last enrichment chunk. */
+  inventorySinceEnrich?: number;
+};
+
+export type HistDrainPhasePick = {
+  phase: "inventory" | "enrichment";
+  hasWork: boolean;
+  enrichmentGapsRemaining: number;
+};
+
+/** Default cron chunk ceiling (override via HIST_CRON_MAX_CHUNKS). */
+export const HIST_CRON_MAX_CHUNKS_DEFAULT = 3;
+
+/** Default cron deadline ms — leaves headroom under maxDuration=60. */
+export const HIST_CRON_DEADLINE_MS_DEFAULT = 52_000;
+
+/** Inventory chunks before one interleaved enrichment chunk (2:1 ratio). */
+export const HIST_INTERLEAVE_INVENTORY_RATIO = 2;
+
+function envFlag(name: string, defaultOn: boolean): boolean {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return defaultOn;
+  return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
+}
+
+export function cronMaxChunksFromEnv(): number {
+  const n = Number(process.env.HIST_CRON_MAX_CHUNKS);
+  if (!Number.isFinite(n) || n <= 0) return HIST_CRON_MAX_CHUNKS_DEFAULT;
+  return Math.max(1, Math.min(10, Math.floor(n)));
+}
+
+export function cronInterleaveEnrichmentFromEnv(): boolean {
+  return envFlag("HIST_INTERLEAVE_ENRICHMENT", true);
+}
+
+/**
+ * Pick inventory vs enrichment phase for the next chunk.
+ * When interleave is on and inventory gaps remain, enrichment runs every
+ * HIST_INTERLEAVE_INVENTORY_RATIO inventory chunks if enrichment gaps exist.
+ */
+export function resolveHistDrainPhase(
+  report: HistCoverageReport,
+  opts?: ResolveHistDrainPhaseOpts
+): HistDrainPhasePick {
+  const invPass = report.summary.inventoryPass >= report.summary.total;
+  const inventoryGaps = gapQueueFromCoverage(report).length;
+  const enrichmentGaps = enrichmentGapQueueFromCoverage(report).length;
+  const interleave = opts?.interleave ?? false;
+  const inventorySinceEnrich = opts?.inventorySinceEnrich ?? 0;
+
+  if (!invPass && inventoryGaps > 0) {
+    const shouldInterleave =
+      interleave &&
+      enrichmentGaps > 0 &&
+      inventorySinceEnrich >= HIST_INTERLEAVE_INVENTORY_RATIO;
+    return {
+      phase: shouldInterleave ? "enrichment" : "inventory",
+      hasWork: true,
+      enrichmentGapsRemaining: enrichmentGaps,
+    };
+  }
+  if (enrichmentGaps > 0) {
+    return {
+      phase: "enrichment",
+      hasWork: true,
+      enrichmentGapsRemaining: enrichmentGaps,
+    };
+  }
+  return {
+    phase: invPass ? "enrichment" : "inventory",
+    hasWork: false,
+    enrichmentGapsRemaining: 0,
+  };
+}
 
 async function refitHalfParamsIfNeeded(
   totalEnriched: number,
@@ -55,57 +135,46 @@ async function refitHalfParamsIfNeeded(
   }
 }
 
-function pickPhase(report: Awaited<ReturnType<typeof auditHistCoverage>>): {
-  phase: "inventory" | "enrichment";
-  hasWork: boolean;
-  enrichmentGapsRemaining: number;
-} {
-  const invPass = report.summary.inventoryPass >= report.summary.total;
-  const inventoryGaps = gapQueueFromCoverage(report).length;
-  const enrichmentGaps = enrichmentGapQueueFromCoverage(report).length;
-
-  if (!invPass && inventoryGaps > 0) {
-    return {
-      phase: "inventory",
-      hasWork: true,
-      enrichmentGapsRemaining: enrichmentGaps,
-    };
-  }
-  if (enrichmentGaps > 0) {
-    return {
-      phase: "enrichment",
-      hasWork: true,
-      enrichmentGapsRemaining: enrichmentGaps,
-    };
-  }
-  return {
-    phase: invPass ? "enrichment" : "inventory",
-    hasWork: false,
-    enrichmentGapsRemaining: 0,
-  };
+function buildResult(
+  partial: Omit<DailyDrainResult, "ok"> & { ok?: boolean }
+): DailyDrainResult {
+  return { ok: partial.ok ?? true, ...partial };
 }
 
 /**
- * Run up to `maxChunks` gap-priority enrichments (default 1 for serverless).
+ * Run up to `maxChunks` gap-priority enrichments within an optional deadline.
  */
 export async function runDailyHistDrain(opts?: {
   maxChunks?: number;
+  deadlineMs?: number;
+  interleaveEnrichment?: boolean;
 }): Promise<DailyDrainResult> {
-  const maxChunks = Math.max(1, Math.min(20, opts?.maxChunks ?? 1));
+  const maxChunks = Math.max(
+    1,
+    Math.min(20, opts?.maxChunks ?? cronMaxChunksFromEnv())
+  );
+  const deadlineMs = opts?.deadlineMs ?? HIST_CRON_DEADLINE_MS_DEFAULT;
+  const deadlineAt =
+    deadlineMs > 0 ? Date.now() + deadlineMs : Number.POSITIVE_INFINITY;
+  const interleave = opts?.interleaveEnrichment ?? cronInterleaveEnrichmentFromEnv();
+
   let totalEnriched = 0;
   let htFilled = 0;
   let cornersFilled = 0;
   let lastChunk: HistBackfillChunkSummary | null = null;
   let chunksAttempted = 0;
+  let inventorySinceEnrich = 0;
   let phase: "inventory" | "enrichment" = "inventory";
 
   const before = await auditHistCoverage();
   const inv0 = before.summary.inventoryPass;
-  const initial = pickPhase(before);
+  const initial = resolveHistDrainPhase(before, {
+    interleave,
+    inventorySinceEnrich,
+  });
 
   if (!initial.hasWork) {
-    return {
-      ok: true,
+    return buildResult({
       gatePass: inv0 >= before.summary.total,
       inventoryPass: inv0,
       total: before.summary.total,
@@ -117,23 +186,54 @@ export async function runDailyHistDrain(opts?: {
       phase: initial.phase,
       enrichmentGapsRemaining: 0,
       stoppedReason:
-        inv0 >= before.summary.total
-          ? "enrichment_complete"
-          : "no_gaps",
+        inv0 >= before.summary.total ? "enrichment_complete" : "no_gaps",
       lastChunk: null,
-    };
+    });
   }
 
   phase = initial.phase;
 
   for (let i = 0; i < maxChunks; i++) {
+    if (Date.now() >= deadlineAt && chunksAttempted > 0) {
+      const after = await auditHistCoverage().catch(() => before);
+      await refitHalfParamsIfNeeded(
+        totalEnriched,
+        inv0,
+        after.summary.inventoryPass
+      );
+      const finalPick = resolveHistDrainPhase(after, {
+        interleave,
+        inventorySinceEnrich,
+      });
+      return buildResult({
+        gatePass: after.summary.inventoryPass >= after.summary.total,
+        inventoryPass: after.summary.inventoryPass,
+        total: after.summary.total,
+        providerHoles: after.summary.providerHoles,
+        chunksAttempted,
+        totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase: finalPick.phase,
+        enrichmentGapsRemaining: finalPick.enrichmentGapsRemaining,
+        stoppedReason: "deadline",
+        lastChunk,
+      });
+    }
+
     const live = await auditHistCoverage().catch(() => before);
-    const pick = pickPhase(live);
+    const pick = resolveHistDrainPhase(live, {
+      interleave,
+      inventorySinceEnrich,
+    });
     phase = pick.phase;
     if (!pick.hasWork) {
-      await refitHalfParamsIfNeeded(totalEnriched, inv0, live.summary.inventoryPass);
-      return {
-        ok: true,
+      await refitHalfParamsIfNeeded(
+        totalEnriched,
+        inv0,
+        live.summary.inventoryPass
+      );
+      return buildResult({
         gatePass: live.summary.inventoryPass >= live.summary.total,
         inventoryPass: live.summary.inventoryPass,
         total: live.summary.total,
@@ -146,7 +246,7 @@ export async function runDailyHistDrain(opts?: {
         enrichmentGapsRemaining: 0,
         stoppedReason: "enrichment_complete",
         lastChunk,
-      };
+      });
     }
 
     chunksAttempted += 1;
@@ -156,7 +256,7 @@ export async function runDailyHistDrain(opts?: {
         mode: phase,
       });
     } catch (e) {
-      return {
+      return buildResult({
         ok: false,
         gatePass: false,
         inventoryPass: inv0,
@@ -171,11 +271,17 @@ export async function runDailyHistDrain(opts?: {
         stoppedReason: "error",
         lastChunk,
         error: e instanceof Error ? e.message : String(e),
-      };
+      });
     }
     totalEnriched += lastChunk.enriched;
     htFilled += lastChunk.htFilled;
     cornersFilled += lastChunk.cornersFilled;
+
+    if (phase === "inventory") {
+      inventorySinceEnrich += 1;
+    } else {
+      inventorySinceEnrich = 0;
+    }
 
     if (lastChunk.quotaAbort || lastChunk.preflight.abort) {
       const after = await auditHistCoverage().catch(() => before);
@@ -184,8 +290,7 @@ export async function runDailyHistDrain(opts?: {
         inv0,
         after.summary.inventoryPass
       );
-      return {
-        ok: true,
+      return buildResult({
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
         total: after.summary.total,
@@ -200,7 +305,7 @@ export async function runDailyHistDrain(opts?: {
           enrichmentGapQueueFromCoverage(after).length,
         stoppedReason: "quota",
         lastChunk,
-      };
+      });
     }
     if (lastChunk.done) {
       const after = await auditHistCoverage().catch(() => before);
@@ -209,8 +314,7 @@ export async function runDailyHistDrain(opts?: {
         inv0,
         after.summary.inventoryPass
       );
-      return {
-        ok: true,
+      return buildResult({
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
         total: after.summary.total,
@@ -225,7 +329,7 @@ export async function runDailyHistDrain(opts?: {
           enrichmentGapQueueFromCoverage(after).length,
         stoppedReason: "done",
         lastChunk,
-      };
+      });
     }
     if (!lastChunk.ok && lastChunk.error) {
       const after = await auditHistCoverage().catch(() => before);
@@ -234,7 +338,7 @@ export async function runDailyHistDrain(opts?: {
         inv0,
         after.summary.inventoryPass
       );
-      return {
+      return buildResult({
         ok: false,
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
@@ -251,7 +355,34 @@ export async function runDailyHistDrain(opts?: {
         stoppedReason: "error",
         lastChunk,
         error: lastChunk.error,
-      };
+      });
+    }
+
+    if (Date.now() >= deadlineAt) {
+      const after = await auditHistCoverage().catch(() => before);
+      await refitHalfParamsIfNeeded(
+        totalEnriched,
+        inv0,
+        after.summary.inventoryPass
+      );
+      const finalPick = resolveHistDrainPhase(after, {
+        interleave,
+        inventorySinceEnrich,
+      });
+      return buildResult({
+        gatePass: after.summary.inventoryPass >= after.summary.total,
+        inventoryPass: after.summary.inventoryPass,
+        total: after.summary.total,
+        providerHoles: after.summary.providerHoles,
+        chunksAttempted,
+        totalEnriched,
+        htFilled,
+        cornersFilled,
+        phase: finalPick.phase,
+        enrichmentGapsRemaining: finalPick.enrichmentGapsRemaining,
+        stoppedReason: "deadline",
+        lastChunk,
+      });
     }
   }
 
@@ -263,10 +394,12 @@ export async function runDailyHistDrain(opts?: {
     after.summary.inventoryPass
   );
 
-  const finalPick = pickPhase(after);
+  const finalPick = resolveHistDrainPhase(after, {
+    interleave,
+    inventorySinceEnrich,
+  });
 
-  return {
-    ok: true,
+  return buildResult({
     gatePass: after.summary.inventoryPass >= after.summary.total,
     inventoryPass: after.summary.inventoryPass,
     total: after.summary.total,
@@ -279,5 +412,5 @@ export async function runDailyHistDrain(opts?: {
     enrichmentGapsRemaining: finalPick.enrichmentGapsRemaining,
     stoppedReason: "max_chunks",
     lastChunk,
-  };
+  });
 }

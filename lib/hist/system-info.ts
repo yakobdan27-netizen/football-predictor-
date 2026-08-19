@@ -11,6 +11,11 @@ import {
   type HistCoverageReport,
 } from "./coverage-audit";
 import {
+  cronInterleaveEnrichmentFromEnv,
+  cronMaxChunksFromEnv,
+  HIST_CRON_DEADLINE_MS_DEFAULT,
+} from "./daily-drain";
+import {
   DIEH_MIN_VALID_FIXTURES,
   type HalfParamsStore,
 } from "./half-params-types";
@@ -101,6 +106,8 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
   const totalStored = coverage.perCompetition.reduce((n, c) => n + c.stored, 0);
   const drainMode =
     gatePass && enrichmentGapsRemaining > 0 ? "enrichment" : "gap-priority";
+  const maxChunks = cronMaxChunksFromEnv();
+  const interleave = cronInterleaveEnrichmentFromEnv();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -130,7 +137,9 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
       scheduleNote:
         gatePass && enrichmentGapsRemaining > 0
           ? `Cron /api/cron/hist-backfill · enrichment phase · ${enrichmentGapsRemaining} HT/corners gaps`
-          : "Cron /api/cron/hist-backfill · gap-priority · inventory until 66/66",
+          : interleave
+            ? `Cron /api/cron/hist-backfill · gap-priority · inventory until 66/66 · ≤${maxChunks} chunks/${HIST_CRON_DEADLINE_MS_DEFAULT / 1000}s · interleaved HT/corners`
+            : `Cron /api/cron/hist-backfill · gap-priority · inventory until 66/66 · ≤${maxChunks} chunks/${HIST_CRON_DEADLINE_MS_DEFAULT / 1000}s`,
     },
   };
 }
