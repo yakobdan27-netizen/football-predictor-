@@ -19,6 +19,10 @@ export const KV_KEYS = {
   /** Cached API-Football fixture statistics by fixture id. */
   apiFootballStats: (fixtureId: number | string) =>
     `apiFootball:stats:v1:${fixtureId}`,
+  apiFootballEvents: (fixtureId: number | string) =>
+    `apiFootball:events:v1:${fixtureId}`,
+  apiFootballLineups: (fixtureId: number | string) =>
+    `apiFootball:lineups:v1:${fixtureId}`,
   /** Team name → API-Football team id map for a league+season. */
   apiFootballTeamMap: (leagueId: number, season: number) =>
     `apiFootball:teamMap:v1:${leagueId}:${season}`,

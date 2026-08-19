@@ -8,10 +8,14 @@ import {
   formatUserMarketEvalLine,
   listRegisteredResultPages,
   processBatchDecisions,
+  buildDecisionBatchCaches,
   type MatchDecisionRow,
   type ScoredDecisionMarket,
   type UserMarketEvaluation,
 } from "@/lib/prediction-log/decision-maker";
+import { BestMarketAdvisoryCard } from "@/components/prediction-log/best-market-advisory-card";
+import { useBatchMarketAdvisory } from "@/components/prediction-log/use-batch-market-advisory";
+import type { MarketAdvisoryUiPayload } from "@/lib/market-advisory/types";
 import { useMatchCentreRatesCache } from "@/components/prediction-log/use-match-centre-rates-cache";
 import type { ComboCandidate } from "@/lib/prediction-log/combo-selection";
 import { blendBadgeLabel, blendBadgeTitle } from "@/lib/prediction-log/prediction-weights";
@@ -201,6 +205,8 @@ function DecisionRow({
   expanded,
   onToggle,
   highlight,
+  advisory,
+  advisoryLoading,
 }: {
   row: MatchDecisionRow;
   batch: PredictionBatch;
@@ -208,13 +214,20 @@ function DecisionRow({
   expanded: boolean;
   onToggle: () => void;
   highlight?: boolean;
+  advisory?: MarketAdvisoryUiPayload | null;
+  advisoryLoading?: boolean;
 }) {
   const [m1, m2, m3] = row.markets;
   const dateTime = row.match.matchDate ?? batch.date;
   const rowRef = useRef<HTMLTableRowElement | null>(null);
   const showPerTeam =
     expanded ||
-    row.markets.some((m) => m.marketKey === "corners_ou" || m.marketKey === "hsh");
+    row.markets.some(
+      (m) =>
+        m.marketKey === "corners_ou" ||
+        m.marketKey === "home_corners_ou" ||
+        m.marketKey === "hsh"
+    );
 
   useEffect(() => {
     if (highlight && rowRef.current) {
@@ -350,7 +363,19 @@ function DecisionRow({
                   allBatches={allBatches}
                   compact
                 />
+                <BestMarketAdvisoryCard
+                  advisory={advisory ?? null}
+                  loading={advisoryLoading}
+                  compact
+                />
               </div>
+            )}
+            {!expanded && (
+              <BestMarketAdvisoryCard
+                advisory={advisory ?? null}
+                loading={advisoryLoading}
+                compact
+              />
             )}
           </div>
         </td>
@@ -459,6 +484,33 @@ export function DecisionMakerApp() {
     matchCentreCache,
   ]);
 
+  const dmCaches = useMemo(() => {
+    if (!batch) return null;
+    return buildDecisionBatchCaches({
+      batch,
+      allBatches: batches,
+      comboSettings,
+      analysis,
+      teamsQuality,
+      learnerStats,
+      matchCentreCache,
+    });
+  }, [
+    batch,
+    batches,
+    comboSettings,
+    analysis,
+    teamsQuality,
+    learnerStats,
+    matchCentreCache,
+  ]);
+
+  const { advisories, loading: advisoryLoading } = useBatchMarketAdvisory({
+    rows: decisions,
+    cfeByMatchId: dmCaches?.cfeByMatchId ?? new Map(),
+    enabled: !!batch && decisions.length > 0,
+  });
+
   const registry = listRegisteredResultPages();
 
   if (!ready || !deeplinkReady) {
@@ -562,6 +614,8 @@ export function DecisionMakerApp() {
                       focusFixtureId != null &&
                       row.match.apiFixtureId === focusFixtureId
                     }
+                    advisory={advisories.get(row.match.id) ?? null}
+                    advisoryLoading={advisoryLoading}
                     onToggle={() =>
                       setExpanded((prev) => ({
                         ...prev,

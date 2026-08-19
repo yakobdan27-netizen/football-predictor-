@@ -190,6 +190,14 @@ export function mapMatchPredictionsToWrites(
           odds,
         });
         break;
+      case "home_corners_ou":
+        home.push({
+          clubSide: "home",
+          type: "corners",
+          predicted: `${pred.prediction}${pred.line != null ? `@${pred.line}` : ""}`,
+          odds,
+        });
+        break;
       case "offsides_ou":
         home.push({
           clubSide: "home",

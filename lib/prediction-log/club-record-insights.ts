@@ -35,6 +35,7 @@ export function marketToHistoryType(market: LogMarketKey): HistoryTypeKey | null
     case "away_shots_ou":
       return "totalShots";
     case "corners_ou":
+    case "home_corners_ou":
       return "corners";
     case "offsides_ou":
       return "offsides";

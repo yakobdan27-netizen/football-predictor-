@@ -4,6 +4,8 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { confidenceTone } from "@/lib/prediction-log/decision-maker/confidence";
 import type { WeekendOpportunityRow } from "@/lib/match-centre/weekend-opportunities";
+import type { MarketAdvisoryUiPayload } from "@/lib/market-advisory/types";
+import { BestMarketAdvisoryCard } from "@/components/prediction-log/best-market-advisory-card";
 
 type WeekendApiResponse = {
   ok?: boolean;
@@ -13,7 +15,8 @@ type WeekendApiResponse = {
   fixturePoolCount?: number;
   selectedCount?: number;
   insufficientPool?: boolean;
-  rows?: WeekendOpportunityRow[];
+  rows?: (WeekendOpportunityRow & { advisory?: MarketAdvisoryUiPayload | null })[];
+  advisoriesByFixtureId?: Record<number, MarketAdvisoryUiPayload>;
   warnings?: string[];
   filteredCount?: number;
 };
@@ -233,6 +236,12 @@ export function WeekendOpportunitiesApp() {
         </div>
       )}
 
+      {rows.length > 0 && rows[0]?.advisory && (
+        <div style={{ marginBottom: "1rem" }}>
+          <BestMarketAdvisoryCard advisory={rows[0].advisory} />
+        </div>
+      )}
+
       {rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table
@@ -303,6 +312,9 @@ export function WeekendOpportunitiesApp() {
                     <tr>
                       <td colSpan={8} style={{ padding: "0 0.5rem 0.75rem" }}>
                         <TracePanel row={row} />
+                        {row.advisory && (
+                          <BestMarketAdvisoryCard advisory={row.advisory} compact />
+                        )}
                       </td>
                     </tr>
                   )}

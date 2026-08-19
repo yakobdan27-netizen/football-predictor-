@@ -4,6 +4,7 @@
  */
 import { clampConfidence } from "./confidence";
 import { eventProbPctFromScoreGrid } from "../goal-distribution";
+import { poissonOverLine } from "../poisson-ou";
 import type { CornersMatchPrediction } from "../corners-model";
 import type { LogMatch, PredictionBatch } from "../types";
 import type { DecisionBatchCaches, ScoredDecisionMarket } from "./types";
@@ -55,6 +56,15 @@ export function applyCoherentMarketConfidences(
       return {
         ...m,
         confidence: clampConfidence(cornersEventPct(m.prediction, corners)),
+      };
+    }
+    if (m.marketKey === "home_corners_ou" && corners && m.line != null) {
+      const over = poissonOverLine(m.line, corners.lambdaHome);
+      const under = 1 - over;
+      const isOver = /\bover\b/i.test(m.prediction);
+      return {
+        ...m,
+        confidence: clampConfidence((isOver ? over : under) * 100),
       };
     }
     if (grid) {

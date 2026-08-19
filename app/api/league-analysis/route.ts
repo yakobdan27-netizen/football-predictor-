@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
-import { getLeagueMatchupAnalysis } from "@/lib/prediction-log/league-matchup-analysis";
+import { getBlendedLeagueMatchupAnalysis } from "@/lib/prediction-log/league-matchup-analysis";
 import { buildAllSeedLeagueProfiles } from "@/lib/prediction-log/league-seed-profiles";
 import { resolveLeagueId } from "@/lib/prediction-log/league-registry";
 import { leagueProfileKey } from "@/lib/prediction-log/season";
 
+function seasonQueryToApiYear(seasonLabel: string | null | undefined): number | undefined {
+  if (!seasonLabel?.trim()) return undefined;
+  const m = seasonLabel.trim().match(/^(\d{4})/);
+  if (m) return Number(m[1]);
+  return undefined;
+}
+
 /**
  * GET /api/league-analysis?homeTeam=…&awayTeam=…&league=…
- * Reference-only matchup from 2021–26 seed priors.
+ * Reference matchup: 60% API season GF/GA · 40% seed/form priors when both exist.
  * Optional: omit teams to return seed league profile keys.
  */
 export async function GET(request: Request) {
@@ -34,7 +41,12 @@ export async function GET(request: Request) {
       });
     }
 
-    const analysis = getLeagueMatchupAnalysis(homeTeam, awayTeam, league);
+    const analysis = await getBlendedLeagueMatchupAnalysis(
+      homeTeam,
+      awayTeam,
+      league,
+      { season: seasonQueryToApiYear(season) }
+    );
     if (!analysis) {
       return NextResponse.json(
         {

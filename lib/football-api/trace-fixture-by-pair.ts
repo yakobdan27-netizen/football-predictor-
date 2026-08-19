@@ -39,6 +39,8 @@ import { apiFootballGet, isApiFootballKeyError, sleep } from "./client";
 import {
   fetchFixtureByIdCached,
   fetchFixtureStatisticsCached,
+  fetchFixtureEventsCached,
+  fetchFixtureLineupsCached,
 } from "./cache";
 import { apiDateOnly, apiLeagueId, apiSeasonFromDate } from "./leagues";
 import {
@@ -47,9 +49,14 @@ import {
   type ApiFootballStatBlock,
   detectApiConflicts,
   mapFixtureToMatchUpdates,
+  matchNeedsApiDetailFill,
+  matchNeedsGoalEvents,
+  matchNeedsLineups,
   matchNeedsStatistics,
   mergeMatchUpdates,
 } from "./map-fixture-to-match";
+import type { FixtureGoalEvent } from "./fixture-events";
+import type { MatchLineups } from "@/lib/prediction-log/types";
 import { normalizeApiTeamName } from "./team-resolve";
 import { resolveApiTeamId } from "./team-id-map";
 
@@ -423,14 +430,59 @@ function applyTraceMetadata(
   };
 }
 
+export type ApiMatchDetails = {
+  stats: ApiFootballStatBlock[] | null;
+  events: FixtureGoalEvent[] | null;
+  lineups: MatchLineups | undefined;
+};
+
+/** Fetch statistics, goal events, and lineups based on what the match still needs. */
+export async function fetchApiMatchDetails(
+  fixture: ApiFootballFixture,
+  match: LogMatch,
+  opts?: { full?: boolean }
+): Promise<ApiMatchDetails> {
+  const fixtureId = fixture.fixture.id;
+  const full = opts?.full === true;
+
+  let stats: ApiFootballStatBlock[] | null = null;
+  if (full || matchNeedsStatistics(match)) {
+    stats = await fetchFixtureStatisticsCached(fixtureId);
+    await sleep(80);
+  }
+
+  let events: FixtureGoalEvent[] | null = null;
+  if (full || matchNeedsGoalEvents(match)) {
+    const res = await fetchFixtureEventsCached(fixtureId);
+    events = res.events;
+    await sleep(80);
+  }
+
+  let lineups: MatchLineups | undefined;
+  if (full || matchNeedsLineups(match)) {
+    lineups = await fetchFixtureLineupsCached(fixtureId, {
+      homeTeamId: fixture.teams.home.id ?? match.homeApiTeamId,
+      awayTeamId: fixture.teams.away.id ?? match.awayApiTeamId,
+    });
+    await sleep(80);
+  }
+
+  return { stats, events, lineups };
+}
+
 export function fillMatchFromFixture(
   match: LogMatch,
   fixture: ApiFootballFixture,
   stats: ApiFootballStatBlock[] | null,
-  overwrite: boolean
+  overwrite: boolean,
+  enrichment?: Pick<ApiMatchDetails, "events" | "lineups">
 ): { merged: LogMatch; conflicts: ApiFieldConflict[] } {
   const conflicts = overwrite ? [] : detectApiConflicts(match, fixture, stats);
-  const updates = mapFixtureToMatchUpdates(fixture, stats, match, { overwrite });
+  const updates = mapFixtureToMatchUpdates(fixture, stats, match, {
+    overwrite,
+    events: enrichment?.events,
+    lineups: enrichment?.lineups,
+  });
   let merged = mergeMatchUpdates(match, updates);
   merged = {
     ...merged,
@@ -449,6 +501,82 @@ export function fillMatchFromFixture(
   merged = applyTeamStatsSync(merged);
   merged = scoreMatch(merged);
   return { merged, conflicts };
+}
+
+export type EnrichMatchResult = {
+  match: LogMatch;
+  enriched: boolean;
+  conflicts: ApiFieldConflict[];
+};
+
+/** Fill missing stats / goal timing / lineups on an already-traced match. */
+export async function enrichMatchFromApi(
+  match: LogMatch,
+  batch: PredictionBatch,
+  opts?: { overwrite?: boolean }
+): Promise<EnrichMatchResult> {
+  const base = migrateMatchTraceState(match);
+  if (!matchNeedsApiDetailFill(base)) {
+    return { match: base, enriched: false, conflicts: [] };
+  }
+
+  let fixture: ApiFootballFixture | null = null;
+  if (base.apiFixtureId != null) {
+    fixture = await fetchFixtureByIdCached(base.apiFixtureId);
+    await sleep(80);
+  }
+  if (!fixture) {
+    const league = matchLeague(base, batch.league);
+    const resolved = await resolveOrderedTeamIds({
+      homeTeam: base.homeTeam,
+      awayTeam: base.awayTeam,
+      league,
+    });
+    if (!resolved.ok) {
+      return { match: base, enriched: false, conflicts: [] };
+    }
+    const raw = await searchFixturesByOrderedPair({
+      homeId: resolved.homeId,
+      awayId: resolved.awayId,
+      leagueId: resolved.leagueId,
+      seasons: [resolved.season, resolved.season - 1],
+    });
+    const candidates = filterRelevantFixtures(
+      raw,
+      resolved.homeId,
+      resolved.awayId,
+      kickoffFloorMs(batch)
+    );
+    const decision = chooseFixtureForTrace(candidates);
+    if (decision.kind !== "fill") {
+      return { match: base, enriched: false, conflicts: [] };
+    }
+    fixture = decision.fixture;
+  }
+
+  const short = statusShort(fixture);
+  if (!isOfficiallyFinal(short)) {
+    return { match: base, enriched: false, conflicts: [] };
+  }
+
+  const nameOk = isExactOrderedPairByName(fixture, base.homeTeam, base.awayTeam);
+  const homeOk =
+    base.homeApiTeamId == null || fixture.teams.home.id === base.homeApiTeamId;
+  const awayOk =
+    base.awayApiTeamId == null || fixture.teams.away.id === base.awayApiTeamId;
+  if ((!homeOk || !awayOk) && !nameOk) {
+    return { match: base, enriched: false, conflicts: [] };
+  }
+
+  const details = await fetchApiMatchDetails(fixture, base);
+  const { merged, conflicts } = fillMatchFromFixture(
+    base,
+    fixture,
+    details.stats,
+    opts?.overwrite ?? false,
+    { events: details.events, lineups: details.lineups }
+  );
+  return { match: merged, enriched: true, conflicts };
 }
 
 export type TraceMatchResult = {
@@ -564,15 +692,18 @@ export async function traceMatchResult(
       };
     }
     let stats: ApiFootballStatBlock[] | null = null;
-    if (matchNeedsStatistics(base)) {
-      stats = await fetchFixtureStatisticsCached(fixture.fixture.id);
-      await sleep(100);
+    let enrichment: Pick<ApiMatchDetails, "events" | "lineups"> | undefined;
+    {
+      const details = await fetchApiMatchDetails(fixture, base, { full: true });
+      stats = details.stats;
+      enrichment = { events: details.events, lineups: details.lineups };
     }
     const { merged, conflicts } = fillMatchFromFixture(
       base,
       fixture,
       stats,
-      opts?.overwrite ?? false
+      opts?.overwrite ?? false,
+      enrichment
     );
     return { match: merged, filled: true, conflicts, state: "FILLED" };
   }
@@ -636,15 +767,20 @@ async function traceByNamePair(
   }
 
   let stats: ApiFootballStatBlock[] | null = null;
-  if (matchNeedsStatistics(match)) {
-    stats = await fetchFixtureStatisticsCached(decision.fixture.fixture.id);
-    await sleep(100);
+  let enrichment: Pick<ApiMatchDetails, "events" | "lineups"> | undefined;
+  {
+    const details = await fetchApiMatchDetails(decision.fixture, match, {
+      full: true,
+    });
+    stats = details.stats;
+    enrichment = { events: details.events, lineups: details.lineups };
   }
   const { merged, conflicts } = fillMatchFromFixture(
     match,
     decision.fixture,
     stats,
-    opts?.overwrite ?? false
+    opts?.overwrite ?? false,
+    enrichment
   );
   return {
     match: {

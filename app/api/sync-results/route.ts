@@ -4,6 +4,7 @@ import {
   replaceMatchResultsFromApi,
   syncPredictionLogResults,
 } from "@/lib/football-api/sync-prediction-log";
+import { syncBatchFromApi } from "@/lib/football-api/sync-batch-from-api";
 import { countTraceStatusesAcrossBatches } from "@/lib/prediction-log/result-trace";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 
@@ -26,9 +27,22 @@ export async function POST(request: Request) {
       const body = (await request.json()) as {
         batchId?: string;
         replaceMatchIds?: string[];
+        batchFill?: boolean;
       };
       batchId = body?.batchId;
       replaceMatchIds = body?.replaceMatchIds;
+
+      if (body?.batchFill && batchId) {
+        const summary = await syncBatchFromApi(batchId);
+        return NextResponse.json({
+          ok: !summary.unavailable,
+          ...summary,
+          unavailable: summary.unavailable,
+          banner: summary.unavailable
+            ? "Auto-fill unavailable right now — enter results manually."
+            : undefined,
+        });
+      }
     } catch {
       batchId = undefined;
     }

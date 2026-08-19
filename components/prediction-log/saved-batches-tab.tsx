@@ -60,7 +60,7 @@ export function SavedBatchesTab({
   const [autoFilling, setAutoFilling] = useState(false);
   const [autoFillMsg, setAutoFillMsg] = useState<string | null>(null);
   const [autoFillAttempted, setAutoFillAttempted] = useState<Record<string, boolean>>({});
-  const [livescoreFilling, setLivescoreFilling] = useState(false);
+  const [apiBatchFilling, setApiBatchFilling] = useState(false);
   const [conflicts, setConflicts] = useState<
     { matchId: string; field: string; label: string; current: number | string; apiValue: number | string }[]
   >([]);
@@ -204,13 +204,14 @@ export function SavedBatchesTab({
     }
   }
 
-  /** Optional secondary fill via Livescore scrape. */
-  async function fillFromLivescore(batchId: string) {
-    setLivescoreFilling(true);
-    setAutoFillMsg("Filling from Livescore…");
+  /** Full API fill: FT/HT, stats, goal timings, lineups (open batch only). */
+  async function fillFromApi(batchId: string) {
+    setApiBatchFilling(true);
+    setAutoFillMsg("Filling from API…");
 
     let remaining: string[] = [];
     let filledTotal = 0;
+    let enrichedTotal = 0;
     let failedTotal = 0;
     const errorParts: string[] = [];
     let rounds = 0;
@@ -218,28 +219,31 @@ export function SavedBatchesTab({
     try {
       do {
         rounds++;
-        const res = await fetch("/api/scrape-livescore", {
+        const res = await fetch("/api/sync-results", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            batchId,
-            matchIds: remaining.length ? remaining : undefined,
-          }),
+          body: JSON.stringify({ batchId, batchFill: true }),
         });
         const data = (await res.json()) as {
           ok?: boolean;
           error?: string;
+          unavailable?: boolean;
+          banner?: string;
           filled?: number;
+          enriched?: number;
           failed?: number;
           remaining?: string[];
           errors?: string[];
         };
 
-        if (!res.ok) {
-          throw new Error(data.error ?? "Livescore fill failed");
+        if (!res.ok || data.unavailable) {
+          throw new Error(
+            data.banner ?? data.error ?? "API fill unavailable right now"
+          );
         }
 
         filledTotal += data.filled ?? 0;
+        enrichedTotal += data.enriched ?? 0;
         failedTotal += data.failed ?? 0;
         if (data.errors?.length) errorParts.push(...data.errors);
         remaining = data.remaining ?? [];
@@ -248,9 +252,9 @@ export function SavedBatchesTab({
       } while (remaining.length > 0 && rounds < 15);
 
       const parts = [
-        filledTotal > 0
-          ? `Filled ${filledTotal} match(es) from Livescore`
-          : "No matches needed Livescore fill",
+        filledTotal + enrichedTotal > 0
+          ? `Filled ${filledTotal} match(es), enriched ${enrichedTotal} from API`
+          : "No matches needed API fill",
       ];
       if (failedTotal > 0) parts.push(`${failedTotal} failed — enter manually`);
       if (remaining.length > 0) parts.push(`${remaining.length} still pending`);
@@ -260,10 +264,10 @@ export function SavedBatchesTab({
       setAutoFillMsg(
         e instanceof Error
           ? `${e.message} — enter results manually.`
-          : "Livescore fill failed — enter results manually."
+          : "API fill failed — enter results manually."
       );
     } finally {
-      setLivescoreFilling(false);
+      setApiBatchFilling(false);
       setTimeout(() => setAutoFillMsg(null), 8000);
     }
   }
@@ -642,7 +646,7 @@ export function SavedBatchesTab({
           <button
             type="button"
             className="btn btn-primary"
-            disabled={syncing || bulkSyncing || livescoreFilling}
+            disabled={syncing || bulkSyncing || apiBatchFilling}
             onClick={() => void syncFromApi()}
             style={{ minHeight: 44, minWidth: 160, fontWeight: 700 }}
           >
@@ -655,11 +659,11 @@ export function SavedBatchesTab({
           <button
             type="button"
             className="btn btn-secondary"
-            disabled={livescoreFilling || syncing || !expandedId}
-            onClick={() => expandedId && void fillFromLivescore(expandedId)}
+            disabled={apiBatchFilling || syncing || !expandedId}
+            onClick={() => expandedId && void fillFromApi(expandedId)}
             style={{ minHeight: 44 }}
           >
-            {livescoreFilling ? "Livescore…" : "Fill from Livescore"}
+            {apiBatchFilling ? "API fill…" : "Fill from API"}
           </button>
           <button
             type="button"
@@ -673,7 +677,7 @@ export function SavedBatchesTab({
           <span style={{ fontSize: "0.75rem", color: "var(--muted)", maxWidth: 420 }}>
             Trace uses saved home and away team names only (exact ordered pair). No fixture id or
             date is required. Results fill when the API reports an officially finished match.
-            Manual values are kept. Livescore remains an optional fallback.
+            Fill from API adds corners, shots, goal timings, and lineups. Manual values are kept.
             {expandedId ? " Targeting the open batch." : " Traces every pending batch."}
           </span>
         </div>
@@ -799,7 +803,7 @@ export function SavedBatchesTab({
                 )}
 
                 <h3 style={{ fontSize: "1rem", margin: "0 0 0.75rem" }}>Enter results</h3>
-                {(autoFilling || livescoreFilling || autoFillMsg) && draft.id === batch.id && (
+                {(autoFilling || apiBatchFilling || autoFillMsg) && draft.id === batch.id && (
                   <p
                     style={{
                       fontSize: "0.8125rem",
@@ -809,8 +813,8 @@ export function SavedBatchesTab({
                   >
                     {autoFilling
                       ? "Tracing results by home–away names…"
-                      : livescoreFilling
-                        ? "Filling from Livescore…"
+                      : apiBatchFilling
+                        ? "Filling from API…"
                         : autoFillMsg}
                   </p>
                 )}

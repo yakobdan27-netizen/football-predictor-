@@ -2,6 +2,7 @@
  * GET /fixtures/events — goal timings for Prediction Log (never invent minutes).
  */
 import { apiFootballGet } from "./client";
+import { fixturePairKey } from "./team-resolve";
 
 export interface FixtureGoalEvent {
   minute: number | null;
@@ -86,6 +87,31 @@ export function goalTimingFromEvents(events: FixtureGoalEvent[]): {
     timingBuckets?: typeof buckets;
   } = { timingBuckets: buckets };
   if (minutes.some((m) => m <= 10)) out.goalInFirst10 = true;
+  else out.goalInFirst10 = false;
   if (minutes.some((m) => m >= 80)) out.goalInLast10 = true;
+  else out.goalInLast10 = false;
   return out;
+}
+
+/** Earliest goal minute → home / away / none (alias-aware team match). */
+export function firstGoalSideFromEvents(
+  events: FixtureGoalEvent[],
+  homeTeam: string,
+  awayTeam: string
+): "home" | "away" | "none" {
+  const withMinute = events
+    .filter((e) => e.minute != null)
+    .sort((a, b) => (a.minute ?? 99) - (b.minute ?? 99));
+  if (!withMinute.length) return "none";
+
+  const first = withMinute[0]!;
+  const team = first.team?.trim();
+  if (!team) return "none";
+
+  const homeKey = fixturePairKey(homeTeam, "x").split("|")[0];
+  const awayKey = fixturePairKey(awayTeam, "x").split("|")[0];
+  const teamKey = fixturePairKey(team, "x").split("|")[0];
+  if (teamKey === homeKey) return "home";
+  if (teamKey === awayKey) return "away";
+  return "none";
 }

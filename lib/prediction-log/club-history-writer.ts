@@ -164,7 +164,12 @@ function resolveResultForType(
     return teamStatMarketResult(match, ts.shotsOnTarget, marketKey);
   }
   if (type === "corners" && ts?.corners != null) {
-    return teamStatMarketResult(match, ts.corners, "corners_ou");
+    const sideMarket: LogMarketKey =
+      venue === "home" ? "home_corners_ou" : "corners_ou";
+    const marketKey: LogMarketKey = match.predictions[sideMarket]
+      ? sideMarket
+      : "corners_ou";
+    return teamStatMarketResult(match, ts.corners, marketKey);
   }
   if (type === "offsides" && ts?.offsides != null) {
     return teamStatMarketResult(match, ts.offsides, "offsides_ou");
@@ -187,7 +192,11 @@ function resolveResultForType(
       : match.predictions.away_shots_ou
         ? "away_shots_ou"
         : "shots_ou",
-    corners: "corners_ou",
+    corners: venue === "home"
+      ? match.predictions.home_corners_ou
+        ? "home_corners_ou"
+        : "corners_ou"
+      : "corners_ou",
     offsides: "offsides_ou",
     goalsScored: venue === "home" ? "home_goals_ou" : "away_goals_ou",
     goalsConceded: venue === "home" ? "away_goals_ou" : "home_goals_ou",

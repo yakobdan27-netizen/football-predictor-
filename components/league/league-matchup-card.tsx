@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import type { LeagueMatchupAnalysis } from "@/lib/prediction-log/league-matchup-analysis";
+import { blendBadgeLabel } from "@/lib/prediction-log/prediction-weights";
 import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
 
-export function LeagueMatchupCard() {
+export function LeagueMatchupCard({ season }: { season?: string }) {
   const [homeTeam, setHomeTeam] = useState("Manchester City");
   const [awayTeam, setAwayTeam] = useState("Everton");
   const [league, setLeague] = useState<string>(LEAGUE_OPTIONS[0]);
@@ -17,6 +18,7 @@ export function LeagueMatchupCard() {
     setError(null);
     try {
       const qs = new URLSearchParams({ homeTeam, awayTeam, league });
+      if (season?.trim()) qs.set("season", season.trim());
       const res = await fetch(`/api/league-analysis?${qs}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Analysis failed");
@@ -32,10 +34,11 @@ export function LeagueMatchupCard() {
   return (
     <div className="card" style={{ marginBottom: "1rem" }}>
       <h3 style={{ fontSize: "0.9375rem", fontWeight: 700, marginBottom: "0.35rem" }}>
-        Reference matchup (2021–26 seeds)
+        Reference matchup (API + form)
       </h3>
       <p className="page-sub" style={{ marginBottom: "0.75rem" }}>
-        Poisson / Dixon-Coles from scoring + conceded seed priors. Advisory only — never blocks picks.
+        Poisson / Dixon-Coles: 60% API-Football season GF/GA · 40% seed/form priors (2021–26).
+        Advisory only — never blocks picks.
       </p>
       <div
         style={{
@@ -82,10 +85,25 @@ export function LeagueMatchupCard() {
                 color: "var(--accent2)",
                 fontWeight: 600,
                 fontSize: "0.75rem",
+                marginRight: "0.35rem",
               }}
             >
               Reference Only
             </span>
+            {result.blendSource ? (
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "0.15rem 0.5rem",
+                  borderRadius: 4,
+                  background: "color-mix(in srgb, var(--accent) 18%, transparent)",
+                  fontWeight: 600,
+                  fontSize: "0.75rem",
+                }}
+              >
+                {blendBadgeLabel(result.blendSource)}
+              </span>
+            ) : null}
           </div>
           <div>
             <strong>

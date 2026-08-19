@@ -1,5 +1,5 @@
 /**
- * Reference-only matchup analysis from 2021–26 seed priors (Poisson / Dixon-Coles grid).
+ * League matchup analysis — 60% API season rates · 40% seed/form priors when both exist.
  */
 import {
   bttsFromMatrix,
@@ -9,6 +9,13 @@ import {
 } from "@/lib/predictor/score-matrix";
 import { analyzeCorrectScore } from "./correct-score";
 import { seedCorrectScoreLambdas } from "./correct-score-seed";
+import { apiCorrectScoreLambdas } from "./league-matchup-api-lambdas";
+import {
+  blendBadgeLabel,
+  PREDICTION_WEIGHTS,
+  weightedEstimate,
+  type BlendSource,
+} from "./prediction-weights";
 import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
 
 export interface LeagueMatchupAnalysis {
@@ -19,6 +26,10 @@ export interface LeagueMatchupAnalysis {
   lambdaHome: number;
   lambdaAway: number;
   source: string;
+  /** 60/40 blend provenance when API + seed combined. */
+  blendSource?: BlendSource;
+  apiWeight?: number;
+  formWeight?: number;
   expectedScore: string;
   mostLikelyScore: string;
   mostLikelyProbPct: number;
@@ -31,17 +42,18 @@ function pct(p: number): number {
   return Math.round(p * 1000) / 10;
 }
 
-export function getLeagueMatchupAnalysis(
+export function buildLeagueMatchupAnalysis(
   homeTeam: string,
   awayTeam: string,
-  league: string
-): LeagueMatchupAnalysis | null {
-  const seeded = seedCorrectScoreLambdas(homeTeam, awayTeam, league);
-  if (!seeded) return null;
-
+  league: string,
+  lambdaHome: number,
+  lambdaAway: number,
+  source: string,
+  blend?: { blendSource: BlendSource; apiWeight: number; formWeight: number }
+): LeagueMatchupAnalysis {
   const grid = buildScoreMatrix(
-    seeded.lambdaHome,
-    seeded.lambdaAway,
+    lambdaHome,
+    lambdaAway,
     STAT_ENGINE_CONFIG.DIXON_COLES_RHO,
     STAT_ENGINE_CONFIG.SCORE_GRID_MAX
   );
@@ -50,17 +62,20 @@ export function getLeagueMatchupAnalysis(
   const [over, under] = overUnderFromMatrix(grid, 2.5);
   const btts = bttsFromMatrix(grid);
 
-  const expectedHome = Math.round(seeded.lambdaHome);
-  const expectedAway = Math.round(seeded.lambdaAway);
+  const expectedHome = Math.round(lambdaHome);
+  const expectedAway = Math.round(lambdaAway);
 
   return {
     mode: "reference",
     homeTeam,
     awayTeam,
     league,
-    lambdaHome: seeded.lambdaHome,
-    lambdaAway: seeded.lambdaAway,
-    source: seeded.source,
+    lambdaHome,
+    lambdaAway,
+    source,
+    blendSource: blend?.blendSource,
+    apiWeight: blend?.apiWeight,
+    formWeight: blend?.formWeight,
     expectedScore: `${expectedHome}-${expectedAway}`,
     mostLikelyScore: analysis
       ? `${analysis.mostLikely.home}-${analysis.mostLikely.away}`
@@ -75,3 +90,109 @@ export function getLeagueMatchupAnalysis(
     bothTeamsToScore: { yes: pct(btts.yes), no: pct(btts.no) },
   };
 }
+
+/** Blend API λ with seed/form λ at canonical 60/40 weights. */
+export function blendMatchupLambdas(
+  api: { lambdaHome: number; lambdaAway: number } | null,
+  form: { lambdaHome: number; lambdaAway: number }
+): {
+  lambdaHome: number;
+  lambdaAway: number;
+  blendSource: BlendSource;
+  apiWeight: number;
+  formWeight: number;
+} {
+  const homeBlend = weightedEstimate(api?.lambdaHome, form.lambdaHome);
+  const awayBlend = weightedEstimate(api?.lambdaAway, form.lambdaAway);
+
+  const blendSource: BlendSource =
+    homeBlend?.source === "blended" || awayBlend?.source === "blended"
+      ? "blended"
+      : homeBlend?.source === "api_only" || awayBlend?.source === "api_only"
+        ? "api_only"
+        : "manual_ai_only";
+
+  return {
+    lambdaHome: homeBlend?.value ?? form.lambdaHome,
+    lambdaAway: awayBlend?.value ?? form.lambdaAway,
+    blendSource,
+    apiWeight: homeBlend?.apiWeight ?? awayBlend?.apiWeight ?? 0,
+    formWeight: homeBlend?.manualAiWeight ?? awayBlend?.manualAiWeight ?? 1,
+  };
+}
+
+function formatSource(
+  blendSource: BlendSource,
+  apiSource: string | null,
+  formSource: string
+): string {
+  if (blendSource === "blended") {
+    return `${blendBadgeLabel("blended")} · API (${apiSource ?? "season stats"}) + form (${formSource})`;
+  }
+  if (blendSource === "api_only") {
+    return apiSource ?? "API season statistics";
+  }
+  return formSource;
+}
+
+/** Seed/form-only reference (sync — decision maker & tests). */
+export function getLeagueMatchupAnalysis(
+  homeTeam: string,
+  awayTeam: string,
+  league: string
+): LeagueMatchupAnalysis | null {
+  const seeded = seedCorrectScoreLambdas(homeTeam, awayTeam, league);
+  if (!seeded) return null;
+
+  return buildLeagueMatchupAnalysis(
+    homeTeam,
+    awayTeam,
+    league,
+    seeded.lambdaHome,
+    seeded.lambdaAway,
+    seeded.source,
+    {
+      blendSource: "manual_ai_only",
+      apiWeight: 0,
+      formWeight: 1,
+    }
+  );
+}
+
+/** 60% API season GF/GA · 40% seed/form priors (async — league analysis page). */
+export async function getBlendedLeagueMatchupAnalysis(
+  homeTeam: string,
+  awayTeam: string,
+  league: string,
+  opts?: { season?: number }
+): Promise<LeagueMatchupAnalysis | null> {
+  const form = seedCorrectScoreLambdas(homeTeam, awayTeam, league);
+  if (!form) return null;
+
+  const api = await apiCorrectScoreLambdas(homeTeam, awayTeam, league, {
+    season: opts?.season,
+  });
+
+  const blended = blendMatchupLambdas(api, form);
+  const source = formatSource(
+    blended.blendSource,
+    api?.source ?? null,
+    form.source
+  );
+
+  return buildLeagueMatchupAnalysis(
+    homeTeam,
+    awayTeam,
+    league,
+    blended.lambdaHome,
+    blended.lambdaAway,
+    source,
+    {
+      blendSource: blended.blendSource,
+      apiWeight: blended.apiWeight,
+      formWeight: blended.formWeight,
+    }
+  );
+}
+
+export { PREDICTION_WEIGHTS as LEAGUE_MATCHUP_BLEND_WEIGHTS };

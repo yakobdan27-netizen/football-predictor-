@@ -114,6 +114,9 @@ export function deriveActualsFromFacts(
   if (ts.away?.shotsOnTarget != null && Number.isFinite(ts.away.shotsOnTarget)) {
     out.away_sot_ou = { actual: ts.away.shotsOnTarget };
   }
+  if (ts.home?.corners != null && Number.isFinite(ts.home.corners)) {
+    out.home_corners_ou = { actual: ts.home.corners };
+  }
 
   return out;
 }

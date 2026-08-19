@@ -19,6 +19,7 @@ export type LogMarketKey =
   | "home_sot_ou"
   | "away_sot_ou"
   | "corners_ou"
+  | "home_corners_ou"
   | "throw_ins_ou"
   | "offsides_ou";
 

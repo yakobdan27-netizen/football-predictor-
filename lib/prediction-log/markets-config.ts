@@ -128,6 +128,13 @@ export const LOG_MARKETS: LogMarketDef[] = [
     lineOptions: [8.5, 9.5, 10.5],
   },
   {
+    key: "home_corners_ou",
+    label: "Home team corners O/U",
+    kind: "numeric",
+    defaultLine: 5.5,
+    lineOptions: [3.5, 4.5, 5.5, 6.5, 7.5],
+  },
+  {
     key: "throw_ins_ou",
     label: "Total throw-ins O/U",
     kind: "numeric",

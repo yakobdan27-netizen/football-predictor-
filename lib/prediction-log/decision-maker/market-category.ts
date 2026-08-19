@@ -12,7 +12,12 @@ const GOAL_KEYS = new Set<string>([
   "correct_score",
 ]);
 
-const CORNER_KEYS = new Set<string>(["corners_ou", "corners", "team_corners"]);
+const CORNER_KEYS = new Set<string>([
+  "corners_ou",
+  "home_corners_ou",
+  "corners",
+  "team_corners",
+]);
 
 const SPECIALIZED_KEYS = new Set<string>([
   "handicap",
@@ -76,6 +81,7 @@ const BINARY_OU_KEYS = new Set<string>([
   "home_goals_ou",
   "away_goals_ou",
   "corners_ou",
+  "home_corners_ou",
   "corners",
   "team_corners",
   "shots_ou",

@@ -1,7 +1,7 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 /** Bump when additive DDL changes so cold starts can skip full bootstrap. */
-const SCHEMA_BOOTSTRAP_VERSION = 2;
+const SCHEMA_BOOTSTRAP_VERSION = 3;
 
 let initialized = false;
 let ensureSchemaPromise: Promise<void> | null = null;
@@ -944,6 +944,122 @@ async function runEnsureSchema(): Promise<void> {
   `;
   await ddl`CREATE INDEX IF NOT EXISTS core_analysis_run_page_idx ON core_analysis_run (page_id)`;
   await ddl`CREATE INDEX IF NOT EXISTS core_analysis_run_created_idx ON core_analysis_run (created_at)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS market_advisory_runs (
+      id serial PRIMARY KEY,
+      advisory_run_id text NOT NULL,
+      fixture_id integer NOT NULL,
+      generated_at timestamptz NOT NULL,
+      prediction_cutoff_at timestamptz NOT NULL,
+      canonical_probability_snapshot_id text,
+      existing_selector_snapshot_id text,
+      msam_model_version text NOT NULL,
+      collaboration_policy_version text NOT NULL,
+      data_policy_version text NOT NULL,
+      status text NOT NULL,
+      input_lineage_hash text NOT NULL,
+      meta_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS market_advisory_runs_run_id_uidx ON market_advisory_runs (advisory_run_id)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS market_advisory_runs_fixture_cutoff_uidx ON market_advisory_runs (fixture_id, prediction_cutoff_at, msam_model_version, collaboration_policy_version)`;
+  await ddl`CREATE INDEX IF NOT EXISTS market_advisory_runs_fixture_idx ON market_advisory_runs (fixture_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS market_advisory_candidates (
+      id serial PRIMARY KEY,
+      advisory_run_id text NOT NULL,
+      market_code text NOT NULL,
+      market_family text NOT NULL,
+      conflict_group text NOT NULL,
+      market_definition_hash text NOT NULL,
+      market_definition_json text,
+      raw_probability real,
+      calibrated_probability real,
+      probability_lower real,
+      probability_upper real,
+      eligible integer NOT NULL DEFAULT 0,
+      ineligibility_reason_codes text,
+      ops real, cqs real, ecs real, sss real, iss real, dis real,
+      msam_score real,
+      existing_normalized_score real,
+      msam_normalized_score real,
+      final_advisory_score real,
+      selection_role text,
+      primary_rank integer,
+      agreement_status text,
+      explanation_snapshot_json text,
+      diagnostic_snapshot_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS market_advisory_candidates_run_market_uidx ON market_advisory_candidates (advisory_run_id, market_code, market_definition_hash)`;
+  await ddl`CREATE INDEX IF NOT EXISTS market_advisory_candidates_run_idx ON market_advisory_candidates (advisory_run_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS market_advisory_source_coverage (
+      id serial PRIMARY KEY,
+      advisory_run_id text NOT NULL,
+      market_code text,
+      feature_family text,
+      target_api_weight real,
+      target_system_weight real,
+      effective_api_weight real,
+      effective_system_weight real,
+      api_record_count integer,
+      system_record_count integer,
+      effective_sample_size real,
+      completeness_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS market_advisory_source_coverage_run_idx ON market_advisory_source_coverage (advisory_run_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS market_calibration_metrics (
+      id serial PRIMARY KEY,
+      market_code text,
+      market_family text,
+      competition_scope text,
+      probability_bin text,
+      time_window text,
+      model_version text,
+      sample_size integer,
+      effective_sample_size real,
+      brier_score real,
+      log_loss real,
+      reliability_json text,
+      baseline_comparison_json text,
+      validation_cutoff timestamptz,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS market_calibration_metrics_scope_idx ON market_calibration_metrics (market_family, competition_scope)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS market_advisory_config_versions (
+      id serial PRIMARY KEY,
+      version_key text NOT NULL,
+      config_json text NOT NULL,
+      promoted_at timestamptz,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS market_advisory_config_versions_key_uidx ON market_advisory_config_versions (version_key)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS market_advisory_audit_events (
+      id serial PRIMARY KEY,
+      advisory_run_id text,
+      event_type text NOT NULL,
+      payload_json text,
+      created_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS market_advisory_audit_events_run_idx ON market_advisory_audit_events (advisory_run_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS market_advisory_audit_events_type_idx ON market_advisory_audit_events (event_type)`;
 
   await ddl`
     INSERT INTO app_schema_meta (id, version, updated_at)

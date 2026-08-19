@@ -1065,3 +1065,166 @@ export type CoreResultTrace = typeof coreResultTrace.$inferSelect;
 export type CoreCoverageAudit = typeof coreCoverageAudit.$inferSelect;
 export type AuditDataChangeLog = typeof auditDataChangeLog.$inferSelect;
 export type CoreAnalysisRun = typeof coreAnalysisRun.$inferSelect;
+
+/** MSAM immutable advisory run (additive). */
+export const marketAdvisoryRuns = pgTable(
+  "market_advisory_runs",
+  {
+    id: serial("id").primaryKey(),
+    advisoryRunId: text("advisory_run_id").notNull(),
+    fixtureId: integer("fixture_id").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    predictionCutoffAt: timestamp("prediction_cutoff_at", {
+      withTimezone: true,
+    }).notNull(),
+    canonicalProbabilitySnapshotId: text("canonical_probability_snapshot_id"),
+    existingSelectorSnapshotId: text("existing_selector_snapshot_id"),
+    msamModelVersion: text("msam_model_version").notNull(),
+    collaborationPolicyVersion: text("collaboration_policy_version").notNull(),
+    dataPolicyVersion: text("data_policy_version").notNull(),
+    status: text("status").notNull(),
+    inputLineageHash: text("input_lineage_hash").notNull(),
+    metaJson: text("meta_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    runIdUniq: uniqueIndex("market_advisory_runs_run_id_uidx").on(
+      t.advisoryRunId
+    ),
+    fixtureCutoffUniq: uniqueIndex("market_advisory_runs_fixture_cutoff_uidx").on(
+      t.fixtureId,
+      t.predictionCutoffAt,
+      t.msamModelVersion,
+      t.collaborationPolicyVersion
+    ),
+    fixtureIdx: index("market_advisory_runs_fixture_idx").on(t.fixtureId),
+  })
+);
+
+export const marketAdvisoryCandidates = pgTable(
+  "market_advisory_candidates",
+  {
+    id: serial("id").primaryKey(),
+    advisoryRunId: text("advisory_run_id").notNull(),
+    marketCode: text("market_code").notNull(),
+    marketFamily: text("market_family").notNull(),
+    conflictGroup: text("conflict_group").notNull(),
+    marketDefinitionHash: text("market_definition_hash").notNull(),
+    marketDefinitionJson: text("market_definition_json"),
+    rawProbability: real("raw_probability"),
+    calibratedProbability: real("calibrated_probability"),
+    probabilityLower: real("probability_lower"),
+    probabilityUpper: real("probability_upper"),
+    eligible: integer("eligible").notNull().default(0),
+    ineligibilityReasonCodes: text("ineligibility_reason_codes"),
+    ops: real("ops"),
+    cqs: real("cqs"),
+    ecs: real("ecs"),
+    sss: real("sss"),
+    iss: real("iss"),
+    dis: real("dis"),
+    msamScore: real("msam_score"),
+    existingNormalizedScore: real("existing_normalized_score"),
+    msamNormalizedScore: real("msam_normalized_score"),
+    finalAdvisoryScore: real("final_advisory_score"),
+    selectionRole: text("selection_role"),
+    primaryRank: integer("primary_rank"),
+    agreementStatus: text("agreement_status"),
+    explanationSnapshotJson: text("explanation_snapshot_json"),
+    diagnosticSnapshotJson: text("diagnostic_snapshot_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    runMarketUniq: uniqueIndex("market_advisory_candidates_run_market_uidx").on(
+      t.advisoryRunId,
+      t.marketCode,
+      t.marketDefinitionHash
+    ),
+    runIdx: index("market_advisory_candidates_run_idx").on(t.advisoryRunId),
+  })
+);
+
+export const marketAdvisorySourceCoverage = pgTable(
+  "market_advisory_source_coverage",
+  {
+    id: serial("id").primaryKey(),
+    advisoryRunId: text("advisory_run_id").notNull(),
+    marketCode: text("market_code"),
+    featureFamily: text("feature_family"),
+    targetApiWeight: real("target_api_weight"),
+    targetSystemWeight: real("target_system_weight"),
+    effectiveApiWeight: real("effective_api_weight"),
+    effectiveSystemWeight: real("effective_system_weight"),
+    apiRecordCount: integer("api_record_count"),
+    systemRecordCount: integer("system_record_count"),
+    effectiveSampleSize: real("effective_sample_size"),
+    completenessJson: text("completeness_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    runIdx: index("market_advisory_source_coverage_run_idx").on(
+      t.advisoryRunId
+    ),
+  })
+);
+
+export const marketCalibrationMetrics = pgTable(
+  "market_calibration_metrics",
+  {
+    id: serial("id").primaryKey(),
+    marketCode: text("market_code"),
+    marketFamily: text("market_family"),
+    competitionScope: text("competition_scope"),
+    probabilityBin: text("probability_bin"),
+    timeWindow: text("time_window"),
+    modelVersion: text("model_version"),
+    sampleSize: integer("sample_size"),
+    effectiveSampleSize: real("effective_sample_size"),
+    brierScore: real("brier_score"),
+    logLoss: real("log_loss"),
+    reliabilityJson: text("reliability_json"),
+    baselineComparisonJson: text("baseline_comparison_json"),
+    validationCutoff: timestamp("validation_cutoff", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    scopeIdx: index("market_calibration_metrics_scope_idx").on(
+      t.marketFamily,
+      t.competitionScope
+    ),
+  })
+);
+
+export const marketAdvisoryConfigVersions = pgTable(
+  "market_advisory_config_versions",
+  {
+    id: serial("id").primaryKey(),
+    versionKey: text("version_key").notNull(),
+    configJson: text("config_json").notNull(),
+    promotedAt: timestamp("promoted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    versionUniq: uniqueIndex("market_advisory_config_versions_key_uidx").on(
+      t.versionKey
+    ),
+  })
+);
+
+export const marketAdvisoryAuditEvents = pgTable(
+  "market_advisory_audit_events",
+  {
+    id: serial("id").primaryKey(),
+    advisoryRunId: text("advisory_run_id"),
+    eventType: text("event_type").notNull(),
+    payloadJson: text("payload_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    runIdx: index("market_advisory_audit_events_run_idx").on(t.advisoryRunId),
+    typeIdx: index("market_advisory_audit_events_type_idx").on(t.eventType),
+  })
+);
+
+export type MarketAdvisoryRun = typeof marketAdvisoryRuns.$inferSelect;
+export type MarketAdvisoryCandidate = typeof marketAdvisoryCandidates.$inferSelect;

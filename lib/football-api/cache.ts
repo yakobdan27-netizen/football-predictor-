@@ -12,6 +12,12 @@ import {
   fixturesCacheKey,
 } from "./leagues";
 import type { ApiFootballFixture, ApiFootballStatBlock } from "./map-fixture-to-match";
+import {
+  fetchFixtureGoalEvents,
+  type FixtureGoalEvent,
+} from "./fixture-events";
+import { parseApiFootballLineups } from "./parse-fixture-lineups";
+import type { MatchLineups } from "@/lib/prediction-log/types";
 
 /** ~18h TTL — free tier friendly; re-open Result Filling hits cache. */
 export const API_FOOTBALL_CACHE_TTL_SECONDS = 18 * 60 * 60;
@@ -95,6 +101,47 @@ export async function fetchFixtureStatisticsCached(
     return blocks;
   } catch {
     return [];
+  }
+}
+
+export async function fetchFixtureEventsCached(
+  fixtureId: number
+): Promise<{ events: FixtureGoalEvent[]; planGated: boolean }> {
+  const kvKey = KV_KEYS.apiFootballEvents(fixtureId);
+  const cached = await getJson<FixtureGoalEvent[]>(kvKey);
+  if (cached && Array.isArray(cached)) {
+    return { events: cached, planGated: false };
+  }
+
+  const result = await fetchFixtureGoalEvents(fixtureId);
+  if (!result.planGated && result.events.length >= 0) {
+    await setJsonEx(kvKey, result.events, API_FOOTBALL_CACHE_TTL_SECONDS);
+  }
+  return { events: result.events, planGated: result.planGated };
+}
+
+export async function fetchFixtureLineupsCached(
+  fixtureId: number,
+  opts?: { homeTeamId?: number | null; awayTeamId?: number | null }
+): Promise<MatchLineups | undefined> {
+  const kvKey = KV_KEYS.apiFootballLineups(fixtureId);
+  const cached = await getJson<MatchLineups>(kvKey);
+  if (cached?.home || cached?.away) return cached;
+
+  try {
+    const rows = await apiFootballGet<unknown[]>("/fixtures/lineups", {
+      fixture: fixtureId,
+    });
+    const parsed = parseApiFootballLineups(rows ?? [], {
+      homeTeamId: opts?.homeTeamId,
+      awayTeamId: opts?.awayTeamId,
+    });
+    if (parsed) {
+      await setJsonEx(kvKey, parsed, API_FOOTBALL_CACHE_TTL_SECONDS);
+    }
+    return parsed;
+  } catch {
+    return undefined;
   }
 }
 

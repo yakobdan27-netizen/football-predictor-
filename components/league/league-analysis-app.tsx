@@ -99,7 +99,7 @@ export function LeagueAnalysisApp() {
         ) : null}
       </div>
 
-      <LeagueMatchupCard />
+      <LeagueMatchupCard season={season} />
 
       <LeaguePriorsCard
         store={leaguePriors}

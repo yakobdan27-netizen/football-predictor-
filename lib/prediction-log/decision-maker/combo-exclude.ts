@@ -44,6 +44,7 @@ export function relatedMarketKeysForCombo(comboId: string): LogMarketKey[] {
   }
   if (id.includes("corner")) {
     keys.add("corners_ou");
+    keys.add("home_corners_ou");
   }
   if (id.includes("half") || id.includes("_ht") || id.includes("ht_")) {
     keys.add("ht_1x2");

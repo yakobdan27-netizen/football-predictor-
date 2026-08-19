@@ -81,6 +81,25 @@ test("applyTeamStatsSync scores home/away shots on target", () => {
   assert.equal(m.scored.away_sot_ou, "correct");
 });
 
+test("applyTeamStatsSync scores home team corners O/U", () => {
+  const m = applyTeamStatsSync(
+    baseMatch({
+      predictions: {
+        corners_ou: { prediction: "over", line: 9.5, confidence: 55 },
+        home_corners_ou: { prediction: "over", line: 5.5, confidence: 50 },
+      },
+      teamStats: {
+        home: { corners: 7 },
+        away: { corners: 4 },
+      },
+    })
+  );
+  assert.equal(m.actualResults.corners_ou?.actual, 11);
+  assert.equal(m.scored.corners_ou, "correct");
+  assert.equal(m.actualResults.home_corners_ou?.actual, 7);
+  assert.equal(m.scored.home_corners_ou, "correct");
+});
+
 test("resolveFirstGoalSide prefers explicit firstGoalSide over HT proxy", () => {
   const withExplicit = baseMatch({
     teamStats: {

@@ -44,6 +44,7 @@ export function leagueDeltaForMarket(
     marketKey === "home_sot_ou" ||
     marketKey === "away_sot_ou" ||
     marketKey === "corners_ou" ||
+    marketKey === "home_corners_ou" ||
     marketKey === "offsides_ou"
   ) {
     delta += (traitValue(profile, "goals_per_match_avg") ?? 0) * 0.02;

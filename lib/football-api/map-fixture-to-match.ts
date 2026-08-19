@@ -1,9 +1,21 @@
-import type { LogMarketKey, LogMatch, MarketActual, MatchTeamStats, TeamSideStats } from "@/lib/prediction-log/types";
+import type {
+  LogMarketKey,
+  LogMatch,
+  MarketActual,
+  MatchLineups,
+  MatchTeamStats,
+  TeamSideStats,
+} from "@/lib/prediction-log/types";
 import {
   applyGoalsToActuals,
   applyHalfTimeGoalsToActuals,
   ftResult,
 } from "@/lib/prediction-log/goal-result-sync";
+import {
+  firstGoalSideFromEvents,
+  goalTimingFromEvents,
+  type FixtureGoalEvent,
+} from "./fixture-events";
 import { normalizeApiTeamName, fixturePairKey } from "./team-resolve";
 
 export interface ApiFootballFixture {
@@ -137,6 +149,7 @@ export function matchNeedsStatistics(match: LogMatch): boolean {
     "home_sot_ou",
     "away_sot_ou",
     "corners_ou",
+    "home_corners_ou",
     "throw_ins_ou",
     "offsides_ou",
   ];
@@ -145,6 +158,78 @@ export function matchNeedsStatistics(match: LogMatch): boolean {
     if (home?.shotsOnTarget == null || away?.shotsOnTarget == null) return true;
   }
   return false;
+}
+
+function hasFtGoals(match: LogMatch): boolean {
+  const hg = match.teamStats?.home?.goals;
+  const ag = match.teamStats?.away?.goals;
+  return (
+    hg != null &&
+    ag != null &&
+    Number.isFinite(hg) &&
+    Number.isFinite(ag)
+  );
+}
+
+/** True when core FT / market actuals still need sync. */
+export function matchNeedsCoreResultFill(match: LogMatch): boolean {
+  const hg = match.teamStats?.home?.goals;
+  const ag = match.teamStats?.away?.goals;
+  if (hg == null || ag == null) return true;
+  if (match.teamStats?.home?.corners == null || match.teamStats?.away?.corners == null) {
+    return true;
+  }
+  for (const key of Object.keys(match.predictions) as LogMarketKey[]) {
+    const actual = match.actualResults[key]?.actual;
+    const scored = match.scored[key];
+    if (actual == null || (typeof actual === "string" && actual.trim() === "") || scored == null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function matchNeedsGoalEvents(match: LogMatch): boolean {
+  if (!hasFtGoals(match)) return false;
+  if (match.teamStats?.firstGoalSide == null) return true;
+  const gt = match.teamStats?.goalTiming;
+  if (gt?.goalInFirst10 == null) return true;
+  if (!gt?.timingBuckets) return true;
+  return false;
+}
+
+export function matchNeedsLineups(match: LogMatch): boolean {
+  return !match.teamStats?.lineups;
+}
+
+/** True when batch API fill should still process this match. */
+export function matchNeedsApiDetailFill(match: LogMatch): boolean {
+  if (matchNeedsCoreResultFill(match)) return true;
+  if (matchNeedsStatistics(match)) return true;
+  if (matchNeedsGoalEvents(match)) return true;
+  if (matchNeedsLineups(match)) return true;
+  return false;
+}
+
+function mergeGoalTimingEmpty(
+  existing: MatchTeamStats["goalTiming"] | undefined,
+  fromEvents: ReturnType<typeof goalTimingFromEvents>,
+  overwrite: boolean
+): MatchTeamStats["goalTiming"] | undefined {
+  if (!fromEvents.timingBuckets && fromEvents.goalInFirst10 == null) {
+    return existing;
+  }
+  const out = existing ? { ...existing } : {};
+  if (fromEvents.timingBuckets && (overwrite || !out.timingBuckets)) {
+    out.timingBuckets = { ...fromEvents.timingBuckets };
+  }
+  if (fromEvents.goalInFirst10 != null && (overwrite || out.goalInFirst10 == null)) {
+    out.goalInFirst10 = fromEvents.goalInFirst10;
+  }
+  if (fromEvents.goalInLast10 != null && (overwrite || out.goalInLast10 == null)) {
+    out.goalInLast10 = fromEvents.goalInLast10;
+  }
+  return Object.keys(out).length ? out : existing;
 }
 
 function blankActual(v: string | number | undefined | null): boolean {
@@ -247,7 +332,11 @@ export function mapFixtureToMatchUpdates(
   fixture: ApiFootballFixture,
   statsBlocks: ApiFootballStatBlock[] | null,
   match: LogMatch,
-  options?: { overwrite?: boolean }
+  options?: {
+    overwrite?: boolean;
+    events?: FixtureGoalEvent[] | null;
+    lineups?: MatchLineups;
+  }
 ): Partial<LogMatch> {
   const overwrite = options?.overwrite === true;
   const hg = fixture.goals.home;
@@ -337,6 +426,46 @@ export function mapFixtureToMatchUpdates(
         setTeamStatIfEmpty(teamStats.away, field, parsed.away[field]);
       }
     }
+  }
+
+  if (options?.events?.length) {
+    const timing = goalTimingFromEvents(options.events);
+    teamStats.goalTiming = mergeGoalTimingEmpty(
+      teamStats.goalTiming,
+      timing,
+      overwrite
+    );
+    const side = firstGoalSideFromEvents(
+      options.events,
+      fixture.teams.home.name,
+      fixture.teams.away.name
+    );
+    if (overwrite || teamStats.firstGoalSide == null) {
+      teamStats.firstGoalSide = side;
+    }
+  } else if (options?.events && options.events.length === 0 && hasFtGoals({ ...match, teamStats })) {
+    if (overwrite || teamStats.firstGoalSide == null) {
+      teamStats.firstGoalSide = "none";
+    }
+    if (overwrite || teamStats.goalTiming?.goalInFirst10 == null) {
+      teamStats.goalTiming = {
+        ...teamStats.goalTiming,
+        goalInFirst10: false,
+        goalInLast10: false,
+        timingBuckets: teamStats.goalTiming?.timingBuckets ?? {
+          g0_15: 0,
+          g16_30: 0,
+          g31_45: 0,
+          g46_60: 0,
+          g61_75: 0,
+          g76_90plus: 0,
+        },
+      };
+    }
+  }
+
+  if (options?.lineups && (overwrite || !teamStats.lineups)) {
+    teamStats.lineups = options.lineups;
   }
 
   return {
