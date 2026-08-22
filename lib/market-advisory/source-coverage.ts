@@ -2,6 +2,7 @@ import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fi
 import {
   PREDICTION_WEIGHTS,
 } from "@/lib/prediction-log/prediction-weights";
+import { isSystemSeasonBlendEnabled } from "@/lib/system-season/feature-flags";
 import { TARGET_API_WEIGHT, TARGET_SYSTEM_WEIGHT } from "./config";
 import type { SourceCoverageSnapshot } from "./types";
 
@@ -32,9 +33,13 @@ export function computeSourceQuality(cfe: CanonicalFixtureEstimate): {
         ? clamp01((p.manual_pct + p.ai_pct) / 100)
         : 0.2;
 
+  const systemSeasonBoost =
+    isSystemSeasonBlendEnabled() && p.sourceBreakdown === "blended" ? 0.1 : 0;
+
   const qApi = clamp01(apiBase * (0.5 * essNorm + 0.3 * matchNorm + 0.2 * seasonNorm));
   const qSystem = clamp01(
-    systemBase * (0.5 * essNorm + 0.3 * matchNorm + 0.2 * seasonNorm)
+    (systemBase + systemSeasonBoost) *
+      (0.5 * essNorm + 0.3 * matchNorm + 0.2 * seasonNorm)
   );
   return { qApi, qSystem };
 }
@@ -83,5 +88,8 @@ export function buildSourceCoverage(
 export function coverageLabel(cov: SourceCoverageSnapshot): string {
   const apiPct = Math.round(cov.effectiveApiWeight * 100);
   const sysPct = Math.round(cov.effectiveSystemWeight * 100);
+  if (isSystemSeasonBlendEnabled()) {
+    return `Prior API ${apiPct}% / System season ${sysPct}%`;
+  }
   return `API ${apiPct}% / System ${sysPct}%`;
 }

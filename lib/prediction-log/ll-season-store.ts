@@ -5,7 +5,7 @@ import {
   emptyLlSeasonRosterStore,
   type LlSeasonRosterStore,
 } from "./ll-season-roster";
-import { buildAllLlSeasonCards } from "./ll-team-season-stats";
+import { buildAllLlSeasonCardsAsync } from "./ll-team-season-stats";
 import type { PredictionBatch } from "./types";
 
 export async function loadLlSeasonRosterStore(): Promise<LlSeasonRosterStore> {
@@ -36,7 +36,7 @@ export async function recomputeLlSeasonCards(
   for (const m of prev.mismatches) {
     paused.add(m.provisional);
   }
-  const cards = buildAllLlSeasonCards(batches, paused, prev.teams);
+  const cards = await buildAllLlSeasonCardsAsync(batches, paused, prev.teams);
   const store: LlSeasonRosterStore = {
     ...prev,
     cards,

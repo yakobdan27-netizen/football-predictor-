@@ -196,4 +196,20 @@ export type MarketAdvisoryUiPayload = {
     overlapNote?: string;
   }>;
   ineligibleNotes: string[];
+  specialistCoverage?: {
+    ht?: {
+      pct: number | null;
+      apiRecords: number;
+      systemRecords: number;
+      effectiveApiWeight: number;
+      effectiveSystemWeight: number;
+    };
+    corners?: {
+      pct: number | null;
+      apiRecords: number;
+      systemRecords: number;
+      effectiveApiWeight: number;
+      effectiveSystemWeight: number;
+    };
+  };
 };

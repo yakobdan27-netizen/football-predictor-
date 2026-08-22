@@ -86,10 +86,10 @@ export function blendBadgeLabel(source: BlendSource): string {
 export function blendBadgeTitle(source: BlendSource): string {
   switch (source) {
     case "blended":
-      return "Blended estimate: API-DB (60% Match Centre 2026/27 + 40% prior seasons when n≥6; else prior only) weighted 60%; AI learner + manual signals weighted 40%.";
+      return "Blended estimate: 60% prior API history (hist / seed seasons before 2026/27) and 40% auto-collected 2026/27 system-season results.";
     case "api_only":
-      return "API-DB only — Manual/AI side missing for this match; no invented manual numbers.";
+      return "Prior API history only — current-season system corpus missing for this match.";
     case "manual_ai_only":
-      return "Manual/AI only — API-DB history missing for this match; no invented API numbers.";
+      return "2026/27 system-season only — prior API history missing for this match.";
   }
 }

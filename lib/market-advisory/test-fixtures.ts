@@ -15,6 +15,8 @@ const STUB_RATES = {
   seasonCount: 3,
   seedOnly: false,
   sourceNote: null,
+  apiSeasonCurrentN: 10,
+  apiSeasonBlend: "60_40" as const,
 };
 
 export function minimalCfe(): CanonicalFixtureEstimate {
@@ -35,7 +37,6 @@ export function minimalCfe(): CanonicalFixtureEstimate {
         lgAf1: 1.1,
         lgAf2: 1.0,
       },
-      coverage: { ht_pct: 55, corners_pct: 40 },
     },
     { skipCache: true }
   );

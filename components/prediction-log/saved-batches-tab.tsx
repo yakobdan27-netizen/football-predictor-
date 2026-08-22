@@ -15,8 +15,10 @@ import { LOG_MARKET_MAP } from "@/lib/prediction-log/markets-config";
 import { batchLeagueDisplay, normalizeMatchLeagues } from "@/lib/prediction-log/match-league";
 import {
   countTraceStatusesAcrossBatches,
+  matchNeedsNamePairTrace,
   type TraceStatusCounts,
 } from "@/lib/prediction-log/result-trace";
+import { matchNeedsApiDetailFill } from "@/lib/football-api/map-fixture-to-match";
 import {
   loadBatches,
   deleteBatch,
@@ -79,6 +81,24 @@ export function SavedBatchesTab({
   );
   const displayTrace = traceCounts ?? localTraceCounts;
 
+  const hasPendingApiSync = useMemo(
+    () =>
+      batches.some(
+        (b) =>
+          batchNeedsResults(b) ||
+          b.matches.some(
+            (m) => matchNeedsNamePairTrace(m) || matchNeedsApiDetailFill(m)
+          )
+      ),
+    [batches]
+  );
+
+  useEffect(() => {
+    if (!hasPendingApiSync) return;
+    void autoFillFromApi(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount when pending
+  }, [hasPendingApiSync]);
+
   useEffect(() => {
     if (highlightBatchId && batches.some((b) => b.id === highlightBatchId)) {
       const batch = batches.find((b) => b.id === highlightBatchId)!;
@@ -116,8 +136,8 @@ export function SavedBatchesTab({
     setAutoFillUnavailable(false);
     setAutoFillMsg(
       batchId
-        ? "Tracing results by home–away names…"
-        : "Tracing all pending results by home–away names…"
+        ? "Syncing results from API…"
+        : "Syncing all pending results from API…"
     );
     setSyncMsg(null);
 
@@ -135,6 +155,8 @@ export function SavedBatchesTab({
         matchesSynced?: number;
         matchesNotFound?: number;
         updatedBatches?: number;
+        filled?: number;
+        enriched?: number;
         errors?: string[];
         trace?: TraceStatusCounts;
         conflicts?: {
@@ -179,9 +201,10 @@ export function SavedBatchesTab({
 
       const parts = [
         `${data.updatedBatches ?? 0} batch(es) updated`,
-        `${data.matchesSynced ?? 0} match(es) filled`,
+        `${data.matchesSynced ?? data.filled ?? 0} match(es) filled`,
+        data.enriched ? `${data.enriched} enriched` : null,
         `${data.matchesNotFound ?? 0} not found yet`,
-      ];
+      ].filter(Boolean) as string[];
       if (data.trace) {
         parts.push(
           `pending ${data.trace.pending + data.trace.retry} · awaiting final ${data.trace.foundNotFinal} · review ${data.trace.ambiguous + data.trace.needsReview}`
@@ -639,7 +662,7 @@ export function SavedBatchesTab({
         {pendingTelegramResults > 0 && (
           <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: "0.75rem 0 0" }}>
             {pendingTelegramResults} Telegram batch{pendingTelegramResults === 1 ? "" : "es"} pending
-            results — Trace all includes them (feeds the global AI Learner).
+            results — Sync all includes them (feeds the global AI Learner).
           </p>
         )}
         <div style={{ marginTop: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
@@ -651,10 +674,10 @@ export function SavedBatchesTab({
             style={{ minHeight: 44, minWidth: 160, fontWeight: 700 }}
           >
             {syncing || autoFilling
-              ? "Tracing…"
+              ? "Syncing…"
               : expandedId
-                ? "Trace open batch"
-                : "Trace all pending results"}
+                ? "Sync open batch"
+                : "Sync all from API"}
           </button>
           <button
             type="button"
@@ -663,7 +686,7 @@ export function SavedBatchesTab({
             onClick={() => expandedId && void fillFromApi(expandedId)}
             style={{ minHeight: 44 }}
           >
-            {apiBatchFilling ? "API fill…" : "Fill from API"}
+            {apiBatchFilling ? "Retrying…" : "Force retry open batch"}
           </button>
           <button
             type="button"
@@ -675,10 +698,10 @@ export function SavedBatchesTab({
             {bulkSyncing ? "Bulk syncing…" : "Sync last 5 (Livescore)"}
           </button>
           <span style={{ fontSize: "0.75rem", color: "var(--muted)", maxWidth: 420 }}>
-            Trace uses saved home and away team names only (exact ordered pair). No fixture id or
-            date is required. Results fill when the API reports an officially finished match.
-            Fill from API adds corners, shots, goal timings, and lineups. Manual values are kept.
-            {expandedId ? " Targeting the open batch." : " Traces every pending batch."}
+            Sync uses saved home and away team names (exact ordered pair). No fixture id or date
+            is required. Results fill when the API reports an officially finished match, including
+            corners, goal timings, and lineups when available. Manual values are kept.
+            {expandedId ? " Targeting the open batch." : " Syncs every pending batch automatically."}
           </span>
         </div>
         {autoFillUnavailable && (
@@ -812,9 +835,9 @@ export function SavedBatchesTab({
                     }}
                   >
                     {autoFilling
-                      ? "Tracing results by home–away names…"
+                      ? "Syncing results from API…"
                       : apiBatchFilling
-                        ? "Filling from API…"
+                        ? "Retrying API fill…"
                         : autoFillMsg}
                   </p>
                 )}

@@ -71,7 +71,10 @@ import type { PredictionBatch } from "./types";
 }
 
 {
-  // 2026/27 batch HT excluded from prior path (Match Centre owns current season)
+  // Legacy nested MC 60/40 only when system-season blend flag is off
+  const prevFlag = process.env.SYSTEM_SEASON_BLEND_ENABLED;
+  process.env.SYSTEM_SEASON_BLEND_ENABLED = "0";
+
   const batches: PredictionBatch[] = [
     {
       id: "b26",
@@ -129,9 +132,43 @@ import type { PredictionBatch } from "./types";
   assert.equal(withMc.apiSeasonCurrentN, 8);
   assert.ok(withMc.sourceNote?.includes("api-season: 60/40"));
   assert.ok(withMc.af1 > withoutMc.af1, "60/40 blend should pull toward MC current rates");
+
+  process.env.SYSTEM_SEASON_BLEND_ENABLED = prevFlag;
 }
 
 {
+  process.env.SYSTEM_SEASON_BLEND_ENABLED = "1";
+  const mcCache = new Map([
+    [
+      "man city|premier league",
+      {
+        clubName: "Manchester City",
+        league: "Premier League",
+        af1: 2.0,
+        af2: 2.5,
+        da1: 0.3,
+        da2: 0.4,
+        nMatches: 8,
+        seasonCount: 1,
+        seedOnly: false,
+        sourceNote: "match-centre: 2026 n=8",
+      },
+    ],
+  ]);
+  const withFlag = loadClubHalfAttackDefence("Manchester City", "Premier League", [], {
+    matchCentreCache: mcCache,
+  });
+  assert.ok(
+    withFlag.apiSeasonBlend == null || withFlag.apiSeasonBlend !== "60_40",
+    "system season blend on → no nested MC 60/40 on API side"
+  );
+  assert.ok(withFlag.sourceNote?.includes("prior-api-60%"));
+}
+
+{
+  const prevFlag = process.env.SYSTEM_SEASON_BLEND_ENABLED;
+  process.env.SYSTEM_SEASON_BLEND_ENABLED = "0";
+
   const mcThin = new Map([
     [
       "man city|premier league",
@@ -154,6 +191,8 @@ import type { PredictionBatch } from "./types";
   });
   assert.equal(thin.apiSeasonBlend, "prior_only");
   assert.ok(thin.sourceNote?.includes("api-season: prior_only"));
+
+  process.env.SYSTEM_SEASON_BLEND_ENABLED = prevFlag;
 }
 
 console.log("hsh-half-rates tests passed");

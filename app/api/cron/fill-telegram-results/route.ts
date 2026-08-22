@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { batchNeedsResults } from "@/lib/prediction-log/scoring";
 import { matchNeedsNamePairTrace } from "@/lib/prediction-log/result-trace";
-import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
-import { syncPredictionLogResults } from "@/lib/football-api/sync-prediction-log";
+import { matchNeedsApiDetailFill } from "@/lib/football-api/map-fixture-to-match";
+import { syncAllPredictionLogFromApi } from "@/lib/football-api/sync-all-prediction-log-from-api";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -16,8 +16,8 @@ function authorize(request: Request): boolean {
 }
 
 /**
- * Every 30 minutes (06–22 UTC): ordered name-pair result trace for pending
- * Prediction Log batches (web + telegram). Same path as POST /api/sync-results.
+ * Every 30 minutes (06–22 UTC): unified API trace + live merge + enrich for
+ * all pending Prediction Log batches (web + telegram).
  */
 export async function GET(request: Request) {
   return run(request);
@@ -36,25 +36,30 @@ async function run(request: Request) {
     const all = await loadAllBatches();
     const pending = all.filter(
       (b) =>
-        batchNeedsResults(b) || b.matches.some((m) => matchNeedsNamePairTrace(m))
+        batchNeedsResults(b) ||
+        b.matches.some(
+          (m) => matchNeedsNamePairTrace(m) || matchNeedsApiDetailFill(m)
+        )
     );
 
-    // Single pass over all pending — syncPredictionLogResults already loops batches.
-    const summary = await syncPredictionLogResults();
-
-    if (pending.length > 0 || summary.updatedBatches > 0) {
-      await recomputeAndPersistLearnerStats().catch(() => null);
-    }
+    const summary = await syncAllPredictionLogFromApi();
 
     return NextResponse.json({
-      ok: true,
+      ok: !summary.unavailable,
       pendingBatches: pending.length,
       pendingTelegram: pending.filter((b) => b.source === "telegram").length,
       updatedBatches: summary.updatedBatches,
       matchesSynced: summary.matchesSynced,
       matchesNotFound: summary.matchesNotFound,
+      filled: summary.filled,
+      enriched: summary.enriched,
+      failed: summary.failed,
+      remaining: summary.remaining.length,
+      liveMerged: summary.liveMerged,
+      liveUpdatedBatches: summary.liveUpdatedBatches,
       trace: summary.trace,
       errors: summary.errors.slice(0, 10),
+      unavailable: summary.unavailable,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Result fill cron failed";

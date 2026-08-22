@@ -9,6 +9,7 @@ export type AnalysisProvenance =
   | "api_historical"
   | "manual_batch"
   | "system_historical"
+  | "system_season_corpus"
   | "ai_learner"
   | "unknown";
 
@@ -72,6 +73,7 @@ export function isSystemGroupProvenance(p: AnalysisProvenance): boolean {
   return (
     p === "manual_batch" ||
     p === "system_historical" ||
+    p === "system_season_corpus" ||
     p === "ai_learner"
   );
 }

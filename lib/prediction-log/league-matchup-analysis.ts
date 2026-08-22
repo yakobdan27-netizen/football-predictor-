@@ -159,13 +159,48 @@ export function getLeagueMatchupAnalysis(
   );
 }
 
-/** 60% API season GF/GA · 40% seed/form priors (async — league analysis page). */
+/** 60% prior API history · 40% 2026/27 system-season (async — league analysis page). */
 export async function getBlendedLeagueMatchupAnalysis(
   homeTeam: string,
   awayTeam: string,
   league: string,
   opts?: { season?: number }
 ): Promise<LeagueMatchupAnalysis | null> {
+  const { isSystemSeasonBlendEnabled } = await import(
+    "@/lib/system-season/feature-flags"
+  );
+
+  if (isSystemSeasonBlendEnabled()) {
+    const prior = seedCorrectScoreLambdas(homeTeam, awayTeam, league);
+    if (!prior) return null;
+    const { systemSeasonMatchupLambdas } = await import(
+      "@/lib/system-season/blend-adapter"
+    );
+    const current = await systemSeasonMatchupLambdas(homeTeam, awayTeam, league);
+    const blended = blendMatchupLambdas(
+      { lambdaHome: prior.lambdaHome, lambdaAway: prior.lambdaAway },
+      current ?? prior
+    );
+    const source = formatSource(
+      blended.blendSource,
+      prior.source,
+      current?.source ?? "system-season pending"
+    );
+    return buildLeagueMatchupAnalysis(
+      homeTeam,
+      awayTeam,
+      league,
+      blended.lambdaHome,
+      blended.lambdaAway,
+      source,
+      {
+        blendSource: blended.blendSource,
+        apiWeight: blended.apiWeight,
+        formWeight: blended.formWeight,
+      }
+    );
+  }
+
   const form = seedCorrectScoreLambdas(homeTeam, awayTeam, league);
   if (!form) return null;
 

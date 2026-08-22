@@ -14,6 +14,7 @@ import { isAnalysisBlendedModeEnabled } from "./feature-flags";
 import {
   apiGroupFromHistSamples,
   countValidSystemMatchRecords,
+  type SourceGroupSummary,
 } from "./source-groups";
 
 export type CfeBlendMetrics = {
@@ -25,6 +26,16 @@ export type CanonicalFixtureEstimateWithBlend = CanonicalFixtureEstimate & {
   analysisBlend?: BlendedPayload<CfeBlendMetrics>;
 };
 
+function fallbackSystemSummary(batches: PredictionBatch[]): SourceGroupSummary {
+  const systemInfo = countValidSystemMatchRecords(batches);
+  return {
+    recordCount: systemInfo.count,
+    dateRange: systemInfo.dateRange,
+    byProvenance: { manual_batch: systemInfo.count },
+    excludedUnknown: systemInfo.unknownBatches,
+  };
+}
+
 /**
  * After legacy CFE is computed, optionally attach provenance envelope.
  * Does not alter lambdas/markets when flag off or status !== complete.
@@ -33,9 +44,11 @@ export function attachCfeBlendedEnvelope(
   legacy: CanonicalFixtureEstimate,
   batches: PredictionBatch[],
   opts?: {
-    /** Manual/AI λ used as system-side inputs (if any). */
+    /** System-side λ (2026/27 system season when blend flag on). */
     manualHome?: number | null;
     manualAway?: number | null;
+    /** Pre-resolved system group (async callers). */
+    systemSummary?: SourceGroupSummary;
   }
 ): CanonicalFixtureEstimateWithBlend {
   if (!isAnalysisBlendedModeEnabled()) {
@@ -43,20 +56,11 @@ export function attachCfeBlendedEnvelope(
   }
 
   try {
-    const systemInfo = countValidSystemMatchRecords(batches);
+    const systemSummary = opts?.systemSummary ?? fallbackSystemSummary(batches);
     const apiSummary = apiGroupFromHistSamples({
       matchesUsed: legacy.provenance.matches_used,
     });
-    const systemSummary = {
-      recordCount: systemInfo.count,
-      dateRange: systemInfo.dateRange,
-      byProvenance: {
-        manual_batch: systemInfo.count,
-      } as const,
-      excludedUnknown: systemInfo.unknownBatches,
-    };
 
-    // Reconstruct API-only λ from provenance weights when blended.
     const apiPct = legacy.provenance.api_pct / 100;
     const manPct = legacy.provenance.manual_pct / 100;
     const lambdaHome = legacy.lambdas.home;
@@ -74,8 +78,6 @@ export function attachCfeBlendedEnvelope(
       sysHome == null &&
       sysAway == null
     ) {
-      // Cannot invert uniquely without stored sides — use legacy value as both
-      // for envelope status/counts only; metrics mirror legacy when complete.
       sysHome = lambdaHome;
       sysAway = lambdaAway;
     }
@@ -95,15 +97,13 @@ export function attachCfeBlendedEnvelope(
         byProvenance: { ...systemSummary.byProvenance },
       },
       extraWarnings:
-        systemInfo.unknownBatches > 0
+        systemSummary.excludedUnknown > 0
           ? [
-              `Excluded ${systemInfo.unknownBatches} unknown/recommended batch(es) from system group`,
+              `Excluded ${systemSummary.excludedUnknown} unknown/recommended batch(es) from system group`,
             ]
           : undefined,
     });
 
-    // Prefer displaying legacy markets always; envelope carries status for UI.
-    // When complete, metrics equal configured 60/40 of available sides.
     if (
       shouldDisplayBlended(wrapped.blended) &&
       wrapped.blended.metrics.lambdaHome == null
@@ -123,4 +123,28 @@ export function attachCfeBlendedEnvelope(
     );
     return legacy;
   }
+}
+
+/** Async variant — resolves system_season corpus when blend flag on. */
+export async function attachCfeBlendedEnvelopeAsync(
+  legacy: CanonicalFixtureEstimate,
+  batches: PredictionBatch[],
+  opts?: {
+    manualHome?: number | null;
+    manualAway?: number | null;
+    league?: string;
+  }
+): Promise<CanonicalFixtureEstimateWithBlend> {
+  if (!isAnalysisBlendedModeEnabled()) {
+    return legacy;
+  }
+
+  const { resolveSystemGroupSummary } = await import("./source-groups");
+  const systemSummary = await resolveSystemGroupSummary(batches, opts?.league);
+  const { unknownBatches: _u, ...summary } = systemSummary;
+
+  return attachCfeBlendedEnvelope(legacy, batches, {
+    ...opts,
+    systemSummary: summary,
+  });
 }

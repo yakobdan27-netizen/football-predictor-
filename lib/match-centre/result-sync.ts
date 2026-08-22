@@ -15,6 +15,7 @@ import { addDaysIso, todayIsoDate } from "@/lib/live/dates";
 import { apiSportsLiveProvider } from "@/lib/live/provider";
 import { runLivePoll } from "@/lib/live/sync-live";
 import { applyApiFixtures } from "@/lib/live/sync-apply";
+import { syncPredictionLogFromLiveFixtures } from "@/lib/prediction-log/sync-from-live-fixtures";
 import {
   registerMatchCentreFixtures,
   type MatchCentreFixtureInput,
@@ -32,6 +33,9 @@ export type MatchCentreResultSyncSummary = {
   settledFixtures: number;
   settledSelections: number;
   settledSlips: number;
+  predictionLogMerged: number;
+  predictionLogUpdatedBatches: number;
+  systemSeasonEnriched: number;
   errors: string[];
 };
 
@@ -194,6 +198,33 @@ export async function runMatchCentreResultSync(): Promise<MatchCentreResultSyncS
     errors.push(`settle: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  let predictionLogMerged = 0;
+  let predictionLogUpdatedBatches = 0;
+  try {
+    const pl = await syncPredictionLogFromLiveFixtures();
+    predictionLogMerged = pl.matchesMerged;
+    predictionLogUpdatedBatches = pl.updatedBatches;
+    errors.push(...pl.errors);
+  } catch (e) {
+    errors.push(
+      `prediction-log-bridge: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+
+  let systemSeasonEnriched = 0;
+  try {
+    const { runSystemSeasonIngest } = await import(
+      "@/lib/system-season/ingest-from-api"
+    );
+    const sys = await runSystemSeasonIngest({ maxPerLeague: 3 });
+    systemSeasonEnriched = sys.enriched;
+    errors.push(...sys.errors.slice(0, 3));
+  } catch (e) {
+    errors.push(
+      `system-season: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+
   return {
     ok: errors.length === 0,
     registered,
@@ -206,6 +237,9 @@ export async function runMatchCentreResultSync(): Promise<MatchCentreResultSyncS
     settledFixtures,
     settledSelections,
     settledSlips,
+    predictionLogMerged,
+    predictionLogUpdatedBatches,
+    systemSeasonEnriched,
     errors,
   };
 }

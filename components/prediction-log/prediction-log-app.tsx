@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BatchEntryTab } from "./batch-entry-tab";
 import { SavedBatchesTab } from "./saved-batches-tab";
 import {
@@ -12,7 +12,11 @@ import {
   updateLearnerStats,
   fetchTeamsQuality,
   getTeamsQualityCache,
+  reloadBatchesFromServer,
 } from "@/lib/prediction-log/storage";
+import { batchNeedsResults } from "@/lib/prediction-log/scoring";
+import { matchNeedsNamePairTrace } from "@/lib/prediction-log/result-trace";
+import { matchNeedsApiDetailFill } from "@/lib/football-api/map-fixture-to-match";
 import type { PredictionBatch, RecommendationSettings } from "@/lib/prediction-log/types";
 import type { TeamsQualityStore } from "@/lib/prediction-log/teams-quality-types";
 
@@ -34,6 +38,7 @@ export function PredictionLogApp() {
     () => getTeamsQualityCache()
   );
   const [loading, setLoading] = useState(true);
+  const backgroundSyncAttempted = useRef(false);
 
   const refresh = useCallback(async () => {
     await ensureStorageInit();
@@ -66,6 +71,30 @@ export function PredictionLogApp() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (loading || backgroundSyncAttempted.current) return;
+    const all = loadBatches();
+    const needsSync = all.some(
+      (b: PredictionBatch) =>
+        batchNeedsResults(b) ||
+        b.matches.some(
+          (m) => matchNeedsNamePairTrace(m) || matchNeedsApiDetailFill(m)
+        )
+    );
+    if (!needsSync) return;
+    backgroundSyncAttempted.current = true;
+    void (async () => {
+      try {
+        await fetch("/api/sync-results", { method: "POST" });
+        await reloadBatchesFromServer();
+        setBatches(loadBatches());
+        updateLearnerStats();
+      } catch {
+        /* non-blocking */
+      }
+    })();
+  }, [loading]);
 
   if (loading) {
     return <p className="page-sub">Loading prediction log…</p>;

@@ -9,6 +9,7 @@ import {
   matchCentreRatesCacheKey,
   type ApiSeasonBlendMode,
 } from "./api-season-blend";
+import { isSystemSeasonBlendEnabled } from "@/lib/system-season/feature-flags";
 import { blendSeedAndLive } from "./conceded-half-baselines";
 import { lookupClubConcededRecencyBlend } from "./conceded-half-baselines";
 import {
@@ -217,6 +218,15 @@ export function loadClubHalfAttackDefence(
   }
 ): ClubHalfAttackDefence {
   const prior = loadClubHalfAttackDefencePrior(club, league, batches, opts);
+
+  if (isSystemSeasonBlendEnabled()) {
+    return {
+      ...prior,
+      sourceNote: prior.sourceNote
+        ? `${prior.sourceNote} · prior-api-60%`
+        : "prior-api-60%",
+    };
+  }
 
   const cacheKey = matchCentreRatesCacheKey(club, league);
   const mc =

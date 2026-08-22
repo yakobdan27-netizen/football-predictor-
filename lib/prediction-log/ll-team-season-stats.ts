@@ -3,6 +3,10 @@
  * Exact-season rows required — never invent or copy prior seasons into the card.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  primaryFtSeasonStats,
+  type SystemSeasonTeamMatchStats,
+} from "@/lib/system-season/roster-stats";
 import { lookupClubConcededBaseline } from "./conceded-half-baselines";
 import { lookupClubCornersBaseline } from "./corners-baselines";
 import { lookupClubHalfBaseline } from "./half-goals-baselines";
@@ -95,6 +99,7 @@ export function fillLlTeamSeasonCard(
     season?: typeof LL_SEASON_2026_27;
     batches?: PredictionBatch[];
     seed_paused?: boolean;
+    systemSeasonStats?: SystemSeasonTeamMatchStats;
   }
 ): LlTeamSeasonCard {
   const season = opts?.season ?? LL_SEASON_2026_27;
@@ -105,7 +110,10 @@ export function fillLlTeamSeasonCard(
   const half = exactHalfRow(name, season);
   const corners = exactCornersRow(name, season);
   const conceded = exactConcededRow(name, season);
-  const live = countLiveLlMatches(name, opts?.batches ?? [], season);
+  const live = primaryFtSeasonStats(
+    opts?.systemSeasonStats,
+    countLiveLlMatches(name, opts?.batches ?? [], season)
+  );
 
   let matches_played: number | null = null;
   let goals_scored_pg: number | null = null;
@@ -229,7 +237,8 @@ function liveVenueSplits(
 export function buildAllLlSeasonCards(
   batches?: PredictionBatch[],
   pausedTeams?: Set<string>,
-  teamList?: string[]
+  teamList?: string[],
+  systemSeasonByTeam?: Map<string, SystemSeasonTeamMatchStats>
 ): Record<string, LlTeamSeasonCard> {
   const list = teamList?.length ? teamList : LL_2026_27_PROVISIONAL_TEAMS;
   const cards: Record<string, LlTeamSeasonCard> = {};
@@ -237,7 +246,39 @@ export function buildAllLlSeasonCards(
     cards[team] = fillLlTeamSeasonCard(team, {
       batches,
       seed_paused: pausedTeams?.has(team),
+      systemSeasonStats: systemSeasonByTeam?.get(standardizeTeamName(team)),
     });
   }
   return cards;
+}
+
+export async function buildAllLlSeasonCardsAsync(
+  batches?: PredictionBatch[],
+  pausedTeams?: Set<string>,
+  teamList?: string[]
+): Promise<Record<string, LlTeamSeasonCard>> {
+  const list = teamList?.length ? teamList : LL_2026_27_PROVISIONAL_TEAMS;
+  const { isSystemSeasonBlendEnabled } = await import(
+    "@/lib/system-season/feature-flags"
+  );
+  const { preloadRosterStatsForTeams } = await import(
+    "@/lib/system-season/roster-stats"
+  );
+  let systemSeasonByTeam: Map<string, SystemSeasonTeamMatchStats> | undefined;
+  if (isSystemSeasonBlendEnabled()) {
+    try {
+      systemSeasonByTeam = await preloadRosterStatsForTeams(
+        LL_LEAGUE_NAME,
+        list
+      );
+    } catch {
+      systemSeasonByTeam = undefined;
+    }
+  }
+  return buildAllLlSeasonCards(
+    batches,
+    pausedTeams,
+    list,
+    systemSeasonByTeam
+  );
 }

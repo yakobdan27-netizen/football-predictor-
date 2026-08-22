@@ -16,6 +16,19 @@ import type {
   QualityDimensions,
 } from "./types";
 
+const HALF_FAMILIES = new Set([
+  "HALF_GOALS",
+  "HSH",
+  "HT_RESULT",
+  "DIEH",
+  "WIN_ONE_HALF",
+]);
+
+const HT_COVERAGE_MIN = 30;
+const CORNERS_COVERAGE_MIN = 25;
+const HT_MODEL_MIN_MATCHES = 6;
+const CORNERS_MODEL_MIN_MATCHES = 5;
+
 export function computeMsamScore(dim: QualityDimensions): number {
   return (
     MSAM_SCORE_WEIGHTS.ops * dim.ops +
@@ -25,6 +38,37 @@ export function computeMsamScore(dim: QualityDimensions): number {
     MSAM_SCORE_WEIGHTS.iss * dim.iss +
     MSAM_SCORE_WEIGHTS.dis * dim.dis
   );
+}
+
+function halfModelReady(cfe: CanonicalFixtureEstimate, propAvailable: boolean): boolean {
+  if (!propAvailable || !cfe.diagnostics.halfSumOk) return false;
+  const htDiag = cfe.coverageDiagnostics?.ht;
+  const homeN =
+    (htDiag?.home.systemWith ?? 0) +
+    (htDiag?.home.apiWith ?? 0) +
+    (cfe.provenance.ess > 0 ? Math.min(cfe.provenance.ess, 20) : 0);
+  const awayN =
+    (htDiag?.away.systemWith ?? 0) +
+    (htDiag?.away.apiWith ?? 0) +
+    (cfe.provenance.ess > 0 ? Math.min(cfe.provenance.ess, 20) : 0);
+  const minSide = Math.min(homeN, awayN);
+  return minSide >= HT_MODEL_MIN_MATCHES;
+}
+
+function cornersModelReady(cfe: CanonicalFixtureEstimate, propAvailable: boolean): boolean {
+  if (!propAvailable) return false;
+  const cornersDiag = cfe.coverageDiagnostics?.corners;
+  const homeN =
+    (cornersDiag?.home.systemWith ?? 0) + (cornersDiag?.home.apiWith ?? 0);
+  const awayN =
+    (cornersDiag?.away.systemWith ?? 0) + (cornersDiag?.away.apiWith ?? 0);
+  if (Math.min(homeN, awayN) >= CORNERS_MODEL_MIN_MATCHES) return true;
+  const lamOk =
+    cfe.lambdas.home_corners > 0.2 &&
+    cfe.lambdas.away_corners > 0.2 &&
+    Number.isFinite(cfe.lambdas.home_corners) &&
+    Number.isFinite(cfe.lambdas.away_corners);
+  return lamOk && cfe.provenance.ess >= CORNERS_MODEL_MIN_MATCHES;
 }
 
 export function scoreCandidate(input: {
@@ -47,16 +91,23 @@ export function scoreCandidate(input: {
   }
   if (prop.nEffective < 5) reasons.push("INSUFFICIENT_SAMPLE");
 
-  const halfFamilies = ["HALF_GOALS", "HSH", "HT_RESULT", "DIEH", "WIN_ONE_HALF"];
+  const htPct = cfe.coverage.ht_pct;
+  const cornersPct = cfe.coverage.corners_pct;
+  const htCoverageOk = htPct != null && htPct >= HT_COVERAGE_MIN;
+  const cornersCoverageOk =
+    cornersPct != null && cornersPct >= CORNERS_COVERAGE_MIN;
+
   if (
-    halfFamilies.includes(prop.marketFamily) &&
-    (cfe.coverage.ht_pct == null || cfe.coverage.ht_pct < 30)
+    HALF_FAMILIES.has(prop.marketFamily) &&
+    !htCoverageOk &&
+    !halfModelReady(cfe, prop.rawProbability > 0)
   ) {
     reasons.push("INSUFFICIENT_HT_HISTORY");
   }
   if (
     (prop.marketFamily === "CORNERS" || prop.marketFamily === "SOT") &&
-    (cfe.coverage.corners_pct == null || cfe.coverage.corners_pct < 25)
+    !cornersCoverageOk &&
+    !cornersModelReady(cfe, prop.rawProbability > 0)
   ) {
     reasons.push("CORNERS_MODEL_UNAVAILABLE");
   }
@@ -102,6 +153,9 @@ export function scoreCandidate(input: {
       cqsBootstrap: cqsResult.bootstrap,
       nEffective: prop.nEffective,
       confidenceTier: cfe.confidence_tier,
+      htCoveragePct: htPct,
+      cornersCoveragePct: cornersPct,
+      coverageDiagnostics: cfe.coverageDiagnostics,
     },
     explanationSnapshot: {},
   };

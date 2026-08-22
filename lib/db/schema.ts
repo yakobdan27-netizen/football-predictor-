@@ -515,6 +515,151 @@ export const histTeams = pgTable("hist_teams", {
   firstSeenSeason: integer("first_seen_season"),
 });
 
+/**
+ * Dedicated 2026/27 current-season system corpus (40% blend side).
+ * Writers: lib/system-season/ only. Separate from hist_* and KV batches.
+ */
+export const systemSeasonFixtures = pgTable(
+  "system_season_fixtures",
+  {
+    fixtureId: integer("fixture_id").primaryKey(),
+    leagueId: integer("league_id").notNull(),
+    season: integer("season").notNull(),
+    dateUtc: timestamp("date_utc", { withTimezone: true }).notNull(),
+    homeId: integer("home_id"),
+    awayId: integer("away_id"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    venue: text("venue"),
+    htHome: integer("ht_home"),
+    htAway: integer("ht_away"),
+    ftHome: integer("ft_home"),
+    ftAway: integer("ft_away"),
+    status: text("status").notNull(),
+    dataCompleteness: text("data_completeness").notNull().default("core-only"),
+    locked: integer("locked").notNull().default(0),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    leagueSeasonIdx: index("system_season_fixtures_league_season_idx").on(
+      t.leagueId,
+      t.season
+    ),
+    dateIdx: index("system_season_fixtures_date_idx").on(t.dateUtc),
+    homeIdIdx: index("system_season_fixtures_home_id_idx").on(t.homeId),
+    awayIdIdx: index("system_season_fixtures_away_id_idx").on(t.awayId),
+  })
+);
+
+export const systemSeasonGoals = pgTable(
+  "system_season_goals",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id"),
+    minute: integer("minute"),
+    extraMinute: integer("extra_minute"),
+    half: text("half").notNull(),
+    player: text("player"),
+    type: text("type"),
+  },
+  (t) => ({
+    fixtureIdx: index("system_season_goals_fixture_idx").on(t.fixtureId),
+  })
+);
+
+export const systemSeasonStats = pgTable(
+  "system_season_stats",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id").notNull(),
+    shots: integer("shots"),
+    sot: integer("sot"),
+    possession: integer("possession"),
+    corners: integer("corners"),
+    yellow: integer("yellow"),
+    red: integer("red"),
+    fouls: integer("fouls"),
+    offsides: integer("offsides"),
+  },
+  (t) => ({
+    fixtureTeamIdx: index("system_season_stats_fixture_team_idx").on(
+      t.fixtureId,
+      t.teamId
+    ),
+  })
+);
+
+export const systemSeasonLineups = pgTable(
+  "system_season_lineups",
+  {
+    id: serial("id").primaryKey(),
+    fixtureId: integer("fixture_id").notNull(),
+    teamId: integer("team_id").notNull(),
+    formation: text("formation"),
+    startingJson: text("starting_json"),
+    substitutesJson: text("substitutes_json"),
+  },
+  (t) => ({
+    fixtureTeamIdx: index("system_season_lineups_fixture_team_idx").on(
+      t.fixtureId,
+      t.teamId
+    ),
+  })
+);
+
+export const systemSeasonTeamRates = pgTable(
+  "system_season_team_rates",
+  {
+    teamId: integer("team_id").notNull(),
+    leagueId: integer("league_id").notNull(),
+    season: integer("season").notNull(),
+    teamName: text("team_name").notNull(),
+    nMatches: integer("n_matches").notNull().default(0),
+    af1: real("af1"),
+    af2: real("af2"),
+    da1: real("da1"),
+    da2: real("da2"),
+    avgCornersFor: real("avg_corners_for"),
+    avgCornersAgainst: real("avg_corners_against"),
+    dataCompleteness: text("data_completeness").notNull().default("core-only"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.leagueId, t.season] }),
+    leagueSeasonIdx: index("system_season_team_rates_league_season_idx").on(
+      t.leagueId,
+      t.season
+    ),
+  })
+);
+
+export const systemSeasonSyncMeta = pgTable(
+  "system_season_sync_meta",
+  {
+    leagueId: integer("league_id").primaryKey(),
+    season: integer("season").notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    fixturesSynced: integer("fixtures_synced").notNull().default(0),
+    cursorFixtureId: integer("cursor_fixture_id"),
+    backfillComplete: integer("backfill_complete").notNull().default(0),
+  }
+);
+
+export type SystemSeasonFixture = typeof systemSeasonFixtures.$inferSelect;
+export type NewSystemSeasonFixture = typeof systemSeasonFixtures.$inferInsert;
+export type SystemSeasonGoal = typeof systemSeasonGoals.$inferSelect;
+export type NewSystemSeasonGoal = typeof systemSeasonGoals.$inferInsert;
+export type SystemSeasonStat = typeof systemSeasonStats.$inferSelect;
+export type NewSystemSeasonStat = typeof systemSeasonStats.$inferInsert;
+export type SystemSeasonLineup = typeof systemSeasonLineups.$inferSelect;
+export type NewSystemSeasonLineup = typeof systemSeasonLineups.$inferInsert;
+export type SystemSeasonTeamRate = typeof systemSeasonTeamRates.$inferSelect;
+export type NewSystemSeasonTeamRate = typeof systemSeasonTeamRates.$inferInsert;
+export type SystemSeasonSyncMeta = typeof systemSeasonSyncMeta.$inferSelect;
+
 export const histJobs = pgTable(
   "hist_jobs",
   {

@@ -1,5 +1,7 @@
 import { marketLabelFromCatalog } from "./market-catalog";
 import { catalogEntryForCode } from "./canonical-probability-adapter";
+import { coverageBreakdownLabel } from "@/lib/prediction-log/specialist-data-coverage";
+import type { CoverageBreakdown } from "@/lib/prediction-log/specialist-data-coverage";
 import type { MsamCandidate, ScoredMsamCandidate } from "./types";
 
 export function buildExplanation(c: MsamCandidate | ScoredMsamCandidate): string {
@@ -12,6 +14,20 @@ export function buildExplanation(c: MsamCandidate | ScoredMsamCandidate): string
     );
   } else if (c.dimensions.ecs < 50) {
     parts.push("Limited historical evidence for this market family on this fixture.");
+  }
+
+  const htDiag = diag.coverageDiagnostics as
+    | { ht?: CoverageBreakdown; corners?: CoverageBreakdown }
+    | undefined;
+  if (htDiag?.ht && diag.htCoveragePct != null) {
+    parts.push(
+      `HT data: ${coverageBreakdownLabel(htDiag.ht)}; coverage ${Number(diag.htCoveragePct).toFixed(1)}%.`
+    );
+  }
+  if (htDiag?.corners && diag.cornersCoveragePct != null) {
+    parts.push(
+      `Corners data: ${coverageBreakdownLabel(htDiag.corners)}; coverage ${Number(diag.cornersCoveragePct).toFixed(1)}%.`
+    );
   }
 
   if (c.dimensions.sss >= 70) {
@@ -33,11 +49,26 @@ export function buildExplanation(c: MsamCandidate | ScoredMsamCandidate): string
   return parts.join(" ");
 }
 
-export function ineligibleNote(code: string): string {
+export function ineligibleNote(
+  code: string,
+  diag?: Record<string, unknown>
+): string {
+  const htPct = diag?.htCoveragePct;
+  const cornersPct = diag?.cornersCoveragePct;
+  const covDiag = diag?.coverageDiagnostics as
+    | { ht?: CoverageBreakdown; corners?: CoverageBreakdown }
+    | undefined;
+
   switch (code) {
     case "INSUFFICIENT_HT_HISTORY":
+      if (covDiag?.ht) {
+        return `First-half markets not advised: blended HT coverage ${htPct != null ? `${Number(htPct).toFixed(1)}%` : "unknown"} (${coverageBreakdownLabel(covDiag.ht)}).`;
+      }
       return "First-half markets not advised: half-time result coverage is below the required threshold.";
     case "CORNERS_MODEL_UNAVAILABLE":
+      if (covDiag?.corners) {
+        return `Corners not advised: blended corners coverage ${cornersPct != null ? `${Number(cornersPct).toFixed(1)}%` : "unknown"} (${coverageBreakdownLabel(covDiag.corners)}).`;
+      }
       return "Corners not advised: sufficient validated corner history is unavailable.";
     case "LOW_CALIBRATION_SAMPLE":
       return "Calibration sample too small for this market context.";

@@ -4,6 +4,10 @@
  * into the 2026/27 card as current-season truth.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  primaryFtSeasonStats,
+  type SystemSeasonTeamMatchStats,
+} from "@/lib/system-season/roster-stats";
 import { lookupClubConcededBaseline } from "./conceded-half-baselines";
 import { lookupClubCornersBaseline } from "./corners-baselines";
 import { lookupClubHalfBaseline } from "./half-goals-baselines";
@@ -102,6 +106,7 @@ export function fillTeamSeasonCard(
     season?: typeof PL_SEASON_2026_27;
     batches?: PredictionBatch[];
     seed_paused?: boolean;
+    systemSeasonStats?: SystemSeasonTeamMatchStats;
     apiStats?: {
       played: number | null;
       goalsFor: number | null;
@@ -118,7 +123,12 @@ export function fillTeamSeasonCard(
   const half = exactHalfRow(name, season);
   const corners = exactCornersRow(name, season);
   const conceded = exactConcededRow(name, season);
-  const live = countLivePlMatches(name, opts?.batches ?? [], season);
+  const live = primaryFtSeasonStats(
+    opts?.systemSeasonStats,
+    countLivePlMatches(name, opts?.batches ?? [], season)
+  );
+  const ftFromSystemSeason =
+    (opts?.systemSeasonStats?.matches ?? 0) > 0;
 
   let matches_played: number | null = null;
   let goals_scored_pg: number | null = null;
@@ -184,7 +194,7 @@ export function fillTeamSeasonCard(
   };
 
   if (live.matches > 0) {
-    card.statsSource = "batch";
+    card.statsSource = ftFromSystemSeason ? "system-season" : "batch";
     card.statsUnavailableReason = null;
   } else if (
     goals_scored_pg != null ||
@@ -285,7 +295,8 @@ export function buildAllPlSeasonCards(
       goalsAgainst: number | null;
       planGated?: boolean;
     }
-  >
+  >,
+  systemSeasonByTeam?: Map<string, SystemSeasonTeamMatchStats>
 ): Record<string, PlTeamSeasonCard> {
   const cards: Record<string, PlTeamSeasonCard> = {};
   for (const team of PL_2026_27_PROVISIONAL_TEAMS) {
@@ -293,7 +304,46 @@ export function buildAllPlSeasonCards(
       batches,
       seed_paused: pausedTeams?.has(team),
       apiStats: apiStatsByTeam?.get(team) ?? null,
+      systemSeasonStats: systemSeasonByTeam?.get(standardizeTeamName(team)),
     });
   }
   return cards;
+}
+
+export async function buildAllPlSeasonCardsAsync(
+  batches?: PredictionBatch[],
+  pausedTeams?: Set<string>,
+  apiStatsByTeam?: Map<
+    string,
+    {
+      played: number | null;
+      goalsFor: number | null;
+      goalsAgainst: number | null;
+      planGated?: boolean;
+    }
+  >
+): Promise<Record<string, PlTeamSeasonCard>> {
+  const { isSystemSeasonBlendEnabled } = await import(
+    "@/lib/system-season/feature-flags"
+  );
+  const { preloadRosterStatsForTeams } = await import(
+    "@/lib/system-season/roster-stats"
+  );
+  let systemSeasonByTeam: Map<string, SystemSeasonTeamMatchStats> | undefined;
+  if (isSystemSeasonBlendEnabled()) {
+    try {
+      systemSeasonByTeam = await preloadRosterStatsForTeams(
+        PL_LEAGUE_NAME,
+        PL_2026_27_PROVISIONAL_TEAMS
+      );
+    } catch {
+      systemSeasonByTeam = undefined;
+    }
+  }
+  return buildAllPlSeasonCards(
+    batches,
+    pausedTeams,
+    apiStatsByTeam,
+    systemSeasonByTeam
+  );
 }

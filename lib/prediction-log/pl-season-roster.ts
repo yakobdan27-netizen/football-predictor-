@@ -52,7 +52,7 @@ export interface PlTeamSeasonCard {
   /** True when API roster verify could not confirm this provisional name. */
   seed_paused?: boolean;
   /** Where goal/rate numerics came from — never invent. */
-  statsSource?: "api-football" | "batch" | "seed" | null;
+  statsSource?: "api-football" | "batch" | "seed" | "system-season" | null;
   /** When numerics are null, explain why (plan/sync), not a blank. */
   statsUnavailableReason?: string | null;
 }

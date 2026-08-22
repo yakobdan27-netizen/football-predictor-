@@ -5,6 +5,7 @@ import {
   isBlendEligible,
   isSystemGroupProvenance,
 } from "./provenance";
+import { systemGroupFromSeasonCorpus } from "./source-groups";
 
 function test(name: string, fn: () => void) {
   try {
@@ -48,6 +49,17 @@ test("hist / seed / learner store hints", () => {
   assert.equal(classifyStoreHint("seed_baseline"), "system_historical");
   assert.equal(classifyStoreHint("learner_aggregate"), "ai_learner");
   assert.equal(isSystemGroupProvenance("ai_learner"), true);
+  assert.equal(isSystemGroupProvenance("system_season_corpus"), true);
+});
+
+test("system season corpus group", () => {
+  const g = systemGroupFromSeasonCorpus({
+    matchCount: 120,
+    dateFrom: "2026-08-15",
+    dateTo: "2026-12-20",
+  });
+  assert.equal(g.recordCount, 120);
+  assert.equal(g.byProvenance.system_season_corpus, 120);
 });
 
 console.log("provenance tests passed");

@@ -150,6 +150,38 @@ export function BestMarketAdvisoryCard({ advisory, loading, compact }: Props) {
         Advisory only — not a guarantee. Probabilities reflect pre-kickoff model evidence.
       </p>
 
+      {advisory.specialistCoverage && (
+        <div
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--muted)",
+            marginBottom: "0.65rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+          }}
+        >
+          {advisory.specialistCoverage.ht && (
+            <div>
+              HT coverage: {advisory.specialistCoverage.ht.pct ?? "—"}% · API{" "}
+              {Math.round(advisory.specialistCoverage.ht.effectiveApiWeight * 100)}% / System{" "}
+              {Math.round(advisory.specialistCoverage.ht.effectiveSystemWeight * 100)}% (api n=
+              {advisory.specialistCoverage.ht.apiRecords}, system n=
+              {advisory.specialistCoverage.ht.systemRecords})
+            </div>
+          )}
+          {advisory.specialistCoverage.corners && (
+            <div>
+              Corners coverage: {advisory.specialistCoverage.corners.pct ?? "—"}% · API{" "}
+              {Math.round(advisory.specialistCoverage.corners.effectiveApiWeight * 100)}% / System{" "}
+              {Math.round(advisory.specialistCoverage.corners.effectiveSystemWeight * 100)}% (api n=
+              {advisory.specialistCoverage.corners.apiRecords}, system n=
+              {advisory.specialistCoverage.corners.systemRecords})
+            </div>
+          )}
+        </div>
+      )}
+
       {advisory.primary.map((p) => (
         <div
           key={p.rank}

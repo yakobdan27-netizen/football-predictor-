@@ -138,6 +138,61 @@ export function apiGroupFromHistSamples(input: {
   };
 }
 
+/** 40% side: auto-collected 2026/27 system_season_* corpus. */
+export function systemGroupFromSeasonCorpus(input: {
+  matchCount: number;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): SourceGroupSummary {
+  return {
+    recordCount: Math.max(0, input.matchCount),
+    dateRange: {
+      from: input.dateFrom ?? null,
+      to: input.dateTo ?? null,
+    },
+    byProvenance: { system_season_corpus: Math.max(0, input.matchCount) },
+    excludedUnknown: 0,
+  };
+}
+
+/**
+ * Resolve system-group summary: system_season corpus when blend flag on,
+ * otherwise settled KV batch matches.
+ */
+export async function resolveSystemGroupSummary(
+  batches: PredictionBatch[],
+  league?: string
+): Promise<SourceGroupSummary & { unknownBatches: number }> {
+  const { isSystemSeasonBlendEnabled } = await import(
+    "@/lib/system-season/feature-flags"
+  );
+  if (isSystemSeasonBlendEnabled() && league) {
+    const { apiLeagueId } = await import("@/lib/football-api/leagues");
+    const { countSystemSeasonMatchRecords } = await import(
+      "@/lib/system-season/store"
+    );
+    const leagueId = apiLeagueId(league);
+    if (leagueId != null) {
+      const corpus = await countSystemSeasonMatchRecords(leagueId);
+      const summary = systemGroupFromSeasonCorpus({
+        matchCount: corpus.count,
+        dateFrom: corpus.dateFrom,
+        dateTo: corpus.dateTo,
+      });
+      return { ...summary, unknownBatches: 0 };
+    }
+  }
+
+  const systemInfo = countValidSystemMatchRecords(batches);
+  return {
+    recordCount: systemInfo.count,
+    dateRange: systemInfo.dateRange,
+    byProvenance: { manual_batch: systemInfo.count },
+    excludedUnknown: systemInfo.unknownBatches,
+    unknownBatches: systemInfo.unknownBatches,
+  };
+}
+
 export function seedBaselineRecord<T>(
   id: string,
   payload: T,

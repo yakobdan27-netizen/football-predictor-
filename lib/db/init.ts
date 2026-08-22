@@ -1,7 +1,7 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 /** Bump when additive DDL changes so cold starts can skip full bootstrap. */
-const SCHEMA_BOOTSTRAP_VERSION = 3;
+const SCHEMA_BOOTSTRAP_VERSION = 4;
 
 let initialized = false;
 let ensureSchemaPromise: Promise<void> | null = null;
@@ -1060,6 +1060,107 @@ async function runEnsureSchema(): Promise<void> {
   `;
   await ddl`CREATE INDEX IF NOT EXISTS market_advisory_audit_events_run_idx ON market_advisory_audit_events (advisory_run_id)`;
   await ddl`CREATE INDEX IF NOT EXISTS market_advisory_audit_events_type_idx ON market_advisory_audit_events (event_type)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS system_season_fixtures (
+      fixture_id integer PRIMARY KEY,
+      league_id integer NOT NULL,
+      season integer NOT NULL,
+      date_utc timestamptz NOT NULL,
+      home_id integer,
+      away_id integer,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      venue text,
+      ht_home integer,
+      ht_away integer,
+      ft_home integer,
+      ft_away integer,
+      status text NOT NULL,
+      data_completeness text NOT NULL DEFAULT 'core-only',
+      locked integer NOT NULL DEFAULT 0,
+      synced_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_fixtures_league_season_idx ON system_season_fixtures (league_id, season)`;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_fixtures_date_idx ON system_season_fixtures (date_utc)`;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_fixtures_home_id_idx ON system_season_fixtures (home_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_fixtures_away_id_idx ON system_season_fixtures (away_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS system_season_goals (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer,
+      minute integer,
+      extra_minute integer,
+      half text NOT NULL,
+      player text,
+      type text
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_goals_fixture_idx ON system_season_goals (fixture_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS system_season_stats (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer NOT NULL,
+      shots integer,
+      sot integer,
+      possession integer,
+      corners integer,
+      yellow integer,
+      red integer,
+      fouls integer,
+      offsides integer
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_stats_fixture_team_idx ON system_season_stats (fixture_id, team_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS system_season_lineups (
+      id serial PRIMARY KEY,
+      fixture_id integer NOT NULL,
+      team_id integer NOT NULL,
+      formation text,
+      starting_json text,
+      substitutes_json text
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_lineups_fixture_team_idx ON system_season_lineups (fixture_id, team_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS system_season_team_rates (
+      team_id integer NOT NULL,
+      league_id integer NOT NULL,
+      season integer NOT NULL,
+      team_name text NOT NULL,
+      n_matches integer NOT NULL DEFAULT 0,
+      af1 real,
+      af2 real,
+      da1 real,
+      da2 real,
+      avg_corners_for real,
+      avg_corners_against real,
+      data_completeness text NOT NULL DEFAULT 'core-only',
+      updated_at timestamptz NOT NULL,
+      PRIMARY KEY (team_id, league_id, season)
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS system_season_team_rates_league_season_idx ON system_season_team_rates (league_id, season)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS system_season_sync_meta (
+      league_id integer PRIMARY KEY,
+      season integer NOT NULL,
+      last_run_at timestamptz,
+      last_error text,
+      fixtures_synced integer NOT NULL DEFAULT 0,
+      cursor_fixture_id integer,
+      backfill_complete integer NOT NULL DEFAULT 0
+    )
+  `;
 
   await ddl`
     INSERT INTO app_schema_meta (id, version, updated_at)

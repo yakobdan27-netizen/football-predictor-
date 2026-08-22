@@ -34,6 +34,7 @@ import { outcomeProbsFromMatrix } from "@/lib/predictor/score-matrix";
 import { weightedEstimate, type BlendSource } from "./prediction-weights";
 import {
   attachCfeBlendedEnvelope,
+  attachCfeBlendedEnvelopeAsync,
   type CanonicalFixtureEstimateWithBlend,
 } from "@/lib/analysis/attach-cfe-blend";
 import type { BlendedPayload } from "@/lib/analysis/blended-analysis-service";
@@ -63,8 +64,24 @@ import {
   type ClubHalfAttackDefence,
 } from "./hsh-half-rates";
 import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
+import { isSystemSeasonBlendEnabled } from "@/lib/system-season/feature-flags";
+import {
+  lambdasFromSystemSeasonSnapshots,
+} from "@/lib/system-season/blend-adapter";
+import {
+  preloadSystemSeasonRates,
+  systemSeasonRatesCacheKey,
+  type SystemSeasonRatesSnapshot,
+} from "@/lib/system-season/team-rates";
 import { estimateTempoProfile } from "./half-tempo";
 import type { TwoHHeavyResult } from "./two-h-heavy/types";
+import {
+  computeCornersCoverageSync,
+  computeHtCoverageSync,
+  enrichCoverageAsync,
+  loadCornersRatesPair,
+  type CoverageBreakdown,
+} from "./specialist-data-coverage";
 import type { PredictionBatch } from "./types";
 
 export type CanonicalFixtureEstimate = {
@@ -113,6 +130,10 @@ export type CanonicalFixtureEstimate = {
     apiSeasonCurrentN?: number;
   };
   coverage: { ht_pct: number | null; corners_pct: number | null };
+  coverageDiagnostics?: {
+    ht?: CoverageBreakdown;
+    corners?: CoverageBreakdown;
+  };
   confidence_tier: "high" | "medium" | "low";
   model_params_version: string;
   rho: number;
@@ -349,6 +370,34 @@ export function canonicalFixtureEstimateSync(
     totalGoals.lines[2.5] = { over: over25Aligned, under: under25Aligned };
   }
 
+  const cornersRates = loadCornersRatesPair({
+    homeTeam: input.homeTeam,
+    awayTeam: input.awayTeam,
+    league: input.league,
+    batches: input.batches,
+    beforeDate: input.beforeDate,
+  });
+
+  const htCoverage = computeHtCoverageSync({
+    homeTeam: input.homeTeam,
+    awayTeam: input.awayTeam,
+    league: input.league,
+    batches: input.batches,
+    beforeDate: input.beforeDate,
+    homeRates: input.hshCtx.homeRates,
+    awayRates: input.hshCtx.awayRates,
+  });
+
+  const cornersCoverage = computeCornersCoverageSync({
+    homeTeam: input.homeTeam,
+    awayTeam: input.awayTeam,
+    league: input.league,
+    batches: input.batches,
+    beforeDate: input.beforeDate,
+    homeCorners: cornersRates.home,
+    awayCorners: cornersRates.away,
+  });
+
   const estimate: CanonicalFixtureEstimate = {
     lambdas: {
       home: lambdaHome,
@@ -405,8 +454,12 @@ export function canonicalFixtureEstimateSync(
         : {}),
     },
     coverage: {
-      ht_pct: input.coverage?.ht_pct ?? null,
-      corners_pct: input.coverage?.corners_pct ?? null,
+      ht_pct: input.coverage?.ht_pct ?? htCoverage.pct,
+      corners_pct: input.coverage?.corners_pct ?? cornersCoverage.pct,
+    },
+    coverageDiagnostics: {
+      ht: htCoverage,
+      corners: cornersCoverage,
     },
     confidence_tier,
     model_params_version: params.version || MODEL_PARAMS_VERSION,
@@ -468,6 +521,7 @@ export type BatchCanonicalEstimateOpts = {
   modelParams?: ModelParamsStore;
   halfParamsStore?: HalfParamsStore | null;
   matchCentreCache?: Map<string, ClubHalfAttackDefence>;
+  systemSeasonCache?: Map<string, SystemSeasonRatesSnapshot>;
 };
 
 /** Unique (team, league) pairs for Match Centre preload. */
@@ -544,8 +598,23 @@ export function estimateBatchCanonical(
       match,
       batch,
       allBatches,
-      opts?.matchCentreCache
+      isSystemSeasonBlendEnabled() ? undefined : opts?.matchCentreCache
     );
+
+    let manualLambdas: CanonicalFixtureInput["manualLambdas"];
+    if (isSystemSeasonBlendEnabled() && opts?.systemSeasonCache) {
+      const homeSnap = opts.systemSeasonCache.get(
+        systemSeasonRatesCacheKey(match.homeTeam, league)
+      );
+      const awaySnap = opts.systemSeasonCache.get(
+        systemSeasonRatesCacheKey(match.awayTeam, league)
+      );
+      const sys = lambdasFromSystemSeasonSnapshots(homeSnap, awaySnap, league);
+      if (sys.lambdaHome != null && sys.lambdaAway != null) {
+        manualLambdas = { home: sys.lambdaHome, away: sys.lambdaAway };
+      }
+    }
+
     return canonicalFixtureEstimateSync(
       {
         matchId: match.id,
@@ -555,6 +624,7 @@ export function estimateBatchCanonical(
         batches: allBatches,
         beforeDate: batch.date,
         hshCtx,
+        manualLambdas,
       },
       { modelParams: params, halfParamsStore: halfStore }
     );
@@ -568,19 +638,71 @@ export async function estimateBatchCanonicalAsync(
   opts?: BatchCanonicalEstimateOpts
 ): Promise<CanonicalFixtureEstimate[]> {
   let matchCentreCache = opts?.matchCentreCache;
-  if (!matchCentreCache) {
+  let systemSeasonCache = opts?.systemSeasonCache;
+  const pairs = collectBatchTeamLeaguePairs(batch);
+
+  if (isSystemSeasonBlendEnabled()) {
+    if (!systemSeasonCache) {
+      try {
+        systemSeasonCache = await preloadSystemSeasonRates(pairs);
+      } catch {
+        systemSeasonCache = undefined;
+      }
+    }
+  } else if (!matchCentreCache) {
     try {
-      matchCentreCache = await preloadMatchCentreHalfRates(
-        collectBatchTeamLeaguePairs(batch)
-      );
+      matchCentreCache = await preloadMatchCentreHalfRates(pairs);
     } catch {
       matchCentreCache = undefined;
     }
   }
-  return estimateBatchCanonical(batch, allBatches, {
+
+  const sync = estimateBatchCanonical(batch, allBatches, {
     ...opts,
     matchCentreCache,
+    systemSeasonCache,
   });
+
+  return Promise.all(
+    sync.map(async (est, i) => {
+      const match = batch.matches[i]!;
+      const league = matchLeague(match, batch.league);
+      const hshCtx = buildHshCtxForMatch(
+        match,
+        batch,
+        allBatches,
+        matchCentreCache
+      );
+      try {
+        const enriched = await enrichCoverageAsync({
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          league,
+          batches: allBatches,
+          beforeDate: batch.date,
+          homeRates: hshCtx.homeRates,
+          awayRates: hshCtx.awayRates,
+        });
+        return attachCfeBlendedEnvelopeAsync(
+          {
+            ...est,
+            coverage: {
+              ht_pct: enriched.ht.pct,
+              corners_pct: enriched.corners.pct,
+            },
+            coverageDiagnostics: {
+              ht: enriched.ht,
+              corners: enriched.corners,
+            },
+          },
+          allBatches,
+          { league }
+        );
+      } catch {
+        return est;
+      }
+    })
+  );
 }
 
 export type LadderRankFromCfe = TwoHHeavyResult & {

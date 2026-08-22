@@ -87,15 +87,17 @@ export function runMarketAdvisory(
           : "complete";
 
   const ineligibleCodes = new Set<string>();
+  const sampleDiag = msamCandidates.find((c) => !c.eligible)?.diagnosticSnapshot;
+
   msamCandidates
     .filter((c) => !c.eligible)
     .forEach((c) => c.ineligibilityReasonCodes.forEach((r) => ineligibleCodes.add(r)));
 
   if (ineligibleCodes.has("INSUFFICIENT_HT_HISTORY")) {
-    warnings.push(ineligibleNote("INSUFFICIENT_HT_HISTORY"));
+    warnings.push(ineligibleNote("INSUFFICIENT_HT_HISTORY", sampleDiag));
   }
   if (ineligibleCodes.has("CORNERS_MODEL_UNAVAILABLE")) {
-    warnings.push(ineligibleNote("CORNERS_MODEL_UNAVAILABLE"));
+    warnings.push(ineligibleNote("CORNERS_MODEL_UNAVAILABLE", sampleDiag));
   }
 
   const runId = `mar-${input.fixtureId}-${Date.now()}`;
@@ -177,9 +179,56 @@ export function toUiPayload(result: MarketAdvisoryRunResult): MarketAdvisoryUiPa
       ...new Set(
         result.rejected
           .flatMap((c) => c.ineligibilityReasonCodes)
-          .map(ineligibleNote)
+          .map((code) =>
+            ineligibleNote(code, result.rejected[0]?.diagnosticSnapshot)
+          )
       ),
     ],
+    specialistCoverage: mapSpecialistCoverage(result),
+  };
+}
+
+function mapSpecialistCoverage(result: MarketAdvisoryRunResult) {
+  const diag = result.candidates.find(
+    (c) => c.diagnosticSnapshot?.coverageDiagnostics
+  )?.diagnosticSnapshot?.coverageDiagnostics as
+    | {
+        ht?: {
+          pct: number | null;
+          apiRecords: number;
+          systemRecords: number;
+          effectiveApiWeight: number;
+          effectiveSystemWeight: number;
+        };
+        corners?: {
+          pct: number | null;
+          apiRecords: number;
+          systemRecords: number;
+          effectiveApiWeight: number;
+          effectiveSystemWeight: number;
+        };
+      }
+    | undefined;
+  if (!diag) return undefined;
+  return {
+    ht: diag.ht
+      ? {
+          pct: diag.ht.pct,
+          apiRecords: diag.ht.apiRecords,
+          systemRecords: diag.ht.systemRecords,
+          effectiveApiWeight: diag.ht.effectiveApiWeight,
+          effectiveSystemWeight: diag.ht.effectiveSystemWeight,
+        }
+      : undefined,
+    corners: diag.corners
+      ? {
+          pct: diag.corners.pct,
+          apiRecords: diag.corners.apiRecords,
+          systemRecords: diag.corners.systemRecords,
+          effectiveApiWeight: diag.corners.effectiveApiWeight,
+          effectiveSystemWeight: diag.corners.effectiveSystemWeight,
+        }
+      : undefined,
   };
 }
 

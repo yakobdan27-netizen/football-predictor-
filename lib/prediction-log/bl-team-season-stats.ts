@@ -3,6 +3,10 @@
  * Exact-season rows required — never invent or copy prior seasons into the card.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  primaryFtSeasonStats,
+  type SystemSeasonTeamMatchStats,
+} from "@/lib/system-season/roster-stats";
 import { lookupClubConcededBaseline } from "./conceded-half-baselines";
 import { lookupClubCornersBaseline } from "./corners-baselines";
 import { lookupClubHalfBaseline } from "./half-goals-baselines";
@@ -95,6 +99,7 @@ export function fillBlTeamSeasonCard(
     batches?: PredictionBatch[];
     seed_paused?: boolean;
     rosterTeams?: string[];
+    systemSeasonStats?: SystemSeasonTeamMatchStats;
   }
 ): BlTeamSeasonCard {
   const season = opts?.season ?? BL_SEASON_2026_27;
@@ -108,7 +113,10 @@ export function fillBlTeamSeasonCard(
   const half = exactHalfRow(name, season);
   const corners = exactCornersRow(name, season);
   const conceded = exactConcededRow(name, season);
-  const live = countLiveBlMatches(name, opts?.batches ?? [], season);
+  const live = primaryFtSeasonStats(
+    opts?.systemSeasonStats,
+    countLiveBlMatches(name, opts?.batches ?? [], season)
+  );
 
   let matches_played: number | null = null;
   let goals_scored_pg: number | null = null;
@@ -232,7 +240,8 @@ function liveVenueSplits(
 export function buildAllBlSeasonCards(
   batches?: PredictionBatch[],
   pausedTeams?: Set<string>,
-  teamList?: string[]
+  teamList?: string[],
+  systemSeasonByTeam?: Map<string, SystemSeasonTeamMatchStats>
 ): Record<string, BlTeamSeasonCard> {
   const list = teamList ?? [];
   const cards: Record<string, BlTeamSeasonCard> = {};
@@ -241,7 +250,39 @@ export function buildAllBlSeasonCards(
       batches,
       seed_paused: pausedTeams?.has(team),
       rosterTeams: list,
+      systemSeasonStats: systemSeasonByTeam?.get(standardizeTeamName(team)),
     });
   }
   return cards;
+}
+
+export async function buildAllBlSeasonCardsAsync(
+  batches?: PredictionBatch[],
+  pausedTeams?: Set<string>,
+  teamList?: string[]
+): Promise<Record<string, BlTeamSeasonCard>> {
+  const list = teamList ?? [];
+  const { isSystemSeasonBlendEnabled } = await import(
+    "@/lib/system-season/feature-flags"
+  );
+  const { preloadRosterStatsForTeams } = await import(
+    "@/lib/system-season/roster-stats"
+  );
+  let systemSeasonByTeam: Map<string, SystemSeasonTeamMatchStats> | undefined;
+  if (isSystemSeasonBlendEnabled() && list.length) {
+    try {
+      systemSeasonByTeam = await preloadRosterStatsForTeams(
+        BL_LEAGUE_NAME,
+        list
+      );
+    } catch {
+      systemSeasonByTeam = undefined;
+    }
+  }
+  return buildAllBlSeasonCards(
+    batches,
+    pausedTeams,
+    list,
+    systemSeasonByTeam
+  );
 }

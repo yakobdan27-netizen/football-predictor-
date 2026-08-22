@@ -3,6 +3,10 @@
  * Exact-season rows required — never invent or copy prior seasons into the card.
  */
 import { standardizeTeamName } from "@/lib/data/team-names";
+import {
+  primaryFtSeasonStats,
+  type SystemSeasonTeamMatchStats,
+} from "@/lib/system-season/roster-stats";
 import { lookupClubConcededBaseline } from "./conceded-half-baselines";
 import { lookupClubCornersBaseline } from "./corners-baselines";
 import { lookupClubHalfBaseline } from "./half-goals-baselines";
@@ -95,6 +99,7 @@ export function fillSaTeamSeasonCard(
     season?: typeof SA_SEASON_2026_27;
     batches?: PredictionBatch[];
     seed_paused?: boolean;
+    systemSeasonStats?: SystemSeasonTeamMatchStats;
   }
 ): SaTeamSeasonCard {
   const season = opts?.season ?? SA_SEASON_2026_27;
@@ -105,7 +110,10 @@ export function fillSaTeamSeasonCard(
   const half = exactHalfRow(name, season);
   const corners = exactCornersRow(name, season);
   const conceded = exactConcededRow(name, season);
-  const live = countLiveSaMatches(name, opts?.batches ?? [], season);
+  const live = primaryFtSeasonStats(
+    opts?.systemSeasonStats,
+    countLiveSaMatches(name, opts?.batches ?? [], season)
+  );
 
   let matches_played: number | null = null;
   let goals_scored_pg: number | null = null;
@@ -229,7 +237,8 @@ function liveVenueSplits(
 export function buildAllSaSeasonCards(
   batches?: PredictionBatch[],
   pausedTeams?: Set<string>,
-  teamList?: string[]
+  teamList?: string[],
+  systemSeasonByTeam?: Map<string, SystemSeasonTeamMatchStats>
 ): Record<string, SaTeamSeasonCard> {
   const list = teamList?.length ? teamList : SA_2026_27_PROVISIONAL_TEAMS;
   const cards: Record<string, SaTeamSeasonCard> = {};
@@ -237,7 +246,39 @@ export function buildAllSaSeasonCards(
     cards[team] = fillSaTeamSeasonCard(team, {
       batches,
       seed_paused: pausedTeams?.has(team),
+      systemSeasonStats: systemSeasonByTeam?.get(standardizeTeamName(team)),
     });
   }
   return cards;
+}
+
+export async function buildAllSaSeasonCardsAsync(
+  batches?: PredictionBatch[],
+  pausedTeams?: Set<string>,
+  teamList?: string[]
+): Promise<Record<string, SaTeamSeasonCard>> {
+  const list = teamList?.length ? teamList : SA_2026_27_PROVISIONAL_TEAMS;
+  const { isSystemSeasonBlendEnabled } = await import(
+    "@/lib/system-season/feature-flags"
+  );
+  const { preloadRosterStatsForTeams } = await import(
+    "@/lib/system-season/roster-stats"
+  );
+  let systemSeasonByTeam: Map<string, SystemSeasonTeamMatchStats> | undefined;
+  if (isSystemSeasonBlendEnabled()) {
+    try {
+      systemSeasonByTeam = await preloadRosterStatsForTeams(
+        SA_LEAGUE_NAME,
+        list
+      );
+    } catch {
+      systemSeasonByTeam = undefined;
+    }
+  }
+  return buildAllSaSeasonCards(
+    batches,
+    pausedTeams,
+    list,
+    systemSeasonByTeam
+  );
 }

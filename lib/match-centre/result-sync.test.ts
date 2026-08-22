@@ -36,7 +36,6 @@ test("mapToLiveFixture maps upcoming row to live fixture", () => {
 test("match-centre modules do not import prediction-log writers", () => {
   const files = [
     "match-centre/register-fixtures.ts",
-    "match-centre/result-sync.ts",
     "match-centre/recent-results.ts",
   ];
   const importLine = /^\s*import\s+.+\s+from\s+["']([^"']+)["']/gm;
@@ -51,6 +50,17 @@ test("match-centre modules do not import prediction-log writers", () => {
       );
     }
   }
+});
+
+test("result-sync may import live-fixtures bridge only", () => {
+  const text = readFileSync(
+    resolve(ROOT, "match-centre/result-sync.ts"),
+    "utf8"
+  );
+  const importLine = /^\s*import\s+.+\s+from\s+["']([^"']+)["']/gm;
+  const imports = [...text.matchAll(importLine)].map((m) => m[1] ?? "");
+  const plImports = imports.filter((s) => s.includes("prediction-log"));
+  assert.deepEqual(plImports, ["@/lib/prediction-log/sync-from-live-fixtures"]);
 });
 
 test("result-sync imports live and bets only (not sync-results)", () => {
