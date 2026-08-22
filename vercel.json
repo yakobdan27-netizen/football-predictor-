@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/fill-telegram-results",
-      "schedule": "*/30 6-22 * * *"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron/live-daily-sweep",
@@ -21,40 +21,16 @@
       "schedule": "0 5 * * *"
     },
     {
-      "path": "/api/cron/hist-backfill",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/hist-backfill",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/hist-backfill",
-      "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/cron/hist-backfill",
-      "schedule": "0 21 * * *"
-    },
-    {
       "path": "/api/cron/match-centre-results",
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/match-centre-results",
-      "schedule": "0 20 * * *"
-    },
-    {
-      "path": "/api/cron/match-centre-results",
-      "schedule": "0 14 * * *"
-    },
-    {
       "path": "/api/cron/live-poll",
-      "schedule": "*/15 10-23 * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron/system-season-sync",
-      "schedule": "*/30 8-23 * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/cron/live-prematch",
