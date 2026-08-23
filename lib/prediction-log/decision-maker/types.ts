@@ -86,10 +86,10 @@ export interface MatchDecisionRow {
   batchId: string;
   batchDisplayId: string;
   league: string;
-  /** Exactly three markets from the Decision Maker engine. */
-  markets: ScoredDecisionMarket[];
+  /** Auto-selected best market (null when no candidate meets min confidence). */
+  bestMarket: ScoredDecisionMarket | null;
   /**
-   * Mandatory 4th decision: best Combined Odds pick (exclude top-3 overlap when possible).
+   * Mandatory combo decision: best Combined Odds pick (exclude system pick overlap when possible).
    * Null only when no combo candidates / no score grid.
    */
   bestCombined: MatchComboResult["selected"];

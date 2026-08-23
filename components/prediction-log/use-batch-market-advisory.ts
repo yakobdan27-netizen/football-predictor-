@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import type { MatchDecisionRow } from "@/lib/prediction-log/decision-maker/types";
 import type { MarketAdvisoryUiPayload } from "@/lib/market-advisory/types";
-import type { ScoredDecisionMarket } from "@/lib/prediction-log/decision-maker/types";
 
 export function useBatchMarketAdvisory(input: {
   rows: MatchDecisionRow[];
@@ -49,7 +48,7 @@ export function useBatchMarketAdvisory(input: {
               kickoffIso: row.match.matchDate,
               emsKind: "decision_maker",
               cfe,
-              emsMarkets: row.markets as ScoredDecisionMarket[],
+              emsMarkets: row.bestMarket ? [row.bestMarket] : [],
             }),
           });
           const json = await res.json();

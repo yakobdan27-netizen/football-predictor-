@@ -110,7 +110,7 @@ test("parseBulkMatchText allows missing date when defaults omit date", () => {
   assert.equal(parsed.matches[0]!.date, "");
 });
 
-test("formatDecisionMessages includes 5 decisions and warn marker", () => {
+test("formatDecisionMessages includes system pick, combo, user eval and warn marker", () => {
   const result: BotDecisionResponse = {
     batchId: "b1",
     batchName: "Demo",
@@ -123,6 +123,13 @@ test("formatDecisionMessages includes 5 decisions and warn marker", () => {
         date: "2026-07-20",
         incomplete: false,
         confidenceScore: 68,
+        systemPick: {
+          label: "Total goals O/U",
+          prediction: "Over 1.5",
+          confidence: 55,
+          category: "goals",
+          warn: true,
+        },
         bestCombined: {
           label: "BTTS + Over 2.5",
           odds: 1.85,
@@ -135,37 +142,12 @@ test("formatDecisionMessages includes 5 decisions and warn marker", () => {
           comment: "Good — selected market aligns with the engine (≈67%).",
           probabilityPct: 67,
         },
-        markets: [
-          {
-            rank: 1,
-            label: "Total goals O/U",
-            prediction: "Over 1.5",
-            confidence: 82,
-            category: "goals",
-            warn: false,
-          },
-          {
-            rank: 2,
-            label: "BTTS",
-            prediction: "Yes",
-            confidence: 66,
-            category: "goals",
-            warn: false,
-          },
-          {
-            rank: 3,
-            label: "Corners",
-            prediction: "Over 9.5",
-            confidence: 55,
-            category: "corners",
-            warn: true,
-          },
-        ],
       },
     ],
   };
   const msgs = formatDecisionMessages(result);
   assert.ok(msgs[0]!.includes("Arsenal vs Chelsea"));
+  assert.ok(msgs[0]!.includes("System pick"));
   assert.ok(msgs[0]!.includes("⚠️"));
   assert.ok(msgs[0]!.includes("Combined Odd"));
   assert.ok(msgs[0]!.includes("BTTS + Over 2.5"));

@@ -195,6 +195,10 @@ export async function upsertBatch(batch: PredictionBatch): Promise<PredictionBat
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Failed to save batch");
+  if (data.archived && data.batchId) {
+    batchesCache = batchesCache.filter((b) => b.id !== data.batchId);
+    return batchesCache;
+  }
   const saved = data.batch as PredictionBatch;
   const idx = batchesCache.findIndex((b) => b.id === saved.id);
   if (idx >= 0) batchesCache[idx] = saved;

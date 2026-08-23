@@ -20,7 +20,7 @@ import type { ClubHalfAttackDefence } from "../hsh-half-rates";
 import { pickMandatoryCombo } from "./combo-exclude";
 import {
   aggregateMatchData,
-  generateTopThreeMarkets,
+  generateBestMarket,
 } from "./decision-engine";
 import { applyCoherentMarketConfidences } from "./coherent-confidence";
 import { categoryForLogMarket } from "./market-category";
@@ -68,15 +68,14 @@ function fallbacksFromMatch(
   return out.sort((a, b) => b.confidence - a.confidence);
 }
 
-/** System % for a user marketKey from recommendation snapshot or top-3. */
+/** System % for a user marketKey from recommendation snapshot or system pick. */
 function systemPctForUserMarket(
   batch: PredictionBatch,
   matchId: string,
   marketKey: string,
-  topThree: MatchDecisionRow["markets"]
+  systemPick: MatchDecisionRow["bestMarket"]
 ): number | null {
-  const inTop = topThree.find((m) => m.marketKey === marketKey);
-  if (inTop) return inTop.confidence;
+  if (systemPick?.marketKey === marketKey) return systemPick.confidence;
 
   const rm = batch.recommended?.matches.find((m) => m.id === matchId);
   if (rm) {
@@ -145,7 +144,7 @@ export function processBatchDecisions(params: {
       caches,
     };
     const matchData = aggregateMatchData(ctx);
-    const result = generateTopThreeMarkets(
+    const result = generateBestMarket(
       matchData,
       fallbacksFromMatch(batch, match),
       {
@@ -155,17 +154,21 @@ export function processBatchDecisions(params: {
         awayTeam: match.awayTeam,
       }
     );
-    result.markets = applyCoherentMarketConfidences(result.markets, {
-      batch,
-      match,
-      caches,
-    });
+    let bestMarket = result.bestMarket;
+    if (bestMarket) {
+      const [coherent] = applyCoherentMarketConfidences([bestMarket], {
+        batch,
+        match,
+        caches,
+      });
+      bestMarket = coherent ?? bestMarket;
+    }
 
-    const topKeys = result.markets.map((m) => m.marketKey);
+    const systemKeys = bestMarket ? [bestMarket.marketKey] : [];
     const comboRow = caches.comboByMatchId.get(match.id) ?? null;
     const evaluated = comboRow?.allEvaluated ?? [];
     const bestCombined =
-      pickMandatoryCombo(evaluated, topKeys) ?? comboRow?.selected ?? null;
+      pickMandatoryCombo(evaluated, systemKeys) ?? comboRow?.selected ?? null;
 
     const primaryKey = Object.entries(match.predictions).find(
       ([, p]) => p?.prediction
@@ -182,17 +185,17 @@ export function processBatchDecisions(params: {
       }
     }
     const systemPct = lookupKey
-      ? systemPctForUserMarket(batch, match.id, lookupKey, result.markets)
+      ? systemPctForUserMarket(batch, match.id, lookupKey, bestMarket)
       : null;
 
     const userMarketEval = buildUserMarketEvaluation({
       match,
-      topThree: result.markets,
+      systemPick: bestMarket,
       systemProbabilityPct: systemPct,
     });
 
     const confidenceScore = computeRowConfidenceScore({
-      markets: result.markets,
+      bestMarket,
       comboPFinal: bestCombined?.pFinal ?? null,
       userEval: userMarketEval,
     });
@@ -202,7 +205,7 @@ export function processBatchDecisions(params: {
       batchId: batch.id,
       batchDisplayId,
       league,
-      markets: result.markets,
+      bestMarket,
       bestCombined,
       userMarketEval,
       confidenceScore,

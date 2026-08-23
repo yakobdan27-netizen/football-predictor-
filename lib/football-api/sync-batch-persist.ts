@@ -19,6 +19,7 @@ import {
   marketsEnteredCount,
 } from "@/lib/prediction-log/scoring";
 import type { LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
+import { maybeArchiveCompletedBatch } from "@/lib/prediction-log/batch-lifecycle";
 
 export function batchDateIsPastOrToday(date: string): boolean {
   const digits = date.replace(/[^0-9]/g, "");
@@ -64,7 +65,7 @@ export function scoreBatchWithUpdatedMatches(
 
 export async function persistUpdatedBatch(
   updatedBatch: PredictionBatch
-): Promise<PredictionBatch> {
+): Promise<{ batch: PredictionBatch; archived: boolean }> {
   const allBatches = await loadAllBatches();
   const leagueBaselines = computeLeagueBaselines(allBatches);
   const teamsQuality = await loadTeamsQualityStore().catch(() => null);
@@ -75,7 +76,9 @@ export async function persistUpdatedBatch(
   await saveBatch(synced);
   await maybeRetrainOnBatchResult(synced).catch(() => null);
   await maybeBayesianCalibrateOnBatch(synced).catch(() => null);
-  return synced;
+  await recomputeGlobalStoresAfterBatchUpdates();
+  const archived = await maybeArchiveCompletedBatch(synced);
+  return { batch: synced, archived };
 }
 
 export async function recomputeGlobalStoresAfterBatchUpdates(): Promise<void> {

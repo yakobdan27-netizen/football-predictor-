@@ -17,7 +17,6 @@ import {
 } from "./sync-batch-api-fill";
 import {
   persistUpdatedBatch,
-  recomputeGlobalStoresAfterBatchUpdates,
   scoreBatchWithUpdatedMatches,
 } from "./sync-batch-persist";
 import { tracePendingMatchResults } from "./trace-fixture-by-pair";
@@ -30,6 +29,7 @@ export type SyncAllPredictionLogSummary = SyncResultsSummary & {
   remaining: string[];
   liveMerged: number;
   liveUpdatedBatches: number;
+  archivedBatchIds: string[];
 };
 
 export async function syncAllPredictionLogFromApi(opts?: {
@@ -60,6 +60,7 @@ export async function syncAllPredictionLogFromApi(opts?: {
     conflicts: [] as SyncResultsSummary["conflicts"],
     unavailable: false as boolean | undefined,
     trace: emptyTrace,
+    archivedBatchIds: [] as string[],
   };
 
   if (!opts?.skipTrace) {
@@ -72,6 +73,7 @@ export async function syncAllPredictionLogFromApi(opts?: {
       conflicts: traced.conflicts,
       unavailable: traced.unavailable,
       trace: traced.trace,
+      archivedBatchIds: traced.archivedBatchIds,
     };
     if (traceSummary.unavailable) {
       return {
@@ -82,12 +84,14 @@ export async function syncAllPredictionLogFromApi(opts?: {
         remaining: [],
         liveMerged: 0,
         liveUpdatedBatches: 0,
+        archivedBatchIds: [],
       };
     }
   }
 
   let liveMerged = 0;
   let liveUpdatedBatches = 0;
+  let liveArchivedBatchIds: string[] = [];
   const liveErrors: string[] = [];
 
   if (!opts?.skipLive) {
@@ -96,6 +100,7 @@ export async function syncAllPredictionLogFromApi(opts?: {
     });
     liveMerged = live.matchesMerged;
     liveUpdatedBatches = live.updatedBatches;
+    liveArchivedBatchIds = live.archivedBatchIds;
     liveErrors.push(...live.errors);
   }
 
@@ -117,6 +122,7 @@ export async function syncAllPredictionLogFromApi(opts?: {
       remaining: [],
       liveMerged,
       liveUpdatedBatches,
+      archivedBatchIds: [],
     };
   }
 
@@ -128,14 +134,16 @@ export async function syncAllPredictionLogFromApi(opts?: {
   });
 
   let enrichUpdatedBatches = 0;
+  const archivedBatchIds: string[] = [];
   for (const [batchId, state] of pass.updatedBatches) {
     try {
       const updatedBatch = scoreBatchWithUpdatedMatches(
         state.batch,
         state.batch.matches.map((m) => state.byId.get(m.id) ?? m)
       );
-      await persistUpdatedBatch(updatedBatch);
+      const { archived } = await persistUpdatedBatch(updatedBatch);
       enrichUpdatedBatches += 1;
+      if (archived) archivedBatchIds.push(batchId);
     } catch (e) {
       pass.errors.push(
         `Failed to save ${state.batch.batchName}: ${
@@ -147,9 +155,6 @@ export async function syncAllPredictionLogFromApi(opts?: {
 
   const totalUpdated =
     traceSummary.updatedBatches + liveUpdatedBatches + enrichUpdatedBatches;
-  if (totalUpdated > 0) {
-    await recomputeGlobalStoresAfterBatchUpdates();
-  }
 
   return {
     updatedBatches: totalUpdated,
@@ -165,6 +170,13 @@ export async function syncAllPredictionLogFromApi(opts?: {
     remaining: pass.remaining,
     liveMerged,
     liveUpdatedBatches,
+    archivedBatchIds: [
+      ...new Set([
+        ...traceSummary.archivedBatchIds,
+        ...liveArchivedBatchIds,
+        ...archivedBatchIds,
+      ]),
+    ],
   };
 }
 

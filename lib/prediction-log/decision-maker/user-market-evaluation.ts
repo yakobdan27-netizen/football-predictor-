@@ -58,11 +58,11 @@ function predictionDisplayLabel(
 }
 
 /**
- * Build the always-present 5th decision cell.
+ * Build the always-present user market evaluation cell (read-only comparison).
  */
 export function buildUserMarketEvaluation(args: {
   match: LogMatch;
-  topThree: ScoredDecisionMarket[];
+  systemPick: ScoredDecisionMarket | null;
   /** Optional system % for the same marketKey from registry/recommendation. */
   systemProbabilityPct?: number | null;
 }): UserMarketEvaluation {
@@ -88,30 +88,28 @@ export function buildUserMarketEvaluation(args: {
       ? clampConfidence(args.systemProbabilityPct)
       : primary.confidence;
 
-  // Best alternative among top-3 that isn't the same marketKey
-  const altMarket = args.topThree.find((m) => m.marketKey !== primary.marketKey) ?? null;
-  const sameInTop = args.topThree.find((m) => m.marketKey === primary.marketKey);
-
+  const systemPick = args.systemPick;
   let betterAlt: FrozenBetterAlternative | null = null;
-  if (altMarket && (!sameInTop || altMarket.confidence > systemPct + 8)) {
-    betterAlt = {
-      marketKey: altMarket.marketKey as LogMarketKey,
-      marketLabel: altMarket.label,
-      prediction: altMarket.prediction,
-      predictionLabel: altMarket.prediction,
-      pFinal: altMarket.confidence,
-      isOptimal: false,
-      deltaPct: Math.max(0, altMarket.confidence - systemPct),
-    };
-  } else if (sameInTop && Math.abs(sameInTop.confidence - systemPct) < 8) {
+
+  if (systemPick && systemPick.marketKey === primary.marketKey) {
     betterAlt = {
       marketKey: primary.marketKey,
       marketLabel,
       prediction: primary.prediction,
       predictionLabel,
-      pFinal: systemPct,
+      pFinal: systemPick.confidence,
       isOptimal: true,
       deltaPct: 0,
+    };
+  } else if (systemPick && systemPick.marketKey !== primary.marketKey) {
+    betterAlt = {
+      marketKey: systemPick.marketKey as LogMarketKey,
+      marketLabel: systemPick.label,
+      prediction: systemPick.prediction,
+      predictionLabel: systemPick.prediction,
+      pFinal: systemPick.confidence,
+      isOptimal: false,
+      deltaPct: Math.max(0, systemPick.confidence - systemPct),
     };
   }
 
@@ -139,13 +137,13 @@ export function formatUserMarketEvalLine(evalRow: UserMarketEvaluation): string 
 }
 
 export function computeRowConfidenceScore(args: {
-  markets: ScoredDecisionMarket[];
+  bestMarket: ScoredDecisionMarket | null;
   comboPFinal: number | null;
   userEval: UserMarketEvaluation;
 }): number {
   const parts: number[] = [];
-  for (const m of args.markets) {
-    if (m?.confidence != null) parts.push(clampConfidence(m.confidence));
+  if (args.bestMarket?.confidence != null) {
+    parts.push(clampConfidence(args.bestMarket.confidence));
   }
   if (args.comboPFinal != null) parts.push(clampConfidence(args.comboPFinal));
   if (args.userEval.status === "filled" && args.userEval.probabilityPct != null) {

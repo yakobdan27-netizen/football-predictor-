@@ -9,7 +9,6 @@ import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { getOwnedBatch } from "./ownership";
 
 export interface BotDecisionMarket {
-  rank: 1 | 2 | 3;
   label: string;
   prediction: string;
   confidence: number;
@@ -37,10 +36,11 @@ export interface BotMatchDecision {
   awayTeam: string;
   league: string;
   date: string;
-  markets: BotDecisionMarket[];
-  /** Mandatory 4th decision. */
+  /** Auto-selected system pick (null when no confident market). */
+  systemPick: BotDecisionMarket | null;
+  /** Mandatory combo decision. */
   bestCombined: BotCombinedOdd | null;
-  /** Mandatory 5th decision. */
+  /** Read-only user market evaluation. */
   userMarketEval: BotUserMarketEval;
   confidenceScore: number;
   incomplete: boolean;
@@ -98,14 +98,17 @@ export async function runDecisionForOwnedBatch(
       league: row.league,
       date: row.match.matchDate ?? batch.date,
       incomplete: row.incomplete,
-      markets: row.markets.slice(0, 3).map((m, i) => ({
-        rank: (i + 1) as 1 | 2 | 3,
-        label: m.label,
-        prediction: m.prediction,
-        confidence: Math.round(m.confidence),
-        category: m.category,
-        warn: confidenceWarn(m.confidence) || Boolean(m.priorWarn),
-      })),
+      systemPick: row.bestMarket
+        ? {
+            label: row.bestMarket.label,
+            prediction: row.bestMarket.prediction,
+            confidence: Math.round(row.bestMarket.confidence),
+            category: row.bestMarket.category,
+            warn:
+              confidenceWarn(row.bestMarket.confidence) ||
+              Boolean(row.bestMarket.priorWarn),
+          }
+        : null,
       bestCombined: row.bestCombined
         ? {
             label: row.bestCombined.label,
@@ -132,26 +135,28 @@ export function formatDecisionMessages(result: BotDecisionResponse): string[] {
   for (const d of result.decisions) {
     const dateLabel = formatShortDate(d.date);
     let block = `⚽ ${d.homeTeam} vs ${d.awayTeam} — ${d.league} — ${dateLabel}\n`;
-    block += `Top 3 markets:\n`;
-    for (const m of d.markets) {
+    if (d.systemPick) {
+      const m = d.systemPick;
       const band =
         m.confidence >= 80 ? "High" : m.confidence >= 60 ? "Medium" : "Low";
       const warn = m.warn ? " ⚠️" : "";
-      block += `${m.rank}) ${m.label}: ${m.prediction} — Confidence: ${band} (${m.confidence}%)${warn}\n`;
+      block += `System pick: ${m.label}: ${m.prediction} — Confidence: ${band} (${m.confidence}%)${warn}\n`;
+    } else {
+      block += `System pick: no confident pick\n`;
     }
     if (d.bestCombined) {
       const odds =
         d.bestCombined.odds != null && d.bestCombined.odds > 1
           ? d.bestCombined.odds.toFixed(2)
           : "—";
-      block += `4) Combined Odd: ${d.bestCombined.label} @ ${odds} (${Math.round(d.bestCombined.pFinal)}%)\n`;
+      block += `Combined Odd: ${d.bestCombined.label} @ ${odds} (${Math.round(d.bestCombined.pFinal)}%)\n`;
     } else {
-      block += `4) Combined Odd: no combo available\n`;
+      block += `Combined Odd: no combo available\n`;
     }
     if (d.userMarketEval.status === "filled") {
-      block += `5) ${d.userMarketEval.line} — ${d.userMarketEval.comment}\n`;
+      block += `User market: ${d.userMarketEval.line} — ${d.userMarketEval.comment}\n`;
     } else {
-      block += `5) No user market selected\n`;
+      block += `User market: no selection\n`;
     }
     block += `Confidence: ${Math.round(d.confidenceScore)}%\n`;
     if (d.incomplete) {

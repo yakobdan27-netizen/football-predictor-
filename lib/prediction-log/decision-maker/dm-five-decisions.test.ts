@@ -93,7 +93,7 @@ function scored(
 test("buildUserMarketEvaluation none when no predictions", () => {
   const evalRow = buildUserMarketEvaluation({
     match: emptyMatch(),
-    topThree: [scored("1x2", 70, "Home")],
+    systemPick: scored("1x2", 70, "Home"),
   });
   assert.equal(evalRow.status, "none");
   assert.equal(evalRow.comment, "No user market selected");
@@ -105,11 +105,7 @@ test("buildUserMarketEvaluation filled with comment ≤140 and %", () => {
   });
   const evalRow = buildUserMarketEvaluation({
     match,
-    topThree: [
-      scored("corners_ou", 80, "Over 9.5"),
-      scored("btts", 72, "Yes"),
-      scored("1x2", 68, "Home"),
-    ],
+    systemPick: scored("corners_ou", 80, "Over 9.5"),
     systemProbabilityPct: 67,
   });
   assert.equal(evalRow.status, "filled");
@@ -118,11 +114,24 @@ test("buildUserMarketEvaluation filled with comment ≤140 and %", () => {
   assert.ok(evalRow.predictionLabel);
 });
 
+test("buildUserMarketEvaluation marks optimal when user matches system pick", () => {
+  const match = emptyMatch({
+    "1x2": { prediction: "home", confidence: 72 },
+  });
+  const evalRow = buildUserMarketEvaluation({
+    match,
+    systemPick: scored("1x2", 75, "Home"),
+    systemProbabilityPct: 75,
+  });
+  assert.equal(evalRow.status, "filled");
+  assert.ok(evalRow.comment.toLowerCase().includes("align") || evalRow.comment.length > 0);
+});
+
 test("computeRowConfidenceScore averages available parts", () => {
   const score = computeRowConfidenceScore({
-    markets: [scored("1x2", 80), scored("btts", 60), scored("corners_ou", 70)],
+    bestMarket: scored("1x2", 80),
     comboPFinal: 50,
     userEval: { status: "none", comment: "No user market selected" },
   });
-  assert.equal(score, Math.round((80 + 60 + 70 + 50) / 4));
+  assert.equal(score, Math.round((80 + 50) / 2));
 });

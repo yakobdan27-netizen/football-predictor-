@@ -24,6 +24,7 @@ import {
   resolveBatchByQuery,
 } from "@/lib/prediction-log/snapshot-readers";
 import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
+import { batchNeedsAnyApiSync } from "@/lib/football-api/sync-all-prediction-log-from-api";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { MatchPerTeamLines } from "./match-per-team-lines";
@@ -73,6 +74,23 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
       <div style={{ fontSize: "0.75rem", fontWeight: 700, marginTop: 2 }}>
         {Math.round(confidence)}%
       </div>
+    </div>
+  );
+}
+
+function EmptySystemPickCell() {
+  return (
+    <div
+      style={{
+        borderRadius: 10,
+        padding: "0.65rem 0.75rem",
+        minWidth: 160,
+        background: "var(--surface2)",
+        color: "var(--muted)",
+        fontSize: "0.8rem",
+      }}
+    >
+      No confident pick
     </div>
   );
 }
@@ -217,17 +235,15 @@ function DecisionRow({
   advisory?: MarketAdvisoryUiPayload | null;
   advisoryLoading?: boolean;
 }) {
-  const [m1, m2, m3] = row.markets;
+  const systemPick = row.bestMarket;
   const dateTime = row.match.matchDate ?? batch.date;
   const rowRef = useRef<HTMLTableRowElement | null>(null);
   const showPerTeam =
     expanded ||
-    row.markets.some(
-      (m) =>
-        m.marketKey === "corners_ou" ||
-        m.marketKey === "home_corners_ou" ||
-        m.marketKey === "hsh"
-    );
+    (systemPick != null &&
+      (systemPick.marketKey === "corners_ou" ||
+        systemPick.marketKey === "home_corners_ou" ||
+        systemPick.marketKey === "hsh"));
 
   useEffect(() => {
     if (highlight && rowRef.current) {
@@ -270,9 +286,9 @@ function DecisionRow({
         <td style={{ minWidth: 90, fontSize: "0.8rem", color: "var(--muted)", verticalAlign: "top" }}>
           {dateTime}
         </td>
-        <td style={{ minWidth: 160 }}>{m1 ? <MarketCell market={m1} /> : "—"}</td>
-        <td style={{ minWidth: 160 }}>{m2 ? <MarketCell market={m2} /> : "—"}</td>
-        <td style={{ minWidth: 160 }}>{m3 ? <MarketCell market={m3} /> : "—"}</td>
+        <td style={{ minWidth: 160 }}>
+          {systemPick ? <MarketCell market={systemPick} /> : <EmptySystemPickCell />}
+        </td>
         <td style={{ minWidth: 160 }}>
           <CombinedOddCell combo={row.bestCombined} />
         </td>
@@ -287,7 +303,7 @@ function DecisionRow({
       </tr>
       {showPerTeam ? (
         <tr className="dm-desktop-row">
-          <td colSpan={9} style={{ paddingTop: 0 }}>
+          <td colSpan={7} style={{ paddingTop: 0 }}>
             <MatchPerTeamLines
               match={row.match}
               batch={batch}
@@ -299,7 +315,7 @@ function DecisionRow({
       ) : null}
 
       <tr className="dm-mobile-row">
-        <td colSpan={9} style={{ padding: "0.5rem 0" }}>
+        <td colSpan={7} style={{ padding: "0.5rem 0" }}>
           <div
             style={{
               width: "100%",
@@ -340,9 +356,14 @@ function DecisionRow({
                 {expanded ? "▴" : "▾"}
               </span>
             </button>
-            {m1 && (
+            {systemPick && (
               <div style={{ marginTop: "0.65rem" }}>
-                <MarketCell market={m1} />
+                <MarketCell market={systemPick} />
+              </div>
+            )}
+            {!systemPick && (
+              <div style={{ marginTop: "0.65rem" }}>
+                <EmptySystemPickCell />
               </div>
             )}
             {expanded && (
@@ -353,8 +374,6 @@ function DecisionRow({
                   gap: "0.5rem",
                 }}
               >
-                {m2 && <MarketCell market={m2} />}
-                {m3 && <MarketCell market={m3} />}
                 <CombinedOddCell combo={row.bestCombined} />
                 <UserMarketEvalCell evalRow={row.userMarketEval} />
                 <MatchPerTeamLines
@@ -405,6 +424,8 @@ export function DecisionMakerApp() {
   const [batchId, setBatchId] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [deeplinkReady, setDeeplinkReady] = useState(!batchQuery);
+  const [archivedBatchQuery, setArchivedBatchQuery] = useState<string | null>(null);
+  const backgroundSyncAttempted = useRef(false);
 
   useEffect(() => {
     if (!batchQuery) {
@@ -427,6 +448,22 @@ export function DecisionMakerApp() {
     };
   }, [batchQuery, refresh]);
 
+  useEffect(() => {
+    if (!ready || !deeplinkReady || backgroundSyncAttempted.current) return;
+    const needsSync = batches.some((b: PredictionBatch) => batchNeedsAnyApiSync(b));
+    if (!needsSync) return;
+    backgroundSyncAttempted.current = true;
+    void (async () => {
+      try {
+        await fetch("/api/sync-results", { method: "POST" });
+        await reloadBatchesFromServer();
+        await refresh();
+      } catch {
+        /* non-blocking */
+      }
+    })();
+  }, [ready, deeplinkReady, batches, refresh]);
+
   const sortedBatches = useMemo(
     () =>
       [...batches].sort(
@@ -441,8 +478,21 @@ export function DecisionMakerApp() {
   );
 
   useEffect(() => {
+    if (batchQuery && deeplinkReady && !deepLinkedBatch) {
+      setArchivedBatchQuery(batchQuery);
+    } else if (!batchQuery) {
+      setArchivedBatchQuery(null);
+    }
+  }, [batchQuery, deeplinkReady, deepLinkedBatch]);
+
+  useEffect(() => {
     if (deepLinkedBatch) {
       setBatchId(deepLinkedBatch.id);
+      setArchivedBatchQuery(null);
+      return;
+    }
+    if (batchId && !sortedBatches.some((b) => b.id === batchId)) {
+      setBatchId(sortedBatches[0]?.id ?? "");
       return;
     }
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
@@ -525,8 +575,9 @@ export function DecisionMakerApp() {
     <div>
       <h1 className="page-title">Batch Decision Maker</h1>
       <p className="page-sub">
-        Exactly five decisions per match: three system markets, one mandatory Combination Odd, and
-        one user-market evaluation. Never drops fixtures.
+        One auto-selected system pick and one mandatory Combination Odd per match, plus a
+        read-only user-market evaluation. The system chooses the best market — no manual
+        selection.
       </p>
 
       <div className="card" style={{ marginBottom: "1rem" }}>
@@ -561,7 +612,13 @@ export function DecisionMakerApp() {
       </div>
 
       {!batch ? (
-        <p className="page-sub">Select a batch to generate decisions.</p>
+        <p className="page-sub">
+          {archivedBatchQuery
+            ? "This batch has completed and was archived. Results were saved for future predictions — select another batch above."
+            : sortedBatches.length === 0
+              ? "No active batches. Create a batch in Prediction Log or open fixtures in Decision Maker."
+              : "Select a batch to generate decisions."}
+        </p>
       ) : (
         <>
           <div
@@ -588,15 +645,13 @@ export function DecisionMakerApp() {
           </div>
 
           <div className="table-wrap">
-            <table className="data-table dm-table" style={{ minWidth: 1400 }}>
+            <table className="data-table dm-table" style={{ minWidth: 1100 }}>
               <thead>
                 <tr>
                   <th>Match</th>
                   <th>League</th>
                   <th>Date/Time</th>
-                  <th>1st Best Market</th>
-                  <th>2nd Best Market</th>
-                  <th>3rd Best Market</th>
+                  <th>System Pick</th>
                   <th>Mandatory Combination Odd</th>
                   <th>User Market Evaluation</th>
                   <th>Confidence Score</th>

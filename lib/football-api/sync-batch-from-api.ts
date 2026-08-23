@@ -11,7 +11,6 @@ import {
 import {
   batchDateIsPastOrToday,
   persistUpdatedBatch,
-  recomputeGlobalStoresAfterBatchUpdates,
   scoreBatchWithUpdatedMatches,
 } from "./sync-batch-persist";
 
@@ -83,8 +82,7 @@ export async function syncBatchFromApi(
       state.batch,
       state.batch.matches.map((m) => state.byId.get(m.id) ?? m)
     );
-    summary.batch = await persistUpdatedBatch(updatedBatch);
-    await recomputeGlobalStoresAfterBatchUpdates();
+    summary.batch = (await persistUpdatedBatch(updatedBatch)).batch;
   } catch (e) {
     summary.errors.push(
       `Failed to save batch: ${e instanceof Error ? e.message : String(e)}`

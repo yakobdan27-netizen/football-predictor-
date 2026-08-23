@@ -5,10 +5,7 @@ import { and, eq, gte, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { liveFixtures, matchStats, type MatchStats } from "@/lib/db/schema";
 import { LIVE_STATUSES } from "@/lib/live/constants";
-import { loadAllBatches, saveBatch } from "@/lib/prediction-log/club-store";
-import { syncBatchToClubHistories } from "@/lib/prediction-log/club-history-writer";
-import { computeLeagueBaselines } from "@/lib/prediction-log/league-baselines";
-import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
+import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { matchNeedsApiDetailFill } from "@/lib/football-api/map-fixture-to-match";
 import { migrateMatchTraceState } from "@/lib/prediction-log/result-trace";
 import { scoreMatch } from "@/lib/prediction-log/scoring";
@@ -18,12 +15,16 @@ import type {
   PredictionBatch,
   TeamSideStats,
 } from "@/lib/prediction-log/types";
-import { scoreBatchWithUpdatedMatches } from "@/lib/football-api/sync-batch-persist";
+import {
+  persistUpdatedBatch,
+  scoreBatchWithUpdatedMatches,
+} from "@/lib/football-api/sync-batch-persist";
 
 export type SyncFromLiveFixturesSummary = {
   updatedBatches: number;
   matchesMerged: number;
   errors: string[];
+  archivedBatchIds: string[];
 };
 
 type LiveRow = typeof liveFixtures.$inferSelect;
@@ -149,6 +150,7 @@ export async function syncPredictionLogFromLiveFixtures(opts?: {
     updatedBatches: 0,
     matchesMerged: 0,
     errors: [],
+    archivedBatchIds: [],
   };
 
   let batches: PredictionBatch[];
@@ -214,21 +216,14 @@ export async function syncPredictionLogFromLiveFixtures(opts?: {
   if (!batchUpdates.size) return summary;
 
   try {
-    const allBatches = await loadAllBatches();
-    const leagueBaselines = computeLeagueBaselines(allBatches);
-    const teamsQuality = await loadTeamsQualityStore().catch(() => null);
-
     for (const state of batchUpdates.values()) {
       const updatedBatch = scoreBatchWithUpdatedMatches(
         state.batch,
         state.batch.matches.map((m) => state.byId.get(m.id) ?? m)
       );
-      const synced = await syncBatchToClubHistories(updatedBatch, {
-        leagueBaselines,
-        teamsQuality,
-      });
-      await saveBatch(synced);
+      const { archived } = await persistUpdatedBatch(updatedBatch);
       summary.updatedBatches += 1;
+      if (archived) summary.archivedBatchIds.push(state.batch.id);
     }
   } catch (e) {
     summary.errors.push(e instanceof Error ? e.message : String(e));

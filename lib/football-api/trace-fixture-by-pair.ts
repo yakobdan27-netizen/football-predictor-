@@ -2,26 +2,16 @@
  * Ordered home–away name-pair result tracing for Prediction Log.
  * Never reverses sides; never guesses on ambiguous aliases or repeated meetings.
  */
-import { loadAllBatches, saveBatch } from "@/lib/prediction-log/club-store";
-import { syncBatchToClubHistories } from "@/lib/prediction-log/club-history-writer";
-import { maybeRetrainOnBatchResult } from "@/lib/prediction-log/retrain-ml";
-import { maybeBayesianCalibrateOnBatch } from "@/lib/prediction-log/bayesian-calibration";
-import { computeLeagueBaselines } from "@/lib/prediction-log/league-baselines";
-import { loadTeamsQualityStore } from "@/lib/prediction-log/teams-quality-store";
-import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
-import { recomputeAndPersistLeaguePriors } from "@/lib/prediction-log/league-priors-store";
-import { recomputePlSeasonCards } from "@/lib/prediction-log/pl-season-store";
-import { recomputeLlSeasonCards } from "@/lib/prediction-log/ll-season-store";
-import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
-import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
-import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
+import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
 import {
   scoreMatch,
-  scoreBatch,
-  marketsEnteredCount,
   batchNeedsResults,
 } from "@/lib/prediction-log/scoring";
+import {
+  persistUpdatedBatch,
+  scoreBatchWithUpdatedMatches,
+} from "./sync-batch-persist";
 import { matchLeague } from "@/lib/prediction-log/match-league";
 import {
   accumulateTraceState,
@@ -802,6 +792,7 @@ export type TracePendingSummary = {
   conflicts: ApiFieldConflict[];
   unavailable?: boolean;
   trace: TraceStatusCounts;
+  archivedBatchIds: string[];
 };
 
 export async function tracePendingMatchResults(opts?: {
@@ -814,6 +805,7 @@ export async function tracePendingMatchResults(opts?: {
     errors: [],
     conflicts: [],
     trace: emptyTraceCounts(),
+    archivedBatchIds: [],
   };
 
   let batches: PredictionBatch[];
@@ -893,37 +885,11 @@ export async function tracePendingMatchResults(opts?: {
 
     if (!batchChanged) continue;
 
-    let updatedBatch: PredictionBatch = scoreBatch({
-      ...batch,
-      matches: updatedMatches,
-    });
-    const entered = marketsEnteredCount(updatedBatch);
-    if (entered.total > 0 && entered.scored === entered.total) {
-      updatedBatch = {
-        ...updatedBatch,
-        recommendationStatus:
-          updatedBatch.batchKind === "recommended"
-            ? "SETTLED"
-            : updatedBatch.recommendationStatus,
-        settledAt:
-          updatedBatch.batchKind === "recommended"
-            ? new Date().toISOString()
-            : updatedBatch.settledAt,
-      };
-    }
-
     try {
-      const allBatches = await loadAllBatches();
-      const leagueBaselines = computeLeagueBaselines(allBatches);
-      const teamsQuality = await loadTeamsQualityStore().catch(() => null);
-      const synced = await syncBatchToClubHistories(updatedBatch, {
-        leagueBaselines,
-        teamsQuality,
-      });
-      await saveBatch(synced);
-      await maybeRetrainOnBatchResult(synced).catch(() => null);
-      await maybeBayesianCalibrateOnBatch(synced).catch(() => null);
+      const updatedBatch = scoreBatchWithUpdatedMatches(batch, updatedMatches);
+      const { archived } = await persistUpdatedBatch(updatedBatch);
       summary.updatedBatches++;
+      if (archived) summary.archivedBatchIds.push(batch.id);
     } catch (e) {
       summary.errors.push(
         `Failed to save ${batch.batchName}: ${
@@ -931,16 +897,6 @@ export async function tracePendingMatchResults(opts?: {
         }`
       );
     }
-  }
-
-  if (summary.updatedBatches > 0) {
-    await recomputeAndPersistLearnerStats().catch(() => null);
-    await recomputeAndPersistLeaguePriors().catch(() => null);
-    await recomputePlSeasonCards().catch(() => null);
-    await recomputeLlSeasonCards().catch(() => null);
-    await recomputeBlSeasonCards().catch(() => null);
-    await recomputeSaSeasonCards().catch(() => null);
-    await recomputeL1SeasonCards().catch(() => null);
   }
 
   return summary;

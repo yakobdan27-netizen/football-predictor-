@@ -31,8 +31,10 @@ export { buildDecisionBatchCaches, buildDecisionBatchCachesAsync } from "./build
 export {
   aggregateMatchData,
   ensureThreeMarkets,
+  generateBestMarket,
   generateTopThreeMarkets,
   normalisedSourceWeights,
+  selectBestMarket,
   selectDiverseTopThree,
 } from "./decision-engine";
 export {

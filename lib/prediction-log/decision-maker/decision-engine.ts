@@ -155,6 +155,22 @@ function mergeCandidates(
 }
 
 /**
+ * Select the single highest-scored market (no diversity constraint).
+ * Returns null when no candidate meets DECISION_MIN_CONFIDENCE.
+ */
+export function selectBestMarket(scored: ScoredDecisionMarket[]): ScoredDecisionMarket | null {
+  const eligible = scored.filter((m) => m.confidence >= DECISION_MIN_CONFIDENCE);
+  if (eligible.length === 0) return null;
+
+  return [...eligible].sort(
+    (a, b) =>
+      b.totalScore - a.totalScore ||
+      (b.priorAlign ?? 0) - (a.priorAlign ?? 0) ||
+      b.confidence - a.confidence
+  )[0]!;
+}
+
+/**
  * Select exactly 3 markets with diversity:
  * at least one goals, one corners, one specialized when available.
  * Near-ties prefer league-prior alignment.
@@ -306,6 +322,59 @@ export function generateTopThreeMarkets(
 
   return {
     markets,
+    sourceCount: okSources.length,
+    missingSources,
+    incomplete: okSources.length < DECISION_MIN_SOURCES,
+  };
+}
+
+export function generateBestMarket(
+  matchData: AggregatedMatchData,
+  fallbacks: DecisionMarketCandidate[] = [],
+  opts?: {
+    leagueName?: string;
+    leaguePriors?: LeaguePriorsStore | null;
+    homeTeam?: string;
+    awayTeam?: string;
+  }
+): {
+  bestMarket: ScoredDecisionMarket | null;
+  sourceCount: number;
+  missingSources: string[];
+  incomplete: boolean;
+} {
+  const sources =
+    opts?.leagueName != null
+      ? applyPriorsToSources(matchData.sources, opts.leagueName, opts.leaguePriors)
+      : matchData.sources;
+  const matchTeams =
+    opts?.homeTeam && opts?.awayTeam
+      ? { homeTeam: opts.homeTeam, awayTeam: opts.awayTeam }
+      : undefined;
+  const weights = normalisedSourceWeights(sources);
+  const scored = mergeCandidates(sources, weights, matchTeams);
+  let bestMarket = selectBestMarket(scored);
+
+  if (!bestMarket && fallbacks.length > 0) {
+    for (const f of fallbacks) {
+      if (f.confidence < DECISION_MIN_CONFIDENCE) continue;
+      if (/unavailable|insufficient/i.test(f.prediction)) continue;
+      bestMarket = {
+        ...f,
+        totalScore: f.confidence * 0.01,
+        contributingPages: [f.pageId],
+      };
+      break;
+    }
+  }
+
+  const okSources = matchData.sources.filter((s) => s.ok);
+  const missingSources = matchData.sources
+    .filter((s) => !s.ok)
+    .map((s) => s.pageLabel);
+
+  return {
+    bestMarket,
     sourceCount: okSources.length,
     missingSources,
     incomplete: okSources.length < DECISION_MIN_SOURCES,

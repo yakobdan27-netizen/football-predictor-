@@ -13,6 +13,7 @@ import { recomputeBlSeasonCards } from "@/lib/prediction-log/bl-season-store";
 import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
 import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
 import { batchHasScoredResults } from "@/lib/prediction-log/scoring";
+import { maybeArchiveCompletedBatch } from "@/lib/prediction-log/batch-lifecycle";
 import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
 import { stampPendingTraceOnBatch } from "@/lib/prediction-log/result-trace";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
@@ -82,6 +83,10 @@ export async function POST(request: Request) {
       await recomputeBlSeasonCards().catch(() => null);
       await recomputeSaSeasonCards().catch(() => null);
       await recomputeL1SeasonCards().catch(() => null);
+    }
+    const archived = await maybeArchiveCompletedBatch(synced);
+    if (archived) {
+      return NextResponse.json({ ok: true, archived: true, batchId: synced.id });
     }
     return NextResponse.json({ ok: true, batch: synced });
   } catch (e) {

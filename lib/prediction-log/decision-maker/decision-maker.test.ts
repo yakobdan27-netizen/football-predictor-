@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   ensureThreeMarkets,
+  generateBestMarket,
   generateTopThreeMarkets,
   normalisedSourceWeights,
+  selectBestMarket,
   selectDiverseTopThree,
 } from "./decision-engine";
 import type {
@@ -95,6 +97,96 @@ test("normalised weights sum to 1 across available sources", () => {
   assert.equal(weights.get("a"), 0.3 / 0.5);
   assert.equal(weights.get("b"), 0.2 / 0.5);
   assert.equal(weights.has("c"), false);
+});
+
+test("selectBestMarket picks highest score without diversity constraint", () => {
+  const scored = [
+    mk({
+      marketKey: "1x2",
+      prediction: "Home",
+      category: "goals",
+      confidence: 90,
+      totalScore: 27,
+    }),
+    mk({
+      marketKey: "btts",
+      prediction: "Yes",
+      category: "goals",
+      confidence: 88,
+      totalScore: 26,
+    }),
+    mk({
+      marketKey: "corners_ou",
+      prediction: "Over 9.5",
+      category: "corners",
+      confidence: 95,
+      totalScore: 30,
+    }),
+  ];
+  const best = selectBestMarket(scored);
+  assert.ok(best);
+  assert.equal(best!.marketKey, "corners_ou");
+});
+
+test("selectBestMarket returns null when all below min confidence", () => {
+  const scored = [
+    mk({
+      marketKey: "1x2",
+      prediction: "Home",
+      category: "goals",
+      confidence: 55,
+      totalScore: 16,
+    }),
+  ];
+  assert.equal(selectBestMarket(scored), null);
+});
+
+test("generateBestMarket returns single best market", () => {
+  const data: AggregatedMatchData = {
+    matchId: "m1",
+    batchId: "b1",
+    sources: [
+      source("recommendation", 0.3, [
+        {
+          marketKey: "1x2",
+          label: "1X2",
+          prediction: "Home",
+          confidence: 80,
+          category: "goals",
+          pageId: "recommendation",
+          pageLabel: "Reco",
+        },
+      ]),
+      source("corners-analysis", 0.2, [
+        {
+          marketKey: "corners_ou",
+          label: "Corners",
+          prediction: "Under 9.5",
+          confidence: 70,
+          category: "corners",
+          pageId: "corners-analysis",
+          pageLabel: "Corners",
+        },
+      ]),
+      source("highest-scoring-half", 0.2, [
+        {
+          marketKey: "hsh",
+          label: "HSH",
+          prediction: "2H more goals",
+          confidence: 66,
+          category: "specialized",
+          pageId: "highest-scoring-half",
+          pageLabel: "HSH",
+        },
+      ]),
+      source("league-analysis", 0.15, [], false),
+    ],
+  };
+  const result = generateBestMarket(data);
+  assert.ok(result.bestMarket);
+  assert.equal(result.bestMarket!.marketKey, "1x2");
+  assert.equal(result.sourceCount, 3);
+  assert.equal(result.incomplete, false);
 });
 
 test("selectDiverseTopThree prefers goals + corners + specialized", () => {
