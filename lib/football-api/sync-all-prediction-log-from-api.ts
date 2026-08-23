@@ -2,12 +2,9 @@
  * Unified Prediction Log API fill: trace → live DB merge → API enrich pass.
  */
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
-import { batchNeedsResults } from "@/lib/prediction-log/scoring";
-import { matchNeedsApiDetailFill } from "@/lib/football-api/map-fixture-to-match";
-import {
-  matchNeedsNamePairTrace,
-  type TraceStatusCounts,
-} from "@/lib/prediction-log/result-trace";
+import { batchNeedsAnyApiSync } from "@/lib/prediction-log/batch-sync-needs";
+export { batchNeedsAnyApiSync } from "@/lib/prediction-log/batch-sync-needs";
+import type { TraceStatusCounts } from "@/lib/prediction-log/result-trace";
 import { syncPredictionLogFromLiveFixtures } from "@/lib/prediction-log/sync-from-live-fixtures";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import {
@@ -178,13 +175,4 @@ export async function syncAllPredictionLogFromApi(opts?: {
       ]),
     ],
   };
-}
-
-export function batchNeedsAnyApiSync(batch: PredictionBatch): boolean {
-  return (
-    batchNeedsResults(batch) ||
-    batch.matches.some(
-      (m) => matchNeedsNamePairTrace(m) || matchNeedsApiDetailFill(m)
-    )
-  );
 }

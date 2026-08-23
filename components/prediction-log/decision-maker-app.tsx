@@ -24,7 +24,7 @@ import {
   resolveBatchByQuery,
 } from "@/lib/prediction-log/snapshot-readers";
 import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
-import { batchNeedsAnyApiSync } from "@/lib/football-api/sync-all-prediction-log-from-api";
+import { batchNeedsAnyApiSync } from "@/lib/prediction-log/batch-sync-needs";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { MatchPerTeamLines } from "./match-per-team-lines";
