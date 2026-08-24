@@ -4,37 +4,34 @@ import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fi
 import type {
   BestMarketPick,
   WeekendOpportunityRow,
+  WeekendOpportunityTrace,
 } from "@/lib/match-centre/weekend-opportunities";
 import type { MarketAdvisoryUiPayload } from "./types";
 import type { AnalysisHistory, PredictionBatch } from "@/lib/prediction-log/types";
 import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-league";
-import type { MarketFamilyId } from "@/lib/slip-builder/types";
 
 export function weekendPickFromRow(row: {
   marketLabel: string;
   prediction: string;
-  trace: {
-    family: MarketFamilyId;
-    selectionKey: string;
-    pRaw: number;
-    pCalibrated: number;
-    nEffective: number;
-    coherenceOk: boolean;
-    secondBestPCalibrated?: number;
-    marketMargin?: number;
-  };
+  msamGatePassed: boolean;
+  trace: WeekendOpportunityTrace;
 }): BestMarketPick {
+  const family = row.trace.family;
+  const selectionKey = row.trace.selectionKey;
+  if (!family || !selectionKey) return null;
   return {
     marketLabel: row.marketLabel,
     predictionLabel: row.prediction,
-    family: row.trace.family,
-    selectionKey: row.trace.selectionKey,
+    family,
+    selectionKey,
     pRaw: row.trace.pRaw,
     pCalibrated: row.trace.pCalibrated,
     nEffective: row.trace.nEffective,
     coherenceOk: row.trace.coherenceOk,
     secondBestPCalibrated: row.trace.secondBestPCalibrated,
     marketMargin: row.trace.marketMargin,
+    msamGatePassed: row.msamGatePassed,
+    ineligibilityReasons: row.trace.ineligibilityReasons ?? [],
   };
 }
 
@@ -64,8 +61,10 @@ export function attachWeekendAdvisories(input: {
     const pick = weekendPickFromRow({
       marketLabel: row.marketLabel,
       prediction: row.prediction,
+      msamGatePassed: row.msamGatePassed,
       trace: row.trace,
     });
+    if (!pick) continue;
     const { ui } = executeAndSerialize({
       fixtureId: row.apiFixtureId,
       matchId: String(row.apiFixtureId),
