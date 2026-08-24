@@ -179,11 +179,14 @@ export function WeekendOpportunitiesApp() {
         <div>
           <h1 style={{ margin: 0, fontSize: "1.35rem" }}>Weekend Picks</h1>
           <p className="page-sub" style={{ marginTop: "0.35rem", maxWidth: "42rem" }}>
-            All Sat–Sun fixtures from Match Centre (next 7 days, five leagues),
+            All fixtures from Match Centre in the next 7 days (Mon–Sun, five leagues),
             ranked by best-market calibrated probability. Each match gets one
-            pick — the highest-probability market that passes MSAM eligibility
-            when possible, otherwise the best available fallback. Total Goals:
-            Over ≥1.5, Under ≤4.5. Team Goals: Over ≥0.5, Under ≤3.5 per side.
+            pick — the highest-probability market across all families (including
+            Draw Either Half, Corners, Handicap, Highest Scoring Half, Win One
+            Half, Total Goals, and others). MSAM evidence quality is shown in
+            trace and the Low evidence badge, not used to exclude a higher-probability
+            pick. Total Goals: Over ≥1.5, Under ≤4.5. Team Goals: Over ≥0.5,
+            Under ≤1.5 per side.
           </p>
           {data && (
             <p className="page-sub" style={{ marginTop: "0.25rem" }}>
@@ -253,7 +256,7 @@ export function WeekendOpportunitiesApp() {
           }}
         >
           <p style={{ margin: 0 }}>
-            No weekend fixtures in the next 7 days. Check the{" "}
+            No upcoming fixtures in the next 7 days. Check the{" "}
             <Link href="/match-centre?tab=next-match">Next Match</Link> tab for
             the full upcoming schedule.
           </p>

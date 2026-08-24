@@ -1,8 +1,9 @@
 /**
  * Weekend opportunistic picks — Match Centre upcoming fixtures,
- * best market per match for every Sat–Sun fixture, ranked by calibrated probability.
+ * best market per match for every upcoming fixture in the next 7 days (Mon–Sun),
  */
 import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-league";
+import { NEXT_MATCHES_LEAGUES } from "@/lib/football-api/fetch-upcoming-league";
 import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { sortDedupeUpcomingFixtures } from "@/lib/prediction-log/batch-fixture-picker";
 import {
@@ -30,9 +31,18 @@ export const WEEKEND_WINDOW_DAYS = 7;
 export const WEEKEND_TOTALS_OVER_MIN_LINE = 1.5;
 export const WEEKEND_TOTALS_UNDER_MAX_LINE = 4.5;
 export const WEEKEND_TEAM_GOALS_OVER_MIN_LINE = 0.5;
-export const WEEKEND_TEAM_GOALS_UNDER_MAX_LINE = 3.5;
+export const WEEKEND_TEAM_GOALS_UNDER_MAX_LINE = 1.5;
 /** Minimum calibrated-probability gap between best and 2nd-best (trace only). */
 export const WEEKEND_MARKET_MARGIN_MIN = 0.05;
+
+/** Specialist markets trusted on Weekend Picks when they have the highest probability. */
+export const WEEKEND_SPECIALIST_FAMILIES = [
+  "DIEH",
+  "CORNERS",
+  "HANDICAP",
+  "HSH",
+  "WIN_ONE_HALF",
+] as const satisfies readonly MarketFamilyId[];
 
 /** Core Double Chance + Over Total combos for Weekend Picks. */
 export const WEEKEND_DC_TOTAL_COMBO_IDS = [
@@ -79,7 +89,7 @@ export function weekendTotalsSelectionAllowed(
   return true;
 }
 
-/** Team Goals: Over ≥0.5, Under ≤3.5; clean sheets always allowed. */
+/** Team Goals: Over ≥0.5, Under ≤1.5; clean sheets always allowed. */
 export function weekendTeamGoalsSelectionAllowed(
   family: MarketFamilyId,
   selectionKey: string,
@@ -153,9 +163,30 @@ function kickoffMs(iso: string): number {
   return Number.isFinite(t) ? t : 0;
 }
 
-function isWeekendUtc(iso: string): boolean {
-  const day = new Date(iso).getUTCDay();
-  return day === 0 || day === 6;
+/** Big-5 league display order (same as Next Matches / Live). Unknown leagues sort last. */
+export function weekendLeagueSortIndex(league: string): number {
+  const idx = (NEXT_MATCHES_LEAGUES as readonly string[]).indexOf(league);
+  return idx >= 0 ? idx : NEXT_MATCHES_LEAGUES.length;
+}
+
+/** All kickoffs within the next 7 days (UTC), NS/TBD only. */
+export function filterWeekendFixtures(
+  fixtures: UpcomingFixtureRow[],
+  opts?: { now?: Date }
+): UpcomingFixtureRow[] {
+  const now = opts?.now ?? new Date();
+  const startMs = now.getTime();
+  const endMs = startMs + WEEKEND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+  const filtered = fixtures.filter((f) => {
+    const status = (f.status ?? "").toUpperCase();
+    if (status !== "NS" && status !== "TBD") return false;
+    const ms = kickoffMs(f.kickoffIso);
+    if (ms < startMs || ms > endMs) return false;
+    return true;
+  });
+
+  return sortDedupeUpcomingFixtures(filtered);
 }
 
 function lambdasComplete(est: CanonicalFixtureEstimate): boolean {
@@ -190,26 +221,6 @@ function familyDataOk(
   }
   if (!est.score_matrix?.length) return false;
   return true;
-}
-
-/** Sat–Sun kickoffs within the next 7 days (UTC). */
-export function filterWeekendFixtures(
-  fixtures: UpcomingFixtureRow[],
-  opts?: { now?: Date }
-): UpcomingFixtureRow[] {
-  const now = opts?.now ?? new Date();
-  const startMs = now.getTime();
-  const endMs = startMs + WEEKEND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-
-  const filtered = fixtures.filter((f) => {
-    const status = (f.status ?? "").toUpperCase();
-    if (status !== "NS" && status !== "TBD") return false;
-    const ms = kickoffMs(f.kickoffIso);
-    if (ms < startMs || ms > endMs) return false;
-    return isWeekendUtc(f.kickoffIso);
-  });
-
-  return sortDedupeUpcomingFixtures(filtered);
 }
 
 type ScoredCandidate = {
@@ -315,8 +326,7 @@ export function scoreFixtureBestMarket(
     return 0;
   };
 
-  const eligible = candidates.filter((c) => c.msamGatePassed).sort(sortByProb);
-  const pool = eligible.length > 0 ? eligible : [...candidates].sort(sortByProb);
+  const pool = [...candidates].sort(sortByProb);
 
   const best = pool[0]!;
   const second = pool[1];
@@ -415,6 +425,10 @@ export function rankWeekendOpportunities(input: {
     const aRaw = a.pick?.pRaw ?? -1;
     const bRaw = b.pick?.pRaw ?? -1;
     if (bRaw !== aRaw) return bRaw - aRaw;
+    const leagueDiff =
+      weekendLeagueSortIndex(a.fixture.league) -
+      weekendLeagueSortIndex(b.fixture.league);
+    if (leagueDiff !== 0) return leagueDiff;
     return kickoffMs(a.fixture.kickoffIso) - kickoffMs(b.fixture.kickoffIso);
   };
 

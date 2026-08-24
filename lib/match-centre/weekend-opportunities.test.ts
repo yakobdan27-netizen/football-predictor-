@@ -7,17 +7,20 @@ import {
   rankWeekendOpportunities,
   scoreFixtureBestMarket,
   selectWeekendPickCount,
+  weekendLeagueSortIndex,
   WEEKEND_DC_TOTAL_COMBO_IDS,
   weekendComboSelectionAllowed,
   weekendTeamGoalsSelectionAllowed,
   weekendTotalsSelectionAllowed,
   WEEKEND_MARKET_MARGIN_MIN,
+  WEEKEND_SPECIALIST_FAMILIES,
 } from "./weekend-opportunities";
 
 function row(
   id: number,
   kickoffIso: string,
-  status = "NS"
+  status = "NS",
+  league = "Premier League"
 ): UpcomingFixtureRow {
   return {
     apiFixtureId: id,
@@ -27,22 +30,23 @@ function row(
     home: { id: 1, name: "Home FC" },
     away: { id: 2, name: "Away FC" },
     venue: null,
-    league: "Premier League",
+    league,
     leagueId: 39,
   };
 }
 
-test("filterWeekendFixtures keeps Sat/Sun within 7 days", () => {
+test("filterWeekendFixtures keeps all weekdays within 7 days", () => {
   const now = new Date("2026-08-17T12:00:00.000Z"); // Monday
-  const sat = row(1, "2026-08-22T15:00:00.000Z");
-  const sun = row(2, "2026-08-23T15:00:00.000Z");
-  const mon = row(3, "2026-08-24T15:00:00.000Z");
+  const tue = row(1, "2026-08-18T15:00:00.000Z");
+  const sat = row(2, "2026-08-22T15:00:00.000Z");
+  const sun = row(3, "2026-08-23T15:00:00.000Z");
   const tooFar = row(4, "2026-08-30T15:00:00.000Z");
 
-  const out = filterWeekendFixtures([sat, sun, mon, tooFar], { now });
-  assert.equal(out.length, 2);
+  const out = filterWeekendFixtures([tue, sat, sun, tooFar], { now });
+  assert.equal(out.length, 3);
   assert.ok(out.some((f) => f.apiFixtureId === 1));
   assert.ok(out.some((f) => f.apiFixtureId === 2));
+  assert.ok(out.some((f) => f.apiFixtureId === 3));
 });
 
 test("filterWeekendFixtures excludes non-NS/TBD", () => {
@@ -73,14 +77,22 @@ test("weekendTotalsSelectionAllowed excludes trivial total goals lines", () => {
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_0_5", 0.5), true);
 });
 
-test("weekendTeamGoalsSelectionAllowed enforces Over 0.5 and Under 3.5", () => {
+test("weekendTeamGoalsSelectionAllowed enforces Over 0.5 and Under 1.5", () => {
   assert.equal(
     weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "home_over_0_5", 0.5),
     true
   );
   assert.equal(
-    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "away_under_3_5", 3.5),
+    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "away_under_1_5", 1.5),
     true
+  );
+  assert.equal(
+    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "home_under_2_5", 2.5),
+    false
+  );
+  assert.equal(
+    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "away_under_3_5", 3.5),
+    false
   );
   assert.equal(
     weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "home_under_4_5", 4.5),
@@ -288,6 +300,178 @@ test("scoreFixtureBestMarket picks clear leader with MSAM gate", () => {
   assert.equal(pick!.family, "DIEH");
   assert.ok((pick!.marketMargin ?? 0) >= WEEKEND_MARKET_MARGIN_MIN);
   assert.equal(pick!.msamGatePassed, true);
+});
+
+function flatMarkets(flat: number) {
+  const base = mockEstimate().markets;
+  return {
+    ...base,
+    home: flat,
+    draw: flat,
+    away: flat,
+    bttsYes: flat,
+    bttsNo: flat,
+    over25: flat,
+    under25: flat,
+    p1h: flat,
+    p2h: flat,
+    pTie: flat,
+    p2h_gt_1h: flat,
+    cornersOver95: flat,
+    cornersUnder95: flat,
+    doubleChance: { oneX: flat, xTwo: flat, oneTwo: flat },
+    totalGoals: {
+      ...base.totalGoals,
+      lines: Object.fromEntries(
+        Object.entries(base.totalGoals.lines).map(([k, v]) => [
+          k,
+          { over: flat, under: flat },
+        ])
+      ) as typeof base.totalGoals.lines,
+    },
+  };
+}
+
+test("scoreFixtureBestMarket picks DIEH over TOTALS when higher prob despite MSAM fail", () => {
+  const fixture = row(101, "2026-08-22T15:00:00.000Z");
+  const flat = 0.51;
+  const est = mockEstimate({
+    coverage: { ht_pct: 10, corners_pct: 70 },
+    provenance: {
+      ...mockEstimate().provenance,
+      ess: 0,
+      matches_used: 3,
+    },
+    markets: {
+      ...flatMarkets(flat),
+      dieh: {
+        ...mockEstimate().markets.dieh,
+        diehYes: 0.92,
+        diehNo: 0.08,
+      },
+    },
+  });
+  const pick = scoreFixtureBestMarket(fixture, est, null);
+  assert.ok(pick);
+  assert.equal(pick!.family, "DIEH");
+  assert.equal(pick!.msamGatePassed, false);
+});
+
+test("scoreFixtureBestMarket picks CORNERS over TOTALS when higher prob despite MSAM fail", () => {
+  const fixture = row(102, "2026-08-22T15:00:00.000Z");
+  const flat = 0.51;
+  const est = mockEstimate({
+    coverage: { ht_pct: 80, corners_pct: 10 },
+    provenance: {
+      ...mockEstimate().provenance,
+      ess: 2,
+      matches_used: 2,
+    },
+    lambdas: {
+      ...mockEstimate().lambdas,
+      home_corners: 0.1,
+      away_corners: 0.1,
+    },
+    markets: {
+      ...flatMarkets(flat),
+      cornersOver95: 0.88,
+      cornersUnder95: 0.12,
+    },
+  });
+  const pick = scoreFixtureBestMarket(fixture, est, null);
+  assert.ok(pick);
+  assert.equal(pick!.family, "CORNERS");
+  assert.equal(pick!.msamGatePassed, false);
+});
+
+test("scoreFixtureBestMarket picks HSH when highest probability", () => {
+  const fixture = row(103, "2026-08-22T15:00:00.000Z");
+  const flat = 0.51;
+  const est = mockEstimate({
+    markets: {
+      ...flatMarkets(flat),
+      p1h: 0.88,
+      p2h: 0.07,
+      pTie: 0.05,
+    },
+  });
+  const pick = scoreFixtureBestMarket(fixture, est, null);
+  assert.ok(pick);
+  assert.ok(pick!.pCalibrated >= 0.85);
+  assert.equal(pick!.selectionKey, "1h_gt_2h");
+  assert.ok(pick!.family === "HSH" || pick!.family === "HALF_GOALS");
+});
+
+test("scoreFixtureBestMarket picks WIN_ONE_HALF when highest probability", () => {
+  const fixture = row(104, "2026-08-22T15:00:00.000Z");
+  const flat = 0.51;
+  const est = mockEstimate({
+    lambdas: {
+      ...mockEstimate().lambdas,
+      home_1h: 2.2,
+      away_1h: 0.2,
+      home_2h: 2.0,
+      away_2h: 0.25,
+    },
+    markets: flatMarkets(flat),
+  });
+  const pick = scoreFixtureBestMarket(fixture, est, null);
+  assert.ok(pick);
+  assert.equal(pick!.family, "WIN_ONE_HALF");
+  assert.equal(pick!.selectionKey, "home");
+});
+
+test("WEEKEND_SPECIALIST_FAMILIES lists trusted specialist markets", () => {
+  assert.deepEqual(WEEKEND_SPECIALIST_FAMILIES, [
+    "DIEH",
+    "CORNERS",
+    "HANDICAP",
+    "HSH",
+    "WIN_ONE_HALF",
+  ]);
+});
+
+test("weekendLeagueSortIndex follows Big-5 order", () => {
+  assert.equal(weekendLeagueSortIndex("Premier League"), 0);
+  assert.equal(weekendLeagueSortIndex("La Liga"), 1);
+  assert.equal(weekendLeagueSortIndex("Serie A"), 2);
+  assert.equal(weekendLeagueSortIndex("Bundesliga"), 3);
+  assert.equal(weekendLeagueSortIndex("Ligue 1"), 4);
+  assert.equal(weekendLeagueSortIndex("Unknown"), 5);
+});
+
+test("rankWeekendOpportunities ranks globally by probability", () => {
+  const fixtures = [
+    row(1, "2026-08-22T15:00:00.000Z", "NS", "Ligue 1"),
+    row(2, "2026-08-22T15:00:00.000Z", "NS", "Premier League"),
+    row(3, "2026-08-22T15:00:00.000Z", "NS", "Serie A"),
+  ];
+  const high = mockEstimate({
+    markets: {
+      ...mockEstimate().markets,
+      dieh: { ...mockEstimate().markets.dieh, diehYes: 0.95, diehNo: 0.05 },
+    },
+  });
+  const mid = mockEstimate({
+    markets: {
+      ...mockEstimate().markets,
+      dieh: { ...mockEstimate().markets.dieh, diehYes: 0.75, diehNo: 0.25 },
+    },
+  });
+  const low = mockEstimate({
+    markets: {
+      ...mockEstimate().markets,
+      dieh: { ...mockEstimate().markets.dieh, diehYes: 0.55, diehNo: 0.45 },
+    },
+  });
+  const result = rankWeekendOpportunities({
+    fixtures,
+    estimates: [high, low, mid],
+    calibrator: null,
+  });
+  const probs = result.rows.map((r) => r.pCalibrated ?? -1);
+  assert.ok(probs[0]! >= probs[1]! && probs[1]! >= probs[2]!);
+  assert.notEqual(result.rows[0]!.league, result.rows[1]!.league);
 });
 
 test("rankWeekendOpportunities returns one row per fixture", () => {

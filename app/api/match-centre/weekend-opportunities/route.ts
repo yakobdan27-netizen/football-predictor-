@@ -87,7 +87,7 @@ export async function GET(request: Request) {
         insufficientPool: true,
         rows: [],
         warnings: [
-          "No Sat–Sun fixtures in the next 7 days across the five leagues.",
+          "No upcoming fixtures in the next 7 days across the five leagues.",
         ],
         leagueErrors: leagueResults
           .filter((r) => r.warning)
