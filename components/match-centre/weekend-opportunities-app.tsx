@@ -4,8 +4,6 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { confidenceTone } from "@/lib/prediction-log/decision-maker/confidence";
 import type { WeekendOpportunityRow } from "@/lib/match-centre/weekend-opportunities";
-import type { MarketAdvisoryUiPayload } from "@/lib/market-advisory/types";
-import { BestMarketAdvisoryCard } from "@/components/prediction-log/best-market-advisory-card";
 
 type WeekendApiResponse = {
   ok?: boolean;
@@ -15,13 +13,15 @@ type WeekendApiResponse = {
   fixturePoolCount?: number;
   selectedCount?: number;
   insufficientPool?: boolean;
-  rows?: (WeekendOpportunityRow & { advisory?: MarketAdvisoryUiPayload | null })[];
-  advisoriesByFixtureId?: Record<number, MarketAdvisoryUiPayload>;
+  rows?: WeekendOpportunityRow[];
   warnings?: string[];
   filteredCount?: number;
 };
 
-function toneStyle(confidence: number): React.CSSProperties {
+function toneStyle(confidence: number | null): React.CSSProperties {
+  if (confidence == null) {
+    return { background: "var(--surface2)", color: "var(--muted)" };
+  }
   const tone = confidenceTone(confidence);
   switch (tone) {
     case "green":
@@ -68,34 +68,61 @@ function TracePanel({ row }: { row: WeekendOpportunityRow }) {
       <div>
         <strong>Source:</strong> {row.trace.fixtureSource}
       </div>
-      <div>
-        <strong>Best market family:</strong> {row.trace.family} ·{" "}
-        {row.trace.selectionKey}
-      </div>
-      <div>
-        <strong>Raw p:</strong> {(row.trace.pRaw * 100).toFixed(1)}% ·{" "}
-        <strong>Calibrated p:</strong> {(row.trace.pCalibrated * 100).toFixed(1)}
-        % · n={row.trace.nEffective}
-      </div>
-      <div>
-        <strong>CFE blend:</strong> API {p.api_pct}% · Manual/AI {p.manual_pct}%
-        {p.apiSeasonBlend ? ` · season ${p.apiSeasonBlend}` : ""}
-      </div>
-      <div>
-        <strong>Matches used:</strong> {p.matches_used} · ESS {p.ess}
-      </div>
-      <div>
-        <strong>Coherence:</strong>{" "}
-        {row.trace.coherenceOk ? "ok" : "check grid"}
-      </div>
-      {row.trace.marketMargin != null && (
+      {row.trace.noEstimate ? (
         <div>
-          <strong>Market margin:</strong>{" "}
-          {(row.trace.marketMargin * 100).toFixed(1)} pp
-          {row.trace.secondBestPCalibrated != null
-            ? ` (2nd best ${(row.trace.secondBestPCalibrated * 100).toFixed(1)}%)`
-            : ""}
+          <strong>Estimate:</strong> unavailable for this fixture
         </div>
+      ) : (
+        <>
+          <div>
+            <strong>Best market family:</strong> {row.trace.family} ·{" "}
+            {row.trace.selectionKey}
+          </div>
+          <div>
+            <strong>Raw p:</strong> {(row.trace.pRaw * 100).toFixed(1)}% ·{" "}
+            <strong>Calibrated p:</strong>{" "}
+            {(row.trace.pCalibrated * 100).toFixed(1)}% · n={row.trace.nEffective}
+          </div>
+          {p && (
+            <>
+              <div>
+                <strong>CFE blend:</strong> API {p.api_pct}% · System season{" "}
+                {p.manual_pct}%
+                {p.apiSeasonBlend ? ` · season ${p.apiSeasonBlend}` : ""}
+              </div>
+              <div>
+                <strong>Matches used:</strong> {p.matches_used} · ESS {p.ess}
+              </div>
+            </>
+          )}
+          <div>
+            <strong>Coherence:</strong>{" "}
+            {row.trace.coherenceOk ? "ok" : "check grid"}
+          </div>
+          <div>
+            <strong>MSAM gate:</strong>{" "}
+            {row.trace.msamGatePassed ? "passed" : "fallback (low evidence)"}
+            {row.trace.ineligibilityReasons?.length
+              ? ` · ${row.trace.ineligibilityReasons.join(", ")}`
+              : ""}
+          </div>
+          {row.trace.marketMargin != null && (
+            <div>
+              <strong>Market margin:</strong>{" "}
+              {(row.trace.marketMargin * 100).toFixed(1)} pp
+              {row.trace.secondBestPCalibrated != null
+                ? ` (2nd best ${(row.trace.secondBestPCalibrated * 100).toFixed(1)}%)`
+                : ""}
+              {row.trace.marginOk != null && (
+                <>
+                  {" "}
+                  · margin gate {row.trace.marginOk ? "ok" : "below 5 pp"} (info
+                  only)
+                </>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -152,18 +179,15 @@ export function WeekendOpportunitiesApp() {
         <div>
           <h1 style={{ margin: 0, fontSize: "1.35rem" }}>Weekend Picks</h1>
           <p className="page-sub" style={{ marginTop: "0.35rem", maxWidth: "42rem" }}>
-            Upcoming Sat–Sun fixtures from Match Centre (next 7 days, all five
-            leagues). Each row is the single highest-probability market from the
-            full CFE scan — top 10–20 matches ranked globally. Markets include
-            match winner, draw either half, win ≥1 half, highest scoring half,
-            shots on target O/U, plus BTTS, totals, and combos (Double Chance +
-            BTTS, Double Chance + Total Over, BTTS + Total, Win + Total). Only
-            fixtures where the best market leads the 2nd-best by ≥5 pp are shown.
+            All Sat–Sun fixtures from Match Centre (next 7 days, five leagues),
+            ranked by best-market calibrated probability. Each match gets one
+            pick — the highest-probability market that passes MSAM eligibility
+            when possible, otherwise the best available fallback. Total Goals:
+            Over ≥1.5, Under ≤4.5. Team Goals: Over ≥0.5, Under ≤3.5 per side.
           </p>
           {data && (
             <p className="page-sub" style={{ marginTop: "0.25rem" }}>
-              Scanned {data.fixturePoolCount ?? 0} weekend fixtures · showing{" "}
-              {data.selectedCount ?? 0} picks
+              {data.selectedCount ?? 0} matches ranked
               {data.generatedAt
                 ? ` · updated ${new Date(data.generatedAt).toLocaleTimeString()}`
                 : ""}
@@ -236,12 +260,6 @@ export function WeekendOpportunitiesApp() {
         </div>
       )}
 
-      {rows.length > 0 && rows[0]?.advisory && (
-        <div style={{ marginBottom: "1rem" }}>
-          <BestMarketAdvisoryCard advisory={rows[0].advisory} />
-        </div>
-      )}
-
       {rows.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table
@@ -266,14 +284,24 @@ export function WeekendOpportunitiesApp() {
             <tbody>
               {rows.map((row) => (
                 <Fragment key={row.apiFixtureId}>
-                  <tr
-                    style={{ borderBottom: "1px solid var(--border)" }}
-                  >
+                  <tr style={{ borderBottom: "1px solid var(--border)" }}>
                     <td style={{ padding: "0.5rem", fontWeight: 700 }}>
                       {row.rank}
                     </td>
                     <td style={{ padding: "0.5rem", fontWeight: 600 }}>
                       {row.matchLabel}
+                      {!row.msamGatePassed && row.probabilityPct != null && (
+                        <span
+                          style={{
+                            marginLeft: "0.35rem",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            color: "var(--muted)",
+                          }}
+                        >
+                          Low evidence
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: "0.5rem" }}>{row.league}</td>
                     <td style={{ padding: "0.5rem", whiteSpace: "nowrap" }}>
@@ -290,7 +318,7 @@ export function WeekendOpportunitiesApp() {
                           fontWeight: 700,
                         }}
                       >
-                        {row.probabilityPct}%
+                        {row.probabilityPct != null ? `${row.probabilityPct}%` : "—"}
                       </span>
                     </td>
                     <td style={{ padding: "0.5rem" }}>
@@ -312,9 +340,6 @@ export function WeekendOpportunitiesApp() {
                     <tr>
                       <td colSpan={8} style={{ padding: "0 0.5rem 0.75rem" }}>
                         <TracePanel row={row} />
-                        {row.advisory && (
-                          <BestMarketAdvisoryCard advisory={row.advisory} compact />
-                        )}
                       </td>
                     </tr>
                   )}

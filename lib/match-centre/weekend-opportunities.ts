@@ -1,10 +1,15 @@
 /**
  * Weekend opportunistic picks — Match Centre upcoming fixtures,
- * best market per match, top 10–20 by calibrated probability.
+ * best market per match for every Sat–Sun fixture, ranked by calibrated probability.
  */
 import type { UpcomingFixtureRow } from "@/lib/football-api/fetch-upcoming-league";
 import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { sortDedupeUpcomingFixtures } from "@/lib/prediction-log/batch-fixture-picker";
+import {
+  weekendMsamEligible,
+  weekendMsamIneligibilityReasons,
+} from "@/lib/market-advisory/weekend-eligibility-gate";
+import type { IneligibilityReasonCode } from "@/lib/market-advisory/types";
 import type { BinCalibrator } from "@/lib/predictor/calibration";
 import { scoreLegFromCanonical } from "@/lib/slip-builder/canonical-leg";
 import {
@@ -17,12 +22,16 @@ import {
   type MarketFamilyId,
 } from "@/lib/slip-builder/types";
 
+/** @deprecated Weekend Picks now includes all fixtures in the pool. */
 export const WEEKEND_PICK_MIN = 10;
+/** @deprecated Weekend Picks now includes all fixtures in the pool. */
 export const WEEKEND_PICK_MAX = 20;
 export const WEEKEND_WINDOW_DAYS = 7;
 export const WEEKEND_TOTALS_OVER_MIN_LINE = 1.5;
 export const WEEKEND_TOTALS_UNDER_MAX_LINE = 4.5;
-/** Minimum calibrated-probability gap between best and 2nd-best market on a fixture. */
+export const WEEKEND_TEAM_GOALS_OVER_MIN_LINE = 0.5;
+export const WEEKEND_TEAM_GOALS_UNDER_MAX_LINE = 3.5;
+/** Minimum calibrated-probability gap between best and 2nd-best (trace only). */
 export const WEEKEND_MARKET_MARGIN_MIN = 0.05;
 
 /** Core Double Chance + Over Total combos for Weekend Picks. */
@@ -70,6 +79,23 @@ export function weekendTotalsSelectionAllowed(
   return true;
 }
 
+/** Team Goals: Over ≥0.5, Under ≤3.5; clean sheets always allowed. */
+export function weekendTeamGoalsSelectionAllowed(
+  family: MarketFamilyId,
+  selectionKey: string,
+  line?: number
+): boolean {
+  if (family !== "TEAM_GOALS") return true;
+  if (line == null) return true;
+  if (selectionKey.includes("_over_")) {
+    return line >= WEEKEND_TEAM_GOALS_OVER_MIN_LINE;
+  }
+  if (selectionKey.includes("_under_")) {
+    return line <= WEEKEND_TEAM_GOALS_UNDER_MAX_LINE;
+  }
+  return true;
+}
+
 /** Weekend Picks combos: DC+BTTS, DC+Total (Over), BTTS+Total, Win+Total. */
 export function weekendComboSelectionAllowed(
   family: MarketFamilyId,
@@ -81,10 +107,10 @@ export function weekendComboSelectionAllowed(
 
 export type WeekendOpportunityTrace = {
   fixtureSource: "match_centre_upcoming";
-  cfeProvenance: CanonicalFixtureEstimate["provenance"];
+  cfeProvenance?: CanonicalFixtureEstimate["provenance"];
   apiSeasonBlend?: string;
-  family: MarketFamilyId;
-  selectionKey: string;
+  family?: MarketFamilyId;
+  selectionKey?: string;
   pRaw: number;
   pCalibrated: number;
   nEffective: number;
@@ -92,6 +118,9 @@ export type WeekendOpportunityTrace = {
   secondBestPCalibrated?: number;
   marketMargin?: number;
   marginOk?: boolean;
+  msamGatePassed?: boolean;
+  ineligibilityReasons?: IneligibilityReasonCode[];
+  noEstimate?: boolean;
 };
 
 export type WeekendOpportunityRow = {
@@ -103,10 +132,11 @@ export type WeekendOpportunityRow = {
   awayTeam: string;
   marketLabel: string;
   prediction: string;
-  probabilityPct: number;
+  probabilityPct: number | null;
   pRaw: number;
   pCalibrated: number;
   rank: number;
+  msamGatePassed: boolean;
   trace: WeekendOpportunityTrace;
 };
 
@@ -182,6 +212,21 @@ export function filterWeekendFixtures(
   return sortDedupeUpcomingFixtures(filtered);
 }
 
+type ScoredCandidate = {
+  marketLabel: string;
+  predictionLabel: string;
+  family: MarketFamilyId;
+  selectionKey: string;
+  line?: number;
+  comboId?: string;
+  pRaw: number;
+  pCalibrated: number;
+  nEffective: number;
+  coherenceOk: boolean;
+  msamGatePassed: boolean;
+  ineligibilityReasons: IneligibilityReasonCode[];
+};
+
 export type BestMarketPick = {
   marketLabel: string;
   predictionLabel: string;
@@ -195,40 +240,31 @@ export type BestMarketPick = {
   coherenceOk: boolean;
   secondBestPCalibrated?: number;
   marketMargin?: number;
+  msamGatePassed: boolean;
+  ineligibilityReasons: IneligibilityReasonCode[];
 } | null;
 
 export function scoreFixtureBestMarket(
   fixture: UpcomingFixtureRow,
   estimate: CanonicalFixtureEstimate,
-  calibrator: BinCalibrator | null,
-  opts?: { applyMarginGate?: boolean }
+  calibrator: BinCalibrator | null
 ): BestMarketPick {
-  const applyMarginGate = opts?.applyMarginGate !== false;
-  const candidates: Array<{
-    marketLabel: string;
-    predictionLabel: string;
-    family: MarketFamilyId;
-    selectionKey: string;
-    line?: number;
-    comboId?: string;
-    pRaw: number;
-    pCalibrated: number;
-    nEffective: number;
-    coherenceOk: boolean;
-  }> = [];
+  const candidates: ScoredCandidate[] = [];
 
   for (const family of MARKET_FAMILY_IDS) {
     if (!familyDataOk(family, estimate)) continue;
 
     for (const sel of enumerateFamilySelections(family)) {
-      if (!weekendComboSelectionAllowed(family, sel.comboId)) {
+      if (!weekendComboSelectionAllowed(family, sel.comboId)) continue;
+      if (!weekendTotalsSelectionAllowed(family, sel.selectionKey, sel.line)) {
         continue;
       }
       if (
-        !weekendTotalsSelectionAllowed(family, sel.selectionKey, sel.line)
+        !weekendTeamGoalsSelectionAllowed(family, sel.selectionKey, sel.line)
       ) {
         continue;
       }
+
       const scored = scoreLegFromCanonical({
         estimate,
         family,
@@ -245,6 +281,15 @@ export function scoreFixtureBestMarket(
         calibrator
       );
 
+      const ineligibilityReasons = weekendMsamIneligibilityReasons({
+        family,
+        pRaw: scored.pRaw,
+        nEffective: scored.nEffective,
+        coherenceOk: scored.coherenceOk,
+        cfe: estimate,
+      });
+      const msamGatePassed = ineligibilityReasons.length === 0;
+
       candidates.push({
         marketLabel: FAMILY_LABELS[family],
         predictionLabel: sel.selectionLabel,
@@ -256,42 +301,81 @@ export function scoreFixtureBestMarket(
         pCalibrated: cal.pCalibrated,
         nEffective: scored.nEffective,
         coherenceOk: scored.coherenceOk,
+        msamGatePassed,
+        ineligibilityReasons,
       });
     }
   }
 
   if (candidates.length === 0) return null;
 
-  candidates.sort((a, b) => {
+  const sortByProb = (a: ScoredCandidate, b: ScoredCandidate) => {
     if (b.pCalibrated !== a.pCalibrated) return b.pCalibrated - a.pCalibrated;
     if (b.pRaw !== a.pRaw) return b.pRaw - a.pRaw;
     return 0;
-  });
+  };
 
-  const best = candidates[0]!;
-  const second = candidates[1];
+  const eligible = candidates.filter((c) => c.msamGatePassed).sort(sortByProb);
+  const pool = eligible.length > 0 ? eligible : [...candidates].sort(sortByProb);
+
+  const best = pool[0]!;
+  const second = pool[1];
   const margin =
     second != null ? best.pCalibrated - second.pCalibrated : best.pCalibrated;
 
-  if (applyMarginGate && margin < WEEKEND_MARKET_MARGIN_MIN) return null;
-
   return {
-    ...best,
+    marketLabel: best.marketLabel,
+    predictionLabel: best.predictionLabel,
+    family: best.family,
+    selectionKey: best.selectionKey,
+    line: best.line,
+    comboId: best.comboId,
+    pRaw: best.pRaw,
+    pCalibrated: best.pCalibrated,
+    nEffective: best.nEffective,
+    coherenceOk: best.coherenceOk,
     secondBestPCalibrated: second?.pCalibrated,
     marketMargin: margin,
+    msamGatePassed: best.msamGatePassed,
+    ineligibilityReasons: best.ineligibilityReasons,
   };
 }
 
+/** @deprecated All fixtures in the pool are now included. */
 export function selectWeekendPickCount(poolSize: number): {
   count: number;
   insufficientPool: boolean;
 } {
-  if (poolSize < WEEKEND_PICK_MIN) {
-    return { count: poolSize, insufficientPool: poolSize > 0 };
-  }
+  return { count: poolSize, insufficientPool: false };
+}
+
+function emptyRow(
+  fixture: UpcomingFixtureRow,
+  rank: number
+): WeekendOpportunityRow {
   return {
-    count: Math.min(WEEKEND_PICK_MAX, Math.max(WEEKEND_PICK_MIN, poolSize)),
-    insufficientPool: false,
+    apiFixtureId: fixture.apiFixtureId,
+    league: fixture.league,
+    kickoffIso: fixture.kickoffIso,
+    matchLabel: `${fixture.home.name} vs ${fixture.away.name}`,
+    homeTeam: fixture.home.name,
+    awayTeam: fixture.away.name,
+    marketLabel: "—",
+    prediction: "—",
+    probabilityPct: null,
+    pRaw: 0,
+    pCalibrated: 0,
+    rank,
+    msamGatePassed: false,
+    trace: {
+      fixtureSource: "match_centre_upcoming",
+      pRaw: 0,
+      pCalibrated: 0,
+      nEffective: 0,
+      coherenceOk: false,
+      noEstimate: true,
+      msamGatePassed: false,
+    },
   };
 }
 
@@ -304,114 +388,90 @@ export function rankWeekendOpportunities(input: {
   const now = input.now ?? new Date();
   const end = new Date(now.getTime() + WEEKEND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const strictScored: Array<{
+  const scored: Array<{
     fixture: UpcomingFixtureRow;
-    estimate: CanonicalFixtureEstimate;
-    pick: NonNullable<BestMarketPick>;
-    marginOk: boolean;
+    estimate: CanonicalFixtureEstimate | null;
+    pick: BestMarketPick;
   }> = [];
-  const relaxedScored: typeof strictScored = [];
 
   for (let i = 0; i < input.fixtures.length; i++) {
     const fixture = input.fixtures[i]!;
-    const estimate = input.estimates[i];
-    if (!estimate) continue;
-
-    const strictPick = scoreFixtureBestMarket(
-      fixture,
-      estimate,
-      input.calibrator,
-      { applyMarginGate: true }
-    );
-    if (strictPick) {
-      strictScored.push({
-        fixture,
-        estimate,
-        pick: strictPick,
-        marginOk: true,
-      });
+    const estimate = input.estimates[i] ?? null;
+    if (!estimate) {
+      scored.push({ fixture, estimate: null, pick: null });
       continue;
     }
-
-    const relaxedPick = scoreFixtureBestMarket(
-      fixture,
-      estimate,
-      input.calibrator,
-      { applyMarginGate: false }
-    );
-    if (!relaxedPick) continue;
-    relaxedScored.push({
-      fixture,
-      estimate,
-      pick: relaxedPick,
-      marginOk: false,
-    });
+    const pick = scoreFixtureBestMarket(fixture, estimate, input.calibrator);
+    scored.push({ fixture, estimate, pick });
   }
 
   const sortScored = (
-    a: (typeof strictScored)[number],
-    b: (typeof strictScored)[number]
+    a: (typeof scored)[number],
+    b: (typeof scored)[number]
   ) => {
-    if (b.pick.pCalibrated !== a.pick.pCalibrated) {
-      return b.pick.pCalibrated - a.pick.pCalibrated;
-    }
-    if (b.pick.pRaw !== a.pick.pRaw) return b.pick.pRaw - a.pick.pRaw;
+    const aP = a.pick?.pCalibrated ?? -1;
+    const bP = b.pick?.pCalibrated ?? -1;
+    if (bP !== aP) return bP - aP;
+    const aRaw = a.pick?.pRaw ?? -1;
+    const bRaw = b.pick?.pRaw ?? -1;
+    if (bRaw !== aRaw) return bRaw - aRaw;
     return kickoffMs(a.fixture.kickoffIso) - kickoffMs(b.fixture.kickoffIso);
   };
 
-  strictScored.sort(sortScored);
-  relaxedScored.sort(sortScored);
+  scored.sort(sortScored);
 
-  let scored = [...strictScored];
-  if (scored.length < WEEKEND_PICK_MIN) {
-    for (const row of relaxedScored) {
-      if (scored.length >= WEEKEND_PICK_MIN) break;
-      scored.push(row);
+  const rows: WeekendOpportunityRow[] = scored.map(
+    ({ fixture, estimate, pick }, idx) => {
+      if (!estimate || !pick) {
+        return emptyRow(fixture, idx + 1);
+      }
+
+      const marginOk =
+        pick.marketMargin != null &&
+        pick.marketMargin >= WEEKEND_MARKET_MARGIN_MIN;
+
+      return {
+        apiFixtureId: fixture.apiFixtureId,
+        league: fixture.league,
+        kickoffIso: fixture.kickoffIso,
+        matchLabel: `${fixture.home.name} vs ${fixture.away.name}`,
+        homeTeam: fixture.home.name,
+        awayTeam: fixture.away.name,
+        marketLabel: pick.marketLabel,
+        prediction: pick.predictionLabel,
+        probabilityPct: Math.round(pick.pCalibrated * 1000) / 10,
+        pRaw: pick.pRaw,
+        pCalibrated: pick.pCalibrated,
+        rank: idx + 1,
+        msamGatePassed: pick.msamGatePassed,
+        trace: {
+          fixtureSource: "match_centre_upcoming",
+          cfeProvenance: estimate.provenance,
+          apiSeasonBlend: estimate.provenance.apiSeasonBlend,
+          family: pick.family,
+          selectionKey: pick.selectionKey,
+          pRaw: pick.pRaw,
+          pCalibrated: pick.pCalibrated,
+          nEffective: pick.nEffective,
+          coherenceOk: pick.coherenceOk,
+          secondBestPCalibrated: pick.secondBestPCalibrated,
+          marketMargin: pick.marketMargin,
+          marginOk,
+          msamGatePassed: pick.msamGatePassed,
+          ineligibilityReasons:
+            pick.ineligibilityReasons.length > 0
+              ? pick.ineligibilityReasons
+              : undefined,
+        },
+      };
     }
-  }
-  if (scored.length < WEEKEND_PICK_MIN) {
-    scored = [...strictScored, ...relaxedScored].sort(sortScored);
-  }
-
-  const { count, insufficientPool } = selectWeekendPickCount(scored.length);
-  const top = scored.slice(0, count);
-
-  const rows: WeekendOpportunityRow[] = top.map(
-    ({ fixture, estimate, pick, marginOk }, idx) => ({
-    apiFixtureId: fixture.apiFixtureId,
-    league: fixture.league,
-    kickoffIso: fixture.kickoffIso,
-    matchLabel: `${fixture.home.name} vs ${fixture.away.name}`,
-    homeTeam: fixture.home.name,
-    awayTeam: fixture.away.name,
-    marketLabel: pick.marketLabel,
-    prediction: pick.predictionLabel,
-    probabilityPct: Math.round(pick.pCalibrated * 1000) / 10,
-    pRaw: pick.pRaw,
-    pCalibrated: pick.pCalibrated,
-    rank: idx + 1,
-    trace: {
-      fixtureSource: "match_centre_upcoming",
-      cfeProvenance: estimate.provenance,
-      apiSeasonBlend: estimate.provenance.apiSeasonBlend,
-      family: pick.family,
-      selectionKey: pick.selectionKey,
-      pRaw: pick.pRaw,
-      pCalibrated: pick.pCalibrated,
-      nEffective: pick.nEffective,
-      coherenceOk: pick.coherenceOk,
-      secondBestPCalibrated: pick.secondBestPCalibrated,
-      marketMargin: pick.marketMargin,
-      marginOk,
-    },
-  })
   );
 
   return {
     rows,
     fixturePoolCount: input.fixtures.length,
     selectedCount: rows.length,
-    insufficientPool,
+    insufficientPool: input.fixtures.length === 0,
     window: {
       from: now.toISOString(),
       to: end.toISOString(),

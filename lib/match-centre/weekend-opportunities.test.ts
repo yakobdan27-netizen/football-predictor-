@@ -9,10 +9,9 @@ import {
   selectWeekendPickCount,
   WEEKEND_DC_TOTAL_COMBO_IDS,
   weekendComboSelectionAllowed,
+  weekendTeamGoalsSelectionAllowed,
   weekendTotalsSelectionAllowed,
   WEEKEND_MARKET_MARGIN_MIN,
-  WEEKEND_PICK_MAX,
-  WEEKEND_PICK_MIN,
 } from "./weekend-opportunities";
 
 function row(
@@ -53,28 +52,13 @@ test("filterWeekendFixtures excludes non-NS/TBD", () => {
   assert.equal(out.length, 0);
 });
 
-test("selectWeekendPickCount caps at 20 and floors at 10 when pool large enough", () => {
+test("selectWeekendPickCount returns full pool size", () => {
   assert.deepEqual(selectWeekendPickCount(25), {
-    count: WEEKEND_PICK_MAX,
+    count: 25,
     insufficientPool: false,
   });
-  assert.deepEqual(selectWeekendPickCount(15), {
-    count: 15,
-    insufficientPool: false,
-  });
-  assert.deepEqual(selectWeekendPickCount(10), {
-    count: WEEKEND_PICK_MIN,
-    insufficientPool: false,
-  });
-});
-
-test("selectWeekendPickCount returns all when pool below minimum", () => {
   assert.deepEqual(selectWeekendPickCount(8), {
     count: 8,
-    insufficientPool: true,
-  });
-  assert.deepEqual(selectWeekendPickCount(0), {
-    count: 0,
     insufficientPool: false,
   });
 });
@@ -87,6 +71,22 @@ test("weekendTotalsSelectionAllowed excludes trivial total goals lines", () => {
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_5_5", 5.5), false);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_4_5", 4.5), true);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_0_5", 0.5), true);
+});
+
+test("weekendTeamGoalsSelectionAllowed enforces Over 0.5 and Under 3.5", () => {
+  assert.equal(
+    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "home_over_0_5", 0.5),
+    true
+  );
+  assert.equal(
+    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "away_under_3_5", 3.5),
+    true
+  );
+  assert.equal(
+    weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "home_under_4_5", 4.5),
+    false
+  );
+  assert.equal(weekendTeamGoalsSelectionAllowed("TEAM_GOALS", "home_cs"), true);
 });
 
 test("weekendTotalsSelectionAllowed passes through non-TOTALS families", () => {
@@ -238,7 +238,7 @@ function mockEstimate(
   return { ...base, ...overrides };
 }
 
-test("scoreFixtureBestMarket rejects when margin below threshold", () => {
+test("scoreFixtureBestMarket returns pick even when margin is tight", () => {
   const fixture = row(99, "2026-08-22T15:00:00.000Z");
   const flat = 0.51;
   const est = mockEstimate({
@@ -266,10 +266,11 @@ test("scoreFixtureBestMarket rejects when margin below threshold", () => {
     },
   });
   const pick = scoreFixtureBestMarket(fixture, est, null);
-  assert.equal(pick, null);
+  assert.ok(pick);
+  assert.ok((pick!.marketMargin ?? 0) < WEEKEND_MARKET_MARGIN_MIN);
 });
 
-test("scoreFixtureBestMarket accepts clear leader above margin", () => {
+test("scoreFixtureBestMarket picks clear leader with MSAM gate", () => {
   const fixture = row(100, "2026-08-22T15:00:00.000Z");
   const est = mockEstimate({
     markets: {
@@ -286,9 +287,10 @@ test("scoreFixtureBestMarket accepts clear leader above margin", () => {
   assert.ok(pick);
   assert.equal(pick!.family, "DIEH");
   assert.ok((pick!.marketMargin ?? 0) >= WEEKEND_MARKET_MARGIN_MIN);
+  assert.equal(pick!.msamGatePassed, true);
 });
 
-test("rankWeekendOpportunities fills to 10 using relaxed picks when margin gate is tight", () => {
+test("rankWeekendOpportunities returns one row per fixture", () => {
   const fixtures = Array.from({ length: 15 }, (_, i) =>
     row(200 + i, "2026-08-22T15:00:00.000Z")
   );
@@ -335,6 +337,22 @@ test("rankWeekendOpportunities fills to 10 using relaxed picks when margin gate 
     estimates,
     calibrator: null,
   });
-  assert.ok(result.selectedCount >= WEEKEND_PICK_MIN);
+  assert.equal(result.selectedCount, 15);
+  assert.equal(result.rows.length, 15);
   assert.equal(result.rows[0]!.trace.marginOk, true);
+  assert.ok(result.rows[0]!.pCalibrated >= result.rows[1]!.pCalibrated);
+});
+
+test("rankWeekendOpportunities includes fixture without estimate", () => {
+  const fixtures = [row(1, "2026-08-22T15:00:00.000Z"), row(2, "2026-08-23T15:00:00.000Z")];
+  const result = rankWeekendOpportunities({
+    fixtures,
+    estimates: [mockEstimate()],
+    calibrator: null,
+  });
+  assert.equal(result.rows.length, 2);
+  const empty = result.rows.find((r) => r.apiFixtureId === 2);
+  assert.ok(empty);
+  assert.equal(empty!.probabilityPct, null);
+  assert.equal(empty!.trace.noEstimate, true);
 });

@@ -10,6 +10,7 @@ import {
 } from "./provider";
 import {
   getEventsForFixture,
+  getFixtureById,
   replaceEventsForFixture,
   upsertFixtures,
   upsertLeague,
@@ -22,12 +23,18 @@ import {
   filterEligibleFixtures,
 } from "@/lib/football-api/fixture-eligibility";
 import type { NewMatchStats } from "@/lib/db/schema";
+import {
+  fixtureNeedsStatisticsHydration,
+  hydrateFixtureStatistics,
+  persistApiFootballStatistics,
+} from "./hydrate-api-statistics";
 
 export async function applyApiFixtures(
   raw: LiveApiFixture[],
   seasonFallback: number,
   opts?: {
     hydrateEventsOnFt?: boolean;
+    hydrateStatisticsOnFt?: boolean;
     provider?: LiveFixturesProvider;
     beSoccerEnrichments?: Map<number, LiveBeSoccerEnrichment>;
     /** When set, filter to men's top-flight roster for this league. */
@@ -46,12 +53,14 @@ export async function applyApiFixtures(
   normalizeDropped: number;
   eligibilityDropped: number;
   eventsHydrated: number;
+  statsHydrated: number;
 }> {
   const syncedAt = new Date();
   const leaguesSeen = new Map<number, ReturnType<typeof normalizeLeague>>();
   const fixtures = [];
   const provider = opts?.provider ?? apiSportsLiveProvider;
   const hydrateEvents = opts?.hydrateEventsOnFt !== false;
+  const hydrateStatistics = opts?.hydrateStatisticsOnFt ?? hydrateEvents;
   const enrichments = opts?.beSoccerEnrichments;
 
   let rows = raw;
@@ -174,6 +183,52 @@ export async function applyApiFixtures(
     }
   }
 
+  let statsHydrated = 0;
+  if (hydrateStatistics) {
+    for (const row of rows) {
+      const status = (row.fixture?.status?.short ?? "").toUpperCase();
+      const id = row.fixture?.id;
+      if (!id || !isFinishedStatus(status)) continue;
+      const enrich = enrichments?.get(id);
+      try {
+        const existing = await getFixtureById(id);
+        if (
+          !fixtureNeedsStatisticsHydration(existing, enrich ?? null)
+        ) {
+          continue;
+        }
+        const homeTeam =
+          row.teams?.home?.name?.trim() ?? existing?.homeTeam ?? "";
+        const awayTeam =
+          row.teams?.away?.name?.trim() ?? existing?.awayTeam ?? "";
+        if (!homeTeam || !awayTeam) continue;
+
+        const result = await hydrateFixtureStatistics(
+          id,
+          homeTeam,
+          awayTeam,
+          provider
+        );
+        if (!result) continue;
+
+        const base = existing;
+        if (!base) continue;
+
+        const persist = await persistApiFootballStatistics(
+          base,
+          result.enrichment,
+          result.rawJson,
+          syncedAt
+        );
+        matchStatsUpserted += persist.matchStatsUpserted;
+        statsHydrated += 1;
+        await sleep(150);
+      } catch {
+        // Plan-gated or transient — leave corners empty
+      }
+    }
+  }
+
   return {
     fetched: raw.length,
     upserted: result.upserted,
@@ -186,6 +241,7 @@ export async function applyApiFixtures(
     normalizeDropped: rows.length - fixtures.length,
     eligibilityDropped,
     eventsHydrated,
+    statsHydrated,
   };
 }
 

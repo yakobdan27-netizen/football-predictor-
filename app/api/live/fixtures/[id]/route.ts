@@ -7,7 +7,7 @@ import { getDb } from "@/lib/db";
 import { liveLeagues } from "@/lib/db/schema";
 import { enrichFixturesWithBeSoccer } from "@/lib/live/enrich-besoccer";
 import { mergeLiveSources } from "@/lib/live/merge-besoccer";
-import { normalizeEvents, normalizeFixture } from "@/lib/live/normalize";
+import { normalizeEvents, normalizeFixture, isFinishedStatus } from "@/lib/live/normalize";
 import { apiSportsLiveProvider } from "@/lib/live/provider";
 import {
   getEventsForFixture,
@@ -15,6 +15,7 @@ import {
   replaceEventsForFixture,
   upsertFixtures,
 } from "@/lib/live/store";
+import { hydrateAndPersistFixtureStatisticsIfNeeded } from "@/lib/live/hydrate-api-statistics";
 import type { LiveFixtureDto, LiveSourceConflictDto } from "@/lib/live/types";
 import { eq } from "drizzle-orm";
 
@@ -145,6 +146,22 @@ export async function GET(
         }
       } catch {
         // Keep empty events
+      }
+    }
+
+    if (
+      isFinishedStatus(fixture.status) &&
+      (fixture.homeCorners == null || fixture.awayCorners == null)
+    ) {
+      try {
+        const hydrated = await hydrateAndPersistFixtureStatisticsIfNeeded(
+          fixtureId
+        );
+        if (hydrated) {
+          fixture = (await getFixtureById(fixtureId)) ?? fixture;
+        }
+      } catch {
+        // Keep cached row
       }
     }
 

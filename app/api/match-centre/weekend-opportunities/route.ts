@@ -8,7 +8,6 @@ import { registerMatchCentreFixtures } from "@/lib/match-centre/register-fixture
 import {
   filterWeekendFixtures,
   rankWeekendOpportunities,
-  WEEKEND_PICK_MIN,
 } from "@/lib/match-centre/weekend-opportunities";
 import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
@@ -19,11 +18,6 @@ import {
 } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { fitSlipCalibrator } from "@/lib/slip-builder/slip-calibration";
 import { sumFilterReasons } from "@/lib/football-api/fixture-eligibility";
-import {
-  attachWeekendAdvisories,
-  buildEstimateByFixtureId,
-} from "@/lib/market-advisory/attach-weekend-advisories";
-import { recomputeAnalysis } from "@/lib/prediction-log/analysis";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -90,7 +84,7 @@ export async function GET(request: Request) {
         generatedAt: new Date().toISOString(),
         fixturePoolCount: 0,
         selectedCount: 0,
-        insufficientPool: false,
+        insufficientPool: true,
         rows: [],
         warnings: [
           "No Sat–Sun fixtures in the next 7 days across the five leagues.",
@@ -117,48 +111,21 @@ export async function GET(request: Request) {
         matchCentreCache,
       });
       const calibrator = fitSlipCalibrator(allBatches);
-      const ranked = rankWeekendOpportunities({
+      return rankWeekendOpportunities({
         fixtures: weekendFixtures,
         estimates,
         calibrator,
       });
-      const analysis = recomputeAnalysis(allBatches);
-      const estimateByFixtureId = buildEstimateByFixtureId(
-        weekendFixtures,
-        estimates
-      );
-      const advisoriesByFixtureId = attachWeekendAdvisories({
-        rows: ranked.rows,
-        estimateByFixtureId,
-        allBatches,
-        analysis,
-      });
-      return { ranked, advisoriesByFixtureId };
     };
 
     const dayKey = new Date().toISOString().slice(0, 10);
-    const scored =
-      refresh
-        ? await runScoring()
-        : await unstable_cache(runScoring, ["weekend-opportunities", dayKey], {
-            revalidate: WEEKEND_CACHE_SECONDS,
-          })();
-
-    const result = scored.ranked;
-    const advisoriesByFixtureId = scored.advisoriesByFixtureId;
+    const result = refresh
+      ? await runScoring()
+      : await unstable_cache(runScoring, ["weekend-opportunities", dayKey], {
+          revalidate: WEEKEND_CACHE_SECONDS,
+        })();
 
     const warnings: string[] = [];
-    if (result.insufficientPool) {
-      if (result.fixturePoolCount >= WEEKEND_PICK_MIN) {
-        warnings.push(
-          `Only ${result.selectedCount} picks ranked from ${result.fixturePoolCount} weekend fixtures (target is 10–20).`
-        );
-      } else {
-        warnings.push(
-          `Only ${result.fixturePoolCount} weekend fixtures found (minimum target is 10). Showing all available.`
-        );
-      }
-    }
     for (const r of leagueResults) {
       if (r.warning) warnings.push(`${r.league}: ${r.warning}`);
     }
@@ -170,11 +137,7 @@ export async function GET(request: Request) {
       fixturePoolCount: result.fixturePoolCount,
       selectedCount: result.selectedCount,
       insufficientPool: result.insufficientPool,
-      rows: result.rows.map((row) => ({
-        ...row,
-        advisory: advisoriesByFixtureId[row.apiFixtureId] ?? null,
-      })),
-      advisoriesByFixtureId,
+      rows: result.rows,
       warnings,
       filteredCount,
       filterReasons,

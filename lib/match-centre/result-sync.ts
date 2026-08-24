@@ -30,6 +30,7 @@ export type MatchCentreResultSyncSummary = {
   catchUpUpserted: number;
   catchUpSettledEmitted: number;
   catchUpEventsHydrated: number;
+  catchUpStatsHydrated: number;
   settledFixtures: number;
   settledSelections: number;
   settledSlips: number;
@@ -106,6 +107,7 @@ export async function syncMatchCentreFinishedCatchUp(): Promise<{
   upserted: number;
   settledEmitted: number;
   eventsHydrated: number;
+  statsHydrated: number;
   errors: string[];
 }> {
   const from = addDaysIso(todayIsoDate(), -1);
@@ -115,6 +117,7 @@ export async function syncMatchCentreFinishedCatchUp(): Promise<{
   let upserted = 0;
   let settledEmitted = 0;
   let eventsHydrated = 0;
+  let statsHydrated = 0;
   const errors: string[] = [];
 
   for (const name of LIVE_SYNC_LEAGUES) {
@@ -135,6 +138,7 @@ export async function syncMatchCentreFinishedCatchUp(): Promise<{
       upserted += applied.upserted;
       settledEmitted += applied.settledEmitted;
       eventsHydrated += applied.eventsHydrated;
+      statsHydrated += applied.statsHydrated;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`${name}: ${msg}`);
@@ -143,7 +147,7 @@ export async function syncMatchCentreFinishedCatchUp(): Promise<{
     await sleep(250);
   }
 
-  return { fetched, upserted, settledEmitted, eventsHydrated, errors };
+  return { fetched, upserted, settledEmitted, eventsHydrated, statsHydrated, errors };
 }
 
 /** Full Match Centre result sync — cron entry point. */
@@ -175,12 +179,14 @@ export async function runMatchCentreResultSync(): Promise<MatchCentreResultSyncS
   let catchUpUpserted = 0;
   let catchUpSettledEmitted = 0;
   let catchUpEventsHydrated = 0;
+  let catchUpStatsHydrated = 0;
   try {
     const catchUp = await syncMatchCentreFinishedCatchUp();
     catchUpFetched = catchUp.fetched;
     catchUpUpserted = catchUp.upserted;
     catchUpSettledEmitted = catchUp.settledEmitted;
     catchUpEventsHydrated = catchUp.eventsHydrated;
+    catchUpStatsHydrated = catchUp.statsHydrated;
     errors.push(...catchUp.errors);
   } catch (e) {
     errors.push(`catch-up: ${e instanceof Error ? e.message : String(e)}`);
@@ -234,6 +240,7 @@ export async function runMatchCentreResultSync(): Promise<MatchCentreResultSyncS
     catchUpUpserted,
     catchUpSettledEmitted,
     catchUpEventsHydrated,
+    catchUpStatsHydrated,
     settledFixtures,
     settledSelections,
     settledSlips,

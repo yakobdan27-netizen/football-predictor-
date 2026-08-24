@@ -34,7 +34,7 @@ export const DEFAULT_FOUR_FAMILIES: MarketFamilyId[] = [
 ];
 
 const HANDICAP_LINES = [-1.5, -1, -0.5, 0.5, 1, 1.5] as const;
-const TEAM_GOAL_LINES = [0.5, 1.5, 2.5] as const;
+const TEAM_GOAL_LINES = [0.5, 1.5, 2.5, 3.5] as const;
 
 function formatHandicap(line: number, side: "home" | "away"): string {
   const signed =
