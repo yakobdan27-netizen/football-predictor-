@@ -54,8 +54,9 @@ export function BlendedAnalysisNotice({ blend, pageLabel }: Props) {
       }}
     >
       <div>
-        Analysis uses 60% API historical data and 40% system historical data
-        (manual batches, prior system records, and AI learner data).
+        Analysis uses 30% last-five Match Centre results, 30% prior API
+        history, and 40% system-season data (manual batches, prior system
+        records, and AI learner data).
         {pageLabel ? (
           <span style={{ color: "var(--muted, #666)" }}> ({pageLabel})</span>
         ) : null}

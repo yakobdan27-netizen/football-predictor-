@@ -72,6 +72,25 @@ export function sortDedupeUpcomingFixtures(
   return out;
 }
 
+function startOfLocalDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** Keep fixtures kicking off within the next 7 calendar days (from today). */
+export function filterUpcomingNext7Days(
+  fixtures: UpcomingFixtureRow[],
+  now = new Date()
+): UpcomingFixtureRow[] {
+  const windowStart = startOfLocalDay(now);
+  const windowEnd = windowStart + 7 * 24 * 60 * 60 * 1000;
+  return sortDedupeUpcomingFixtures(
+    fixtures.filter((row) => {
+      const t = kickoffMs(row.kickoffIso);
+      return t >= windowStart && t < windowEnd;
+    })
+  );
+}
+
 /**
  * In-memory batch for upcoming API fixtures (not persisted to KV).
  */

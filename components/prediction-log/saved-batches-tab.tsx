@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { BatchMatchTable } from "./batch-match-table";
 import { BatchSummaryStrip } from "./batch-summary-strip";
@@ -32,6 +32,10 @@ import {
   refreshBatchLearnerRecommendation,
 } from "@/lib/prediction-log/storage";
 import type { LogMarketKey, PredictionBatch, RecommendationSettings } from "@/lib/prediction-log/types";
+import {
+  batchAllMatchesRichSettlement,
+  richSettlementFingerprint,
+} from "@/lib/prediction-log/match-settlement";
 
 interface SavedBatchesTabProps {
   batches: PredictionBatch[];
@@ -74,6 +78,8 @@ export function SavedBatchesTab({
   const [twoHHeavySort, setTwoHHeavySort] = useState(true);
   const { byId: twoHHeavyByMatch } = useTwoHHeavyRanking(draft, batches);
   const [traceCounts, setTraceCounts] = useState<TraceStatusCounts | null>(null);
+  const lastAutoSavedHashRef = useRef<string | null>(null);
+  const autoSavingRef = useRef(false);
 
   const localTraceCounts = useMemo(
     () => countTraceStatusesAcrossBatches(batches),
@@ -321,6 +327,7 @@ export function SavedBatchesTab({
     setExpandedId(batch.id);
     setConflicts([]);
     setAutoFillUnavailable(false);
+    lastAutoSavedHashRef.current = null;
     const normalized: PredictionBatch = {
       ...batch,
       matches: normalizeMatchLeagues(batch.matches, batch.league),
@@ -359,11 +366,13 @@ export function SavedBatchesTab({
       .join(" ");
   }
 
-  async function saveResults() {
-    if (!draft) return;
+  async function persistBatchDraft(
+    sourceDraft: PredictionBatch,
+    opts: { source: "manual" | "auto" }
+  ): Promise<{ finalBatch: PredictionBatch; archived: boolean }> {
     const calibratedDraft: PredictionBatch = {
-      ...draft,
-      matches: draft.matches.map((m) => applyCorrectScoreCalibrationToMatch(m)),
+      ...sourceDraft,
+      matches: sourceDraft.matches.map((m) => applyCorrectScoreCalibrationToMatch(m)),
     };
     let scored = scoreBatch(calibratedDraft);
     if (scored.batchKind === "recommended" && scored.recommended) {
@@ -399,66 +408,126 @@ export function SavedBatchesTab({
       entered.total > 0 && entered.scored === entered.total ? "SETTLED" : "PENDING";
     const projectedBatch: PredictionBatch = {
       ...scored,
-      recommendationStatus: draft.batchKind === "recommended" ? settled : draft.recommendationStatus,
+      recommendationStatus:
+        sourceDraft.batchKind === "recommended" ? settled : sourceDraft.recommendationStatus,
       settledAt:
-        draft.batchKind === "recommended" && settled === "SETTLED"
+        sourceDraft.batchKind === "recommended" && settled === "SETTLED"
           ? new Date().toISOString()
-          : draft.settledAt,
+          : sourceDraft.settledAt,
     };
     const current = loadBatches();
     const projectedAll = current.some((batch) => batch.id === projectedBatch.id)
       ? current.map((batch) => (batch.id === projectedBatch.id ? projectedBatch : batch))
       : [projectedBatch, ...current];
     if (projectedBatch.batchKind === "recommended" && settled === "SETTLED") {
-      projectedBatch.settlementSummary = summarizeRecommendedSettlement(projectedBatch, projectedAll);
+      projectedBatch.settlementSummary = summarizeRecommendedSettlement(
+        projectedBatch,
+        projectedAll
+      );
     }
 
-    try {
-      await upsertBatch(projectedBatch);
-      const all = loadBatches();
-      saveAnalysis(recomputeAnalysis(all));
-      updateClubProfiles(projectedBatch.id);
-      updateLearnerStats();
-      updateTeamCharacteristics();
-      updateLeagueProfiles();
+    const afterUpsert = await upsertBatch(projectedBatch);
+    const archived = !afterUpsert.some((b) => b.id === projectedBatch.id);
+    saveAnalysis(recomputeAnalysis(afterUpsert));
+    updateClubProfiles(projectedBatch.id);
+    updateLearnerStats();
+    updateTeamCharacteristics();
+    updateLeagueProfiles();
 
-      // Non-blocking audit log for AI learner pipeline (does not affect save)
-      for (const m of projectedBatch.matches) {
-        const hg = m.teamStats?.home?.goals;
-        const ag = m.teamStats?.away?.goals;
-        if (hg == null || ag == null) continue;
-        const marketKey = Object.keys(m.predictions)[0];
-        const pred = marketKey ? m.predictions[marketKey as LogMarketKey]?.prediction : undefined;
-        void fetch("/api/manual-prediction", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            batchId: projectedBatch.id,
-            matchId: m.id,
-            homeTeam: m.homeTeam,
-            awayTeam: m.awayTeam,
-            league: projectedBatch.league,
-            predictedScore: pred,
-            actualScore: `${hg}-${ag}`,
-            confidence: marketKey
-              ? m.predictions[marketKey as LogMarketKey]?.confidence
-              : undefined,
-          }),
-        }).catch(() => {});
-      }
+    for (const m of projectedBatch.matches) {
+      const hg = m.teamStats?.home?.goals;
+      const ag = m.teamStats?.away?.goals;
+      if (hg == null || ag == null) continue;
+      const marketKey = Object.keys(m.predictions)[0];
+      const pred = marketKey ? m.predictions[marketKey as LogMarketKey]?.prediction : undefined;
+      void fetch("/api/manual-prediction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          batchId: projectedBatch.id,
+          matchId: m.id,
+          homeTeam: m.homeTeam,
+          awayTeam: m.awayTeam,
+          league: projectedBatch.league,
+          predictedScore: pred,
+          actualScore: `${hg}-${ag}`,
+          confidence: marketKey
+            ? m.predictions[marketKey as LogMarketKey]?.confidence
+            : undefined,
+        }),
+      }).catch(() => {});
+    }
 
-      let finalBatch = projectedBatch;
-      if (learnerEnabled && recoSettings && projectedBatch.batchKind !== "recommended") {
-        const refreshed = await refreshBatchLearnerRecommendation(projectedBatch.id, recoSettings);
-        if (refreshed) finalBatch = refreshed;
-      }
+    if (batchAllMatchesRichSettlement(projectedBatch)) {
+      await fetch("/api/batches/settle-rich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(projectedBatch),
+      }).catch(() => null);
+    }
 
-      setDraft(finalBatch);
-      setSavedMsg(
-        finalBatch.batchKind === "recommended" && finalBatch.settlementSummary
-          ? finalBatch.settlementSummary
-          : "Results saved."
+    let finalBatch = projectedBatch;
+    if (learnerEnabled && recoSettings && projectedBatch.batchKind !== "recommended" && !archived) {
+      const refreshed = await refreshBatchLearnerRecommendation(
+        projectedBatch.id,
+        recoSettings
       );
+      if (refreshed) finalBatch = refreshed;
+    }
+
+    if (opts.source === "auto") {
+      lastAutoSavedHashRef.current = richSettlementFingerprint(sourceDraft);
+    }
+
+    return { finalBatch, archived };
+  }
+
+  useEffect(() => {
+    if (!draft) return;
+    if (!batchAllMatchesRichSettlement(draft)) return;
+    const fingerprint = richSettlementFingerprint(draft);
+    if (lastAutoSavedHashRef.current === fingerprint) return;
+    if (autoSavingRef.current) return;
+
+    autoSavingRef.current = true;
+    void (async () => {
+      try {
+        const { finalBatch, archived } = await persistBatchDraft(draft, { source: "auto" });
+        if (archived) {
+          setExpandedId(null);
+          setDraft(null);
+          setSavedMsg("Rich results saved automatically — batch archived.");
+        } else {
+          setDraft(finalBatch);
+          setSavedMsg("Rich results saved automatically.");
+        }
+        onUpdate();
+      } catch {
+        /* keep draft editable */
+      } finally {
+        autoSavingRef.current = false;
+        setTimeout(() => setSavedMsg(null), 5000);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draft fingerprint drives auto-save
+  }, [draft]);
+
+  async function saveResults() {
+    if (!draft) return;
+    try {
+      const { finalBatch, archived } = await persistBatchDraft(draft, { source: "manual" });
+      if (archived) {
+        setExpandedId(null);
+        setDraft(null);
+        setSavedMsg("Results saved — batch archived.");
+      } else {
+        setDraft(finalBatch);
+        setSavedMsg(
+          finalBatch.batchKind === "recommended" && finalBatch.settlementSummary
+            ? finalBatch.settlementSummary
+            : "Results saved."
+        );
+      }
       onUpdate();
       setTimeout(() => setSavedMsg(null), 5000);
     } catch {
@@ -826,6 +895,18 @@ export function SavedBatchesTab({
                 )}
 
                 <h3 style={{ fontSize: "1rem", margin: "0 0 0.75rem" }}>Enter results</h3>
+                <p
+                  style={{
+                    fontSize: "0.8125rem",
+                    color: "var(--muted)",
+                    margin: "0 0 0.75rem",
+                    maxWidth: "42rem",
+                  }}
+                >
+                  Enter FT, HT, corners, and goal timings for each match. Results save
+                  automatically to the database when every match is complete. Batch
+                  archives after auto-save.
+                </p>
                 {(autoFilling || apiBatchFilling || autoFillMsg) && draft.id === batch.id && (
                   <p
                     style={{

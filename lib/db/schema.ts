@@ -1124,6 +1124,44 @@ export const coreResultTrace = pgTable(
   })
 );
 
+/** Rich settlement rows from Saved Batches (FT + HT + corners + goal timings). */
+export const predictionLogSettlement = pgTable(
+  "prediction_log_settlement",
+  {
+    id: serial("id").primaryKey(),
+    batchId: text("batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    ftHome: integer("ft_home").notNull(),
+    ftAway: integer("ft_away").notNull(),
+    htHome: integer("ht_home").notNull(),
+    htAway: integer("ht_away").notNull(),
+    matchHtTotal: integer("match_ht_total").notNull(),
+    match2hTotal: integer("match_2h_total").notNull(),
+    cornersHome: integer("corners_home").notNull(),
+    cornersAway: integer("corners_away").notNull(),
+    goalTimingJson: text("goal_timing_json"),
+    providerFixtureId: integer("provider_fixture_id"),
+    coreFixtureId: integer("core_fixture_id"),
+    source: text("source").notNull().default("prediction_log_batch"),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    batchMatchUniq: uniqueIndex("prediction_log_settlement_batch_match_uidx").on(
+      t.batchId,
+      t.matchId
+    ),
+    batchIdx: index("prediction_log_settlement_batch_idx").on(t.batchId),
+    coreFixtureIdx: index("prediction_log_settlement_core_fixture_idx").on(
+      t.coreFixtureId
+    ),
+  })
+);
+
 export const coreCoverageAudit = pgTable(
   "core_coverage_audit",
   {
@@ -1207,6 +1245,8 @@ export type CoreFixture = typeof coreFixture.$inferSelect;
 export type CoreFixtureStatistic = typeof coreFixtureStatistic.$inferSelect;
 export type CoreLegacyRecordMap = typeof coreLegacyRecordMap.$inferSelect;
 export type CoreResultTrace = typeof coreResultTrace.$inferSelect;
+export type PredictionLogSettlement = typeof predictionLogSettlement.$inferSelect;
+export type NewPredictionLogSettlement = typeof predictionLogSettlement.$inferInsert;
 export type CoreCoverageAudit = typeof coreCoverageAudit.$inferSelect;
 export type AuditDataChangeLog = typeof auditDataChangeLog.$inferSelect;
 export type CoreAnalysisRun = typeof coreAnalysisRun.$inferSelect;

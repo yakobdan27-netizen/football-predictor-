@@ -7,6 +7,11 @@ import {
   cloneMatchTeamStats,
   resultCompleteness,
 } from "@/lib/prediction-log/match-learning";
+import {
+  matchHalfTotals,
+  timingBucketsComplete,
+  timingGoalsSum,
+} from "@/lib/prediction-log/match-settlement";
 import { applyTeamStatsSync, setHomePossession } from "@/lib/prediction-log/team-stats-sync";
 import { LOG_MARKET_MAP, pickOptionsForMarket } from "@/lib/prediction-log/markets-config";
 import { DEFAULT_COMBO_MARKETS } from "@/lib/prediction-log/combo-markets-config";
@@ -17,7 +22,12 @@ import {
 } from "@/lib/prediction-log/match-entry-helpers";
 import type { ResultGridField } from "@/lib/prediction-log/result-grid-fields";
 import { withClosingOdds } from "@/lib/prediction-log/evaluation-metrics";
-import type { LogMatch, ScoreResult, TeamSideStats } from "@/lib/prediction-log/types";
+import type {
+  GoalTimingCurve,
+  LogMatch,
+  ScoreResult,
+  TeamSideStats,
+} from "@/lib/prediction-log/types";
 import type { ReactNode } from "react";
 import { leagueShortLabel } from "@/lib/prediction-log/match-league";
 import {
@@ -154,6 +164,55 @@ function setAbnormal(match: LogMatch, checked: boolean): LogMatch {
   return applyTeamStatsSync({ ...match, teamStats });
 }
 
+const TIMING_FIELD_TO_BUCKET: Partial<
+  Record<ResultGridField, keyof GoalTimingCurve>
+> = {
+  t0_15: "g0_15",
+  t16_30: "g16_30",
+  t31_45: "g31_45",
+  t46_60: "g46_60",
+  t61_75: "g61_75",
+  t76_90: "g76_90plus",
+};
+
+function setTimingBucket(
+  match: LogMatch,
+  field: ResultGridField,
+  value: string
+): LogMatch {
+  const bucketKey = TIMING_FIELD_TO_BUCKET[field];
+  if (!bucketKey) return match;
+  const teamStats = cloneMatchTeamStats(match);
+  teamStats.goalTiming = { ...(teamStats.goalTiming ?? {}) };
+  const buckets = {
+    ...(teamStats.goalTiming.timingBuckets ?? {}),
+  } as Partial<GoalTimingCurve>;
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    delete buckets[bucketKey];
+  } else {
+    const n = parseInt(trimmed, 10);
+    if (Number.isFinite(n) && n >= 0 && n <= 99) {
+      buckets[bucketKey] = n;
+    }
+  }
+  if (Object.keys(buckets).length === 0) {
+    delete teamStats.goalTiming.timingBuckets;
+  } else {
+    teamStats.goalTiming.timingBuckets = buckets as GoalTimingCurve;
+  }
+  return applyTeamStatsSync({ ...match, teamStats });
+}
+
+function timingBucketValue(
+  match: LogMatch,
+  field: ResultGridField
+): number | undefined {
+  const bucketKey = TIMING_FIELD_TO_BUCKET[field];
+  if (!bucketKey) return undefined;
+  return match.teamStats?.goalTiming?.timingBuckets?.[bucketKey];
+}
+
 function NumCell({
   value,
   placeholder,
@@ -243,6 +302,17 @@ export function BatchResultRow({
     .filter(Boolean)
     .join(" ");
   const completeness = resultCompleteness(match);
+  const halfTotals = matchHalfTotals(match);
+  const ftTotal =
+    match.teamStats?.home?.goals != null && match.teamStats?.away?.goals != null
+      ? match.teamStats.home.goals + match.teamStats.away.goals
+      : null;
+  const timingSum = timingGoalsSum(match.teamStats?.goalTiming);
+  const timingMismatch =
+    ftTotal != null &&
+    timingSum != null &&
+    timingBucketsComplete(match.teamStats?.goalTiming) &&
+    timingSum !== ftTotal;
   const early = match.teamStats?.goalTiming?.goalInFirst10 === true;
   const earlyNo = match.teamStats?.goalTiming?.goalInFirst10 === false;
   const fg = match.teamStats?.firstGoalSide;
@@ -257,7 +327,7 @@ export function BatchResultRow({
   };
 
   const twoHCols = showTwoHHeavy || twoHHeavy ? 5 : 0;
-  const colSpan = (showFullStats ? 34 : 9) + twoHCols;
+  const colSpan = (showFullStats ? 40 : 19) + twoHCols;
 
   return (
     <>
@@ -266,11 +336,13 @@ export function BatchResultRow({
           <span
             className={`batch-complete-dot batch-complete-${completeness}`}
             title={
-              completeness === "full"
-                ? "FT + advanced stats"
-                : completeness === "ft"
-                  ? "FT entered"
-                  : "No FT yet"
+              completeness === "rich"
+                ? "Rich settlement complete"
+                : completeness === "partial"
+                  ? "FT + partial extras"
+                  : completeness === "ft"
+                    ? "FT only"
+                    : "No result"
             }
           />
           <button
@@ -371,6 +443,122 @@ export function BatchResultRow({
             />
           </div>
         </td>
+        <td className="batch-col-score-pair">
+          <div className="batch-score-pair">
+            <input
+              ref={refFor("htH") as React.RefObject<HTMLInputElement | null>}
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="H"
+              data-result-field="htH"
+              aria-label="Home HT goals"
+              value={
+                match.teamStats?.home?.firstHalfGoals != null
+                  ? String(match.teamStats.home.firstHalfGoals)
+                  : ""
+              }
+              onChange={(e) =>
+                onChange(setSideStat(match, "home", "firstHalfGoals", e.target.value))
+              }
+              onKeyDown={(e) => onCellKeyDown?.(e, "htH")}
+            />
+            <span className="batch-score-dash" aria-hidden>
+              –
+            </span>
+            <input
+              ref={refFor("htA") as React.RefObject<HTMLInputElement | null>}
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="A"
+              data-result-field="htA"
+              aria-label="Away HT goals"
+              value={
+                match.teamStats?.away?.firstHalfGoals != null
+                  ? String(match.teamStats.away.firstHalfGoals)
+                  : ""
+              }
+              onChange={(e) =>
+                onChange(setSideStat(match, "away", "firstHalfGoals", e.target.value))
+              }
+              onKeyDown={(e) => onCellKeyDown?.(e, "htA")}
+            />
+          </div>
+        </td>
+        <td
+          className="batch-col-half-total batch-col-readonly"
+          title="Match 1H total goals"
+        >
+          {halfTotals.htTotal != null ? halfTotals.htTotal : "—"}
+        </td>
+        <td
+          className="batch-col-half-total batch-col-readonly"
+          title="Match 2H total goals (FT − HT per side)"
+        >
+          {halfTotals.h2Total != null ? halfTotals.h2Total : "—"}
+        </td>
+        <td className="batch-col-score-pair">
+          <div className="batch-score-pair">
+            <input
+              ref={refFor("corH") as React.RefObject<HTMLInputElement | null>}
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="H"
+              data-result-field="corH"
+              aria-label="Home corners"
+              title={
+                match.teamStats?.home?.corners == null
+                  ? "Corners (home)"
+                  : undefined
+              }
+              value={
+                match.teamStats?.home?.corners != null
+                  ? String(match.teamStats.home.corners)
+                  : ""
+              }
+              onChange={(e) =>
+                onChange(setSideStat(match, "home", "corners", e.target.value))
+              }
+              onKeyDown={(e) => onCellKeyDown?.(e, "corH")}
+            />
+            <span className="batch-score-dash" aria-hidden>
+              –
+            </span>
+            <input
+              ref={refFor("corA") as React.RefObject<HTMLInputElement | null>}
+              type="text"
+              inputMode="numeric"
+              maxLength={2}
+              placeholder="A"
+              data-result-field="corA"
+              aria-label="Away corners"
+              value={
+                match.teamStats?.away?.corners != null
+                  ? String(match.teamStats.away.corners)
+                  : ""
+              }
+              onChange={(e) =>
+                onChange(setSideStat(match, "away", "corners", e.target.value))
+              }
+              onKeyDown={(e) => onCellKeyDown?.(e, "corA")}
+            />
+          </div>
+        </td>
+        {(
+          ["t0_15", "t16_30", "t31_45", "t46_60", "t61_75", "t76_90"] as const
+        ).map((field) => (
+          <NumCell
+            key={field}
+            field={field}
+            placeholder="0"
+            value={timingBucketValue(match, field)}
+            inputRef={refFor(field)}
+            onChange={(v) => onChange(setTimingBucket(match, field, v))}
+            onCellKeyDown={onCellKeyDown}
+          />
+        ))}
         <td className="batch-col-outcome">
           <GradeBadge result={result} />
         </td>
@@ -456,22 +644,6 @@ export function BatchResultRow({
                 style={{ width: "4.25rem", padding: "0.2rem 0.35rem", fontSize: "0.8125rem" }}
               />
             </td>
-            <NumCell
-              field="htH"
-              placeholder="H"
-              value={match.teamStats?.home?.firstHalfGoals}
-              inputRef={refFor("htH")}
-              onChange={(v) => onChange(setSideStat(match, "home", "firstHalfGoals", v))}
-              onCellKeyDown={onCellKeyDown}
-            />
-            <NumCell
-              field="htA"
-              placeholder="A"
-              value={match.teamStats?.away?.firstHalfGoals}
-              inputRef={refFor("htA")}
-              onChange={(v) => onChange(setSideStat(match, "away", "firstHalfGoals", v))}
-              onCellKeyDown={onCellKeyDown}
-            />
             <td className="batch-col-toggle">
               <div className="batch-seg">
                 <button
@@ -526,32 +698,6 @@ export function BatchResultRow({
               inputRef={refFor("sotA")}
               onChange={(v) => onChange(setSideStat(match, "away", "shotsOnTarget", v))}
               onCellKeyDown={onCellKeyDown}
-            />
-            <NumCell
-              field="corH"
-              placeholder="H"
-              value={match.teamStats?.home?.corners}
-              inputRef={refFor("corH")}
-              onChange={(v) => onChange(setSideStat(match, "home", "corners", v))}
-              onCellKeyDown={onCellKeyDown}
-              title={
-                match.teamStats?.home?.corners == null
-                  ? "stats unavailable (API plan or not synced)"
-                  : undefined
-              }
-            />
-            <NumCell
-              field="corA"
-              placeholder="A"
-              value={match.teamStats?.away?.corners}
-              inputRef={refFor("corA")}
-              onChange={(v) => onChange(setSideStat(match, "away", "corners", v))}
-              onCellKeyDown={onCellKeyDown}
-              title={
-                match.teamStats?.away?.corners == null
-                  ? "stats unavailable (API plan or not synced)"
-                  : undefined
-              }
             />
             <NumCell
               field="foulH"
@@ -696,6 +842,15 @@ export function BatchResultRow({
           </>
         ) : null}
       </tr>
+      {timingMismatch ? (
+        <tr className="batch-timing-hint-row">
+          <td colSpan={colSpan}>
+            <span className="batch-timing-hint">
+              Goal timing buckets sum to {timingSum} but FT total is {ftTotal}
+            </span>
+          </td>
+        </tr>
+      ) : null}
       {expanded ? (
         <tr className="batch-advanced-row">
           <td colSpan={colSpan}>
@@ -801,6 +956,18 @@ export function applyResultPastePatch(
   if (num(patch.sotA) !== undefined) next = setSideStat(next, "away", "shotsOnTarget", patch.sotA!);
   if (num(patch.corH) !== undefined) next = setSideStat(next, "home", "corners", patch.corH!);
   if (num(patch.corA) !== undefined) next = setSideStat(next, "away", "corners", patch.corA!);
+  for (const field of [
+    "t0_15",
+    "t16_30",
+    "t31_45",
+    "t46_60",
+    "t61_75",
+    "t76_90",
+  ] as const) {
+    if (num(patch[field]) !== undefined) {
+      next = setTimingBucket(next, field, patch[field]!);
+    }
+  }
   if (num(patch.foulH) !== undefined) next = setSideStat(next, "home", "fouls", patch.foulH!);
   if (num(patch.foulA) !== undefined) next = setSideStat(next, "away", "fouls", patch.foulA!);
   if (num(patch.yelH) !== undefined) next = setSideStat(next, "home", "yellowCards", patch.yelH!);

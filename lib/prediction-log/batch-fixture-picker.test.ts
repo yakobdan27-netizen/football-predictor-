@@ -4,6 +4,7 @@ import {
   appendFixtureMatches,
   buildUpcomingPredictionBatch,
   draftHasApiFixtureId,
+  filterUpcomingNext7Days,
   logMatchFromUpcomingFixture,
   sortDedupeUpcomingFixtures,
 } from "./batch-fixture-picker";
@@ -99,4 +100,21 @@ test("buildUpcomingPredictionBatch produces Mixed league batch", () => {
 
 test("buildUpcomingPredictionBatch returns null for empty input", () => {
   assert.equal(buildUpcomingPredictionBatch([]), null);
+});
+
+test("filterUpcomingNext7Days keeps fixtures within seven-day window", () => {
+  const now = new Date("2026-08-16T12:00:00");
+  const inside: UpcomingFixtureRow = {
+    ...row,
+    apiFixtureId: 1,
+    kickoffIso: "2026-08-18T15:00:00Z",
+  };
+  const outside: UpcomingFixtureRow = {
+    ...row,
+    apiFixtureId: 2,
+    kickoffIso: "2026-08-30T15:00:00Z",
+  };
+  const filtered = filterUpcomingNext7Days([inside, outside], now);
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0]!.apiFixtureId, 1);
 });

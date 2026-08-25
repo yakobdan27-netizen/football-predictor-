@@ -1,7 +1,7 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 /** Bump when additive DDL changes so cold starts can skip full bootstrap. */
-const SCHEMA_BOOTSTRAP_VERSION = 4;
+const SCHEMA_BOOTSTRAP_VERSION = 5;
 
 let initialized = false;
 let ensureSchemaPromise: Promise<void> | null = null;
@@ -855,6 +855,35 @@ async function runEnsureSchema(): Promise<void> {
   `;
   await ddl`CREATE UNIQUE INDEX IF NOT EXISTS core_result_trace_batch_match_uidx ON core_result_trace (batch_id, match_id)`;
   await ddl`CREATE INDEX IF NOT EXISTS core_result_trace_status_idx ON core_result_trace (status)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS prediction_log_settlement (
+      id serial PRIMARY KEY,
+      batch_id text NOT NULL,
+      match_id text NOT NULL,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      ft_home integer NOT NULL,
+      ft_away integer NOT NULL,
+      ht_home integer NOT NULL,
+      ht_away integer NOT NULL,
+      match_ht_total integer NOT NULL,
+      match_2h_total integer NOT NULL,
+      corners_home integer NOT NULL,
+      corners_away integer NOT NULL,
+      goal_timing_json text,
+      provider_fixture_id integer,
+      core_fixture_id integer,
+      source text NOT NULL DEFAULT 'prediction_log_batch',
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS prediction_log_settlement_batch_match_uidx ON prediction_log_settlement (batch_id, match_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS prediction_log_settlement_batch_idx ON prediction_log_settlement (batch_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS prediction_log_settlement_core_fixture_idx ON prediction_log_settlement (core_fixture_id)`;
 
   await ddl`
     CREATE TABLE IF NOT EXISTS core_coverage_audit (

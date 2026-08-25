@@ -31,7 +31,7 @@ import {
   overUnderFromGoalMatrix,
 } from "./goal-distribution";
 import { outcomeProbsFromMatrix } from "@/lib/predictor/score-matrix";
-import { weightedEstimate, type BlendSource } from "./prediction-weights";
+import { weightedEstimate, weightedTripleEstimate, type BlendSource } from "./prediction-weights";
 import {
   attachCfeBlendedEnvelope,
   attachCfeBlendedEnvelopeAsync,
@@ -63,7 +63,7 @@ import {
   loadLeagueAfBaselines,
   type ClubHalfAttackDefence,
 } from "./hsh-half-rates";
-import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
+import { preloadMatchCentreHalfRates, preloadMatchCentreLast5HalfRates } from "@/lib/match-centre/team-half-rates";
 import { isSystemSeasonBlendEnabled } from "@/lib/system-season/feature-flags";
 import {
   lambdasFromSystemSeasonSnapshots,
@@ -128,6 +128,9 @@ export type CanonicalFixtureEstimate = {
     sourceBreakdown: "blended" | "api_only" | "manual_ai_only";
     apiSeasonBlend?: "60_40" | "prior_only";
     apiSeasonCurrentN?: number;
+    /** Effective weights when system-season 30/30/40 blend is active. */
+    recent_pct?: number;
+    prior_pct?: number;
   };
   coverage: { ht_pct: number | null; corners_pct: number | null };
   coverageDiagnostics?: {
@@ -188,6 +191,71 @@ function blendLambda(
     };
   }
   return { value: api, source: "api_only", apiW: 1, manW: 0 };
+}
+
+type TripleBlendMeta = {
+  value: number;
+  source: "blended" | "api_only" | "manual_ai_only";
+  recentW: number;
+  priorW: number;
+  systemW: number;
+  apiW: number;
+  manW: number;
+};
+
+function blendTripleLambda(
+  recent: number | null | undefined,
+  prior: number,
+  system: number | null | undefined
+): TripleBlendMeta {
+  const b = weightedTripleEstimate(recent, prior, system);
+  if (b) {
+    return {
+      value: b.value,
+      source: b.source,
+      recentW: b.recentWeight,
+      priorW: b.priorWeight,
+      systemW: b.systemWeight,
+      apiW: b.apiWeight,
+      manW: b.manualAiWeight,
+    };
+  }
+  return {
+    value: prior,
+    source: "api_only",
+    recentW: 0,
+    priorW: 1,
+    systemW: 0,
+    apiW: 1,
+    manW: 0,
+  };
+}
+
+function shrunkLambdaFromRates(
+  homeRates: ClubHalfAttackDefence,
+  awayRates: ClubHalfAttackDefence,
+  lgAf1: number,
+  lgAf2: number
+): { home: number; away: number; nEff: number } {
+  const stageA = computeAttackDefenceStageA({
+    home: homeRates,
+    away: awayRates,
+    lgAf1,
+    lgAf2,
+  });
+  const nEff = Math.min(homeRates.nMatches, awayRates.nMatches);
+  const mu = lgAf1 + lgAf2;
+  let home = clampLambda(stageA.lambdaA1 + stageA.lambdaA2, "λ_home_api");
+  let away = clampLambda(stageA.lambdaB1 + stageA.lambdaB2, "λ_away_api");
+  home = clampLambda(
+    shrinkRateTowardLeague(home, nEff, mu, SHRINKAGE_K),
+    "λ_home"
+  );
+  away = clampLambda(
+    shrinkRateTowardLeague(away, nEff, mu, SHRINKAGE_K),
+    "λ_away"
+  );
+  return { home, away, nEff };
 }
 
 let cachedParams: ModelParamsStore | null = null;
@@ -266,8 +334,49 @@ export function canonicalFixtureEstimateSync(
     "λ_away"
   );
 
-  const homeBlend = blendLambda(apiHome, input.manualLambdas?.home);
-  const awayBlend = blendLambda(apiAway, input.manualLambdas?.away);
+  const useTripleBlend =
+    isSystemSeasonBlendEnabled() &&
+    input.manualLambdas?.home != null &&
+    input.manualLambdas?.away != null;
+
+  let homeBlend: TripleBlendMeta | ReturnType<typeof blendLambda>;
+  let awayBlend: TripleBlendMeta | ReturnType<typeof blendLambda>;
+
+  if (useTripleBlend) {
+    const homeRecent = input.hshCtx.homeRates.recentLast5;
+    const awayRecent = input.hshCtx.awayRates.recentLast5;
+    let recentHome: number | null = null;
+    let recentAway: number | null = null;
+    if (
+      homeRecent &&
+      awayRecent &&
+      homeRecent.nMatches > 0 &&
+      awayRecent.nMatches > 0
+    ) {
+      const recentLambdas = shrunkLambdaFromRates(
+        homeRecent,
+        awayRecent,
+        input.hshCtx.lgAf1,
+        input.hshCtx.lgAf2
+      );
+      recentHome = recentLambdas.home;
+      recentAway = recentLambdas.away;
+    }
+    homeBlend = blendTripleLambda(
+      recentHome,
+      apiHome,
+      input.manualLambdas!.home
+    );
+    awayBlend = blendTripleLambda(
+      recentAway,
+      apiAway,
+      input.manualLambdas!.away
+    );
+  } else {
+    homeBlend = blendLambda(apiHome, input.manualLambdas?.home);
+    awayBlend = blendLambda(apiAway, input.manualLambdas?.away);
+  }
+
   const lambdaHome = clampLambda(homeBlend.value, "λ_home_blended");
   const lambdaAway = clampLambda(awayBlend.value, "λ_away_blended");
 
@@ -441,6 +550,12 @@ export function canonicalFixtureEstimateSync(
       api_pct: source === "manual_ai_only" ? 0 : homeBlend.apiW * 100,
       manual_pct: homeBlend.manW * 100,
       ai_pct: homeBlend.manW * 100,
+      ...(useTripleBlend && "recentW" in homeBlend
+        ? {
+            recent_pct: homeBlend.recentW * 100,
+            prior_pct: homeBlend.priorW * 100,
+          }
+        : {}),
       seasons_used: seasonsUsed,
       matches_used: matchesUsed,
       ess,
@@ -521,6 +636,7 @@ export type BatchCanonicalEstimateOpts = {
   modelParams?: ModelParamsStore;
   halfParamsStore?: HalfParamsStore | null;
   matchCentreCache?: Map<string, ClubHalfAttackDefence>;
+  recentLast5Cache?: Map<string, ClubHalfAttackDefence>;
   systemSeasonCache?: Map<string, SystemSeasonRatesSnapshot>;
 };
 
@@ -546,12 +662,20 @@ function buildHshCtxForMatch(
   match: PredictionBatch["matches"][number],
   batch: PredictionBatch,
   allBatches: PredictionBatch[],
-  matchCentreCache?: Map<string, ClubHalfAttackDefence>
+  caches?: {
+    matchCentreCache?: Map<string, ClubHalfAttackDefence>;
+    recentLast5Cache?: Map<string, ClubHalfAttackDefence>;
+  }
 ): HshMatchContext {
   const league = matchLeague(match, batch.league);
   const rateOpts = {
     beforeDate: batch.date,
-    matchCentreCache,
+    matchCentreCache: isSystemSeasonBlendEnabled()
+      ? undefined
+      : caches?.matchCentreCache,
+    recentLast5Cache: isSystemSeasonBlendEnabled()
+      ? caches?.recentLast5Cache
+      : undefined,
   };
   const homeRates = loadClubHalfAttackDefence(
     match.homeTeam,
@@ -594,12 +718,10 @@ export function estimateBatchCanonical(
   const halfStore = opts?.halfParamsStore ?? getCachedHalfParams();
   return batch.matches.map((match) => {
     const league = matchLeague(match, batch.league);
-    const hshCtx = buildHshCtxForMatch(
-      match,
-      batch,
-      allBatches,
-      isSystemSeasonBlendEnabled() ? undefined : opts?.matchCentreCache
-    );
+    const hshCtx = buildHshCtxForMatch(match, batch, allBatches, {
+      matchCentreCache: opts?.matchCentreCache,
+      recentLast5Cache: opts?.recentLast5Cache,
+    });
 
     let manualLambdas: CanonicalFixtureInput["manualLambdas"];
     if (isSystemSeasonBlendEnabled() && opts?.systemSeasonCache) {
@@ -638,6 +760,7 @@ export async function estimateBatchCanonicalAsync(
   opts?: BatchCanonicalEstimateOpts
 ): Promise<CanonicalFixtureEstimate[]> {
   let matchCentreCache = opts?.matchCentreCache;
+  let recentLast5Cache = opts?.recentLast5Cache;
   let systemSeasonCache = opts?.systemSeasonCache;
   const pairs = collectBatchTeamLeaguePairs(batch);
 
@@ -647,6 +770,13 @@ export async function estimateBatchCanonicalAsync(
         systemSeasonCache = await preloadSystemSeasonRates(pairs);
       } catch {
         systemSeasonCache = undefined;
+      }
+    }
+    if (!recentLast5Cache) {
+      try {
+        recentLast5Cache = await preloadMatchCentreLast5HalfRates(pairs);
+      } catch {
+        recentLast5Cache = undefined;
       }
     }
   } else if (!matchCentreCache) {
@@ -660,6 +790,7 @@ export async function estimateBatchCanonicalAsync(
   const sync = estimateBatchCanonical(batch, allBatches, {
     ...opts,
     matchCentreCache,
+    recentLast5Cache,
     systemSeasonCache,
   });
 
@@ -667,12 +798,10 @@ export async function estimateBatchCanonicalAsync(
     sync.map(async (est, i) => {
       const match = batch.matches[i]!;
       const league = matchLeague(match, batch.league);
-      const hshCtx = buildHshCtxForMatch(
-        match,
-        batch,
-        allBatches,
-        matchCentreCache
-      );
+      const hshCtx = buildHshCtxForMatch(match, batch, allBatches, {
+        matchCentreCache,
+        recentLast5Cache,
+      });
       try {
         const enriched = await enrichCoverageAsync({
           homeTeam: match.homeTeam,
@@ -721,12 +850,9 @@ export function ladderRanksFromBatchEstimates(
 ): LadderRankFromCfe[] {
   const rows: LadderRankFromCfe[] = estimates.map((est, i) => {
     const match = batch.matches[i]!;
-    const hshCtx = buildHshCtxForMatch(
-      match,
-      batch,
-      allBatches,
-      opts?.matchCentreCache
-    );
+    const hshCtx = buildHshCtxForMatch(match, batch, allBatches, {
+      matchCentreCache: opts?.matchCentreCache,
+    });
     const pred = computeCanonicalHshPrediction(hshCtx);
     // Force displayed half probs from CFE markets (identity with HSH Stage B).
     const aligned = {

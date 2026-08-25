@@ -36,6 +36,8 @@ export interface ClubHalfAttackDefence {
   apiSeasonBlend?: ApiSeasonBlendMode;
   /** Finished 2026/27 Match Centre matches used for current-season side. */
   apiSeasonCurrentN?: number;
+  /** Last-five Match Centre rates (30% side when system-season blend on). */
+  recentLast5?: ClubHalfAttackDefence;
 }
 
 export interface LeagueAfBaselines {
@@ -215,16 +217,30 @@ export function loadClubHalfAttackDefence(
   opts?: {
     beforeDate?: string;
     matchCentreCache?: Map<string, ClubHalfAttackDefence>;
+    recentLast5Cache?: Map<string, ClubHalfAttackDefence>;
   }
 ): ClubHalfAttackDefence {
   const prior = loadClubHalfAttackDefencePrior(club, league, batches, opts);
 
   if (isSystemSeasonBlendEnabled()) {
+    const cacheKey = matchCentreRatesCacheKey(club, league);
+    const recent =
+      opts?.recentLast5Cache?.get(cacheKey) ??
+      opts?.recentLast5Cache?.get(
+        matchCentreRatesCacheKey(standardizeTeamName(club), league)
+      ) ??
+      null;
+    const recentLast5 =
+      recent && recent.nMatches > 0 ? recent : undefined;
+    const notes = [...(prior.sourceNote ? [prior.sourceNote] : [])];
+    if (recentLast5) {
+      notes.push(`last5 n=${recentLast5.nMatches}`);
+    }
+    notes.push("blend: 30/30/40");
     return {
       ...prior,
-      sourceNote: prior.sourceNote
-        ? `${prior.sourceNote} · prior-api-60%`
-        : "prior-api-60%",
+      recentLast5,
+      sourceNote: notes.join(" · "),
     };
   }
 

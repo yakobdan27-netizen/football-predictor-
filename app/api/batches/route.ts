@@ -14,6 +14,8 @@ import { recomputeSaSeasonCards } from "@/lib/prediction-log/sa-season-store";
 import { recomputeL1SeasonCards } from "@/lib/prediction-log/l1-season-store";
 import { batchHasScoredResults } from "@/lib/prediction-log/scoring";
 import { maybeArchiveCompletedBatch } from "@/lib/prediction-log/batch-lifecycle";
+import { batchAllMatchesRichSettlement } from "@/lib/prediction-log/match-settlement";
+import { persistRichSettlementBatch } from "@/lib/prediction-log/persist-rich-settlement";
 import { findCrossBatchDuplicates } from "@/lib/prediction-log/cross-batch-duplicate-check";
 import { stampPendingTraceOnBatch } from "@/lib/prediction-log/result-trace";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
@@ -83,6 +85,9 @@ export async function POST(request: Request) {
       await recomputeBlSeasonCards().catch(() => null);
       await recomputeSaSeasonCards().catch(() => null);
       await recomputeL1SeasonCards().catch(() => null);
+    }
+    if (batchAllMatchesRichSettlement(synced)) {
+      await persistRichSettlementBatch(synced).catch(() => null);
     }
     const archived = await maybeArchiveCompletedBatch(synced);
     if (archived) {

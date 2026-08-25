@@ -303,7 +303,19 @@ export function BatchMatchTable({
                     Pick
                   </th>
                   <th className="batch-group-label batch-group-ft" colSpan={1}>
-                    Score
+                    FT
+                  </th>
+                  <th colSpan={2} className="batch-group-label batch-group-ht">
+                    HT
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Half Σ
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Cor
+                  </th>
+                  <th colSpan={6} className="batch-group-label">
+                    Goal timing
                   </th>
                   <th colSpan={2} />
                   {showTwoH ? (
@@ -315,18 +327,12 @@ export function BatchMatchTable({
                   <th className="batch-group-label" title="Closing odds">
                     Close
                   </th>
-                  <th colSpan={2} className="batch-group-label batch-group-ht">
-                    HT
-                  </th>
                   <th className="batch-group-label">Early</th>
                   <th colSpan={2} className="batch-group-label">
                     Shots
                   </th>
                   <th colSpan={2} className="batch-group-label">
                     SOT
-                  </th>
-                  <th colSpan={2} className="batch-group-label">
-                    Corners
                   </th>
                   <th colSpan={2} className="batch-group-label">
                     Fouls
@@ -349,7 +355,35 @@ export function BatchMatchTable({
                   </th>
                   <th className="batch-group-label">Abn</th>
                 </tr>
-              ) : null}
+              ) : (
+                <tr className="batch-group-headers">
+                  <th className="batch-col-frozen" colSpan={4} />
+                  <th colSpan={2} className="batch-group-label">
+                    Pick
+                  </th>
+                  <th className="batch-group-label batch-group-ft" colSpan={1}>
+                    FT
+                  </th>
+                  <th colSpan={2} className="batch-group-label batch-group-ht">
+                    HT
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Half Σ
+                  </th>
+                  <th colSpan={2} className="batch-group-label">
+                    Cor
+                  </th>
+                  <th colSpan={6} className="batch-group-label">
+                    Goal timing
+                  </th>
+                  <th colSpan={2} />
+                  {showTwoH ? (
+                    <th colSpan={5} className="batch-group-label">
+                      2H-heavy
+                    </th>
+                  ) : null}
+                </tr>
+              )}
               <tr>
                 <th className="batch-col-frozen batch-col-num">#</th>
                 <th className="batch-col-frozen batch-col-league">League</th>
@@ -358,6 +392,16 @@ export function BatchMatchTable({
                 <th>Market</th>
                 <th className="batch-col-pick-secondary">Pick</th>
                 <th>Score (H–A)</th>
+                <th title="Half-time score">HT (H–A)</th>
+                <th title="Match 1H total goals">1H Σ</th>
+                <th title="Match 2H total goals">2H Σ</th>
+                <th title="Corners">Cor (H–A)</th>
+                <th title="Goals 0–15 min">0–15</th>
+                <th title="Goals 16–30 min">16–30</th>
+                <th title="Goals 31–45 min">31–45</th>
+                <th title="Goals 46–60 min">46–60</th>
+                <th title="Goals 61–75 min">61–75</th>
+                <th title="Goals 76–90+ min">76–90+</th>
                 <th>Outcome</th>
                 <th aria-label="Result mark" />
                 {showTwoH ? (
@@ -373,8 +417,6 @@ export function BatchMatchTable({
                   <>
                     <th>Stake</th>
                     <th title="Closing odds (optional, for CLV)">Close</th>
-                    <th>H</th>
-                    <th>A</th>
                     <th>Y/N</th>
                     <th>H</th>
                     <th>A</th>

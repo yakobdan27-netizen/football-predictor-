@@ -33,6 +33,8 @@ type Props = {
   onClose: () => void;
   onToggle: (market: MarketDto) => void;
   onSaveOdd: (marketId: number, odd: number | null) => Promise<void>;
+  /** Override drawer subtitle (default: add to slip). */
+  subtitle?: string;
 };
 
 const CATS_KEY = "bets_market_cats";
@@ -59,6 +61,7 @@ export function MatchMarketView({
   onClose,
   onToggle,
   onSaveOdd,
+  subtitle = "All markets — tap to add to slip",
 }: Props) {
   const [markets, setMarkets] = useState<MarketDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,7 +202,7 @@ export function MatchMarketView({
                 {event.home} vs {event.away}
               </div>
               <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                All markets — tap to add to slip
+                {subtitle}
               </div>
             </div>
             <button type="button" className="btn btn-secondary" onClick={onClose}>

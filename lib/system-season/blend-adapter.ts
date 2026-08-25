@@ -86,3 +86,31 @@ export async function systemSeasonMatchupLambdas(
     source: `system-season 2026/27 (n=${homeSnap?.nMatches ?? 0}/${awaySnap?.nMatches ?? 0})`,
   };
 }
+
+export async function recentLast5MatchupLambdas(
+  homeTeam: string,
+  awayTeam: string,
+  league: string
+): Promise<{ lambdaHome: number; lambdaAway: number; source: string } | null> {
+  const { queryMatchCentreTeamHalfRatesLast5 } = await import(
+    "@/lib/match-centre/team-half-rates"
+  );
+  const [homeRates, awayRates] = await Promise.all([
+    queryMatchCentreTeamHalfRatesLast5(homeTeam, league),
+    queryMatchCentreTeamHalfRatesLast5(awayTeam, league),
+  ]);
+  if (homeRates.nMatches < 1 || awayRates.nMatches < 1) return null;
+
+  const { lgAf1, lgAf2 } = loadLeagueAfBaselines(league);
+  const stageA = computeAttackDefenceStageA({
+    home: homeRates,
+    away: awayRates,
+    lgAf1,
+    lgAf2,
+  });
+  return {
+    lambdaHome: clampLambda(stageA.lambdaA1 + stageA.lambdaA2, "λ_home_last5"),
+    lambdaAway: clampLambda(stageA.lambdaB1 + stageA.lambdaB2, "λ_away_last5"),
+    source: `match-centre last-5 (n=${homeRates.nMatches}/${awayRates.nMatches})`,
+  };
+}

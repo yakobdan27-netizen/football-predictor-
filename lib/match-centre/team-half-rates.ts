@@ -26,6 +26,7 @@ export type MatchCentreFixtureHalfRow = {
   leagueName: string | null;
   homeTeam: string;
   awayTeam: string;
+  kickoffUtc?: string | null;
   homeGoals: number | null;
   awayGoals: number | null;
   homeGoals1h: number | null;
@@ -139,10 +140,41 @@ export function aggregateTeamHalfRatesFromFixtures(
   };
 }
 
+/** Last N finished fixtures per team (kickoff descending). */
+export function aggregateTeamHalfRatesFromLastNFixtures(
+  fixtures: MatchCentreFixtureHalfRow[],
+  team: string,
+  league: string,
+  n = 5
+): { n: number; af1: number; af2: number; da1: number; da2: number } {
+  const key = teamKey(team);
+  const teamFixtures = fixtures.filter((f) => {
+    const leagueName =
+      f.leagueName ?? LEAGUE_ID_TO_NAME.get(f.leagueId) ?? null;
+    if (leagueName !== league) return false;
+    const homeKey = teamKey(f.homeTeam);
+    const awayKey = teamKey(f.awayTeam);
+    return homeKey === key || awayKey === key;
+  });
+
+  teamFixtures.sort((a, b) => {
+    const ta = a.kickoffUtc ? Date.parse(a.kickoffUtc) : 0;
+    const tb = b.kickoffUtc ? Date.parse(b.kickoffUtc) : 0;
+    return tb - ta;
+  });
+
+  return aggregateTeamHalfRatesFromFixtures(
+    teamFixtures.slice(0, n),
+    team,
+    league
+  );
+}
+
 function toClubHalfAttackDefence(
   team: string,
   league: string,
-  rates: { n: number; af1: number; af2: number; da1: number; da2: number }
+  rates: { n: number; af1: number; af2: number; da1: number; da2: number },
+  opts?: { lastN?: boolean }
 ): ClubHalfAttackDefence {
   return {
     clubName: standardizeTeamName(team),
@@ -156,7 +188,9 @@ function toClubHalfAttackDefence(
     seedOnly: false,
     sourceNote:
       rates.n > 0
-        ? `match-centre: ${API_CURRENT_SEASON_YEAR} n=${rates.n}`
+        ? opts?.lastN
+          ? `match-centre-last5: ${API_CURRENT_SEASON_YEAR} n=${rates.n}`
+          : `match-centre: ${API_CURRENT_SEASON_YEAR} n=${rates.n}`
         : null,
   };
 }
@@ -217,6 +251,7 @@ async function loadSeasonFixturesForLeagues(
       leagueName: leagueName ?? LEAGUE_ID_TO_NAME.get(f.leagueId) ?? null,
       homeTeam: f.homeTeam,
       awayTeam: f.awayTeam,
+      kickoffUtc: f.kickoffUtc.toISOString(),
       homeGoals: f.homeGoals,
       awayGoals: f.awayGoals,
       homeGoals1h,
@@ -245,6 +280,30 @@ export async function queryMatchCentreTeamHalfRates(
   return toClubHalfAttackDefence(team, league, rates);
 }
 
+export async function queryMatchCentreTeamHalfRatesLast5(
+  team: string,
+  league: string
+): Promise<ClubHalfAttackDefence> {
+  const leagueId = LEAGUE_API_IDS[league as keyof typeof LEAGUE_API_IDS];
+  if (leagueId == null) {
+    return toClubHalfAttackDefence(
+      team,
+      league,
+      { n: 0, af1: 0, af2: 0, da1: 0, da2: 0 },
+      { lastN: true }
+    );
+  }
+
+  const fixtures = await loadSeasonFixturesForLeagues([leagueId]);
+  const rates = aggregateTeamHalfRatesFromLastNFixtures(
+    fixtures,
+    team,
+    league,
+    5
+  );
+  return toClubHalfAttackDefence(team, league, rates, { lastN: true });
+}
+
 export async function preloadMatchCentreHalfRates(
   teams: { team: string; league: string }[]
 ): Promise<Map<string, ClubHalfAttackDefence>> {
@@ -264,6 +323,36 @@ export async function preloadMatchCentreHalfRates(
     if (out.has(key)) continue;
     const rates = aggregateTeamHalfRatesFromFixtures(fixtures, team, league);
     out.set(key, toClubHalfAttackDefence(team, league, rates));
+  }
+
+  return out;
+}
+
+/** Preload last-5 Match Centre half rates per team (system-season 30% recent side). */
+export async function preloadMatchCentreLast5HalfRates(
+  teams: { team: string; league: string }[]
+): Promise<Map<string, ClubHalfAttackDefence>> {
+  const out = new Map<string, ClubHalfAttackDefence>();
+  if (!teams.length) return out;
+
+  const leagueIds = new Set<number>();
+  for (const { league } of teams) {
+    const id = LEAGUE_API_IDS[league as keyof typeof LEAGUE_API_IDS];
+    if (id != null && LIVE_LEAGUE_IDS.includes(id)) leagueIds.add(id);
+  }
+
+  const fixtures = await loadSeasonFixturesForLeagues([...leagueIds]);
+
+  for (const { team, league } of teams) {
+    const key = matchCentreRatesCacheKey(team, league);
+    if (out.has(key)) continue;
+    const rates = aggregateTeamHalfRatesFromLastNFixtures(
+      fixtures,
+      team,
+      league,
+      5
+    );
+    out.set(key, toClubHalfAttackDefence(team, league, rates, { lastN: true }));
   }
 
   return out;

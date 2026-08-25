@@ -12,8 +12,10 @@ import { seedCorrectScoreLambdas } from "./correct-score-seed";
 import { apiCorrectScoreLambdas } from "./league-matchup-api-lambdas";
 import {
   blendBadgeLabel,
+  blendTripleBadgeLabel,
   PREDICTION_WEIGHTS,
   weightedEstimate,
+  weightedTripleEstimate,
   type BlendSource,
 } from "./prediction-weights";
 import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
@@ -121,6 +123,45 @@ export function blendMatchupLambdas(
   };
 }
 
+/** Blend recent / prior / system λ at 30/30/40 weights. */
+export function blendMatchupLambdasTriple(
+  recent: { lambdaHome: number; lambdaAway: number } | null,
+  prior: { lambdaHome: number; lambdaAway: number },
+  system: { lambdaHome: number; lambdaAway: number } | null
+): {
+  lambdaHome: number;
+  lambdaAway: number;
+  blendSource: BlendSource;
+  apiWeight: number;
+  formWeight: number;
+} {
+  const homeBlend = weightedTripleEstimate(
+    recent?.lambdaHome,
+    prior.lambdaHome,
+    system?.lambdaHome
+  );
+  const awayBlend = weightedTripleEstimate(
+    recent?.lambdaAway,
+    prior.lambdaAway,
+    system?.lambdaAway
+  );
+
+  const blendSource: BlendSource =
+    homeBlend?.source === "blended" || awayBlend?.source === "blended"
+      ? "blended"
+      : homeBlend?.source === "api_only" || awayBlend?.source === "api_only"
+        ? "api_only"
+        : "manual_ai_only";
+
+  return {
+    lambdaHome: homeBlend?.value ?? prior.lambdaHome,
+    lambdaAway: awayBlend?.value ?? prior.lambdaAway,
+    blendSource,
+    apiWeight: homeBlend?.apiWeight ?? awayBlend?.apiWeight ?? 0,
+    formWeight: homeBlend?.manualAiWeight ?? awayBlend?.manualAiWeight ?? 1,
+  };
+}
+
 function formatSource(
   blendSource: BlendSource,
   apiSource: string | null,
@@ -159,7 +200,7 @@ export function getLeagueMatchupAnalysis(
   );
 }
 
-/** 60% prior API history · 40% 2026/27 system-season (async — league analysis page). */
+/** 30% last-5 MC · 30% prior API · 40% system-season (async — league analysis page). */
 export async function getBlendedLeagueMatchupAnalysis(
   homeTeam: string,
   awayTeam: string,
@@ -173,19 +214,18 @@ export async function getBlendedLeagueMatchupAnalysis(
   if (isSystemSeasonBlendEnabled()) {
     const prior = seedCorrectScoreLambdas(homeTeam, awayTeam, league);
     if (!prior) return null;
-    const { systemSeasonMatchupLambdas } = await import(
-      "@/lib/system-season/blend-adapter"
-    );
-    const current = await systemSeasonMatchupLambdas(homeTeam, awayTeam, league);
-    const blended = blendMatchupLambdas(
+    const { systemSeasonMatchupLambdas, recentLast5MatchupLambdas } =
+      await import("@/lib/system-season/blend-adapter");
+    const [current, recent] = await Promise.all([
+      systemSeasonMatchupLambdas(homeTeam, awayTeam, league),
+      recentLast5MatchupLambdas(homeTeam, awayTeam, league),
+    ]);
+    const blended = blendMatchupLambdasTriple(
+      recent,
       { lambdaHome: prior.lambdaHome, lambdaAway: prior.lambdaAway },
-      current ?? prior
+      current
     );
-    const source = formatSource(
-      blended.blendSource,
-      prior.source,
-      current?.source ?? "system-season pending"
-    );
+    const source = `${blendTripleBadgeLabel()} · prior (${prior.source}) · ${recent?.source ?? "last-5 pending"} · ${current?.source ?? "system-season pending"}`;
     return buildLeagueMatchupAnalysis(
       homeTeam,
       awayTeam,

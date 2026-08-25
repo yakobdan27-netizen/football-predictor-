@@ -1636,8 +1636,38 @@ table.data-table td {
   background: #d4a017;
 }
 
+.batch-complete-partial {
+  background: #d4a017;
+}
+
+.batch-complete-rich {
+  background: var(--accent);
+}
+
 .batch-complete-full {
   background: var(--accent);
+}
+
+.batch-col-half-total {
+  text-align: center;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 2rem;
+}
+
+.batch-col-readonly {
+  color: var(--muted);
+}
+
+.batch-timing-hint-row td {
+  padding: 0.15rem 0.5rem 0.35rem;
+  border: none;
+  background: transparent;
+}
+
+.batch-timing-hint {
+  font-size: 0.75rem;
+  color: #a16207;
 }
 
 .batch-table-result .batch-col-score input {

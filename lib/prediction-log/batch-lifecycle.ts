@@ -14,6 +14,7 @@ import {
   batchDateIsPastOrToday,
   recomputeGlobalStoresAfterBatchUpdates,
 } from "@/lib/football-api/sync-batch-persist";
+import { batchAllMatchesRichSettlement } from "./match-settlement";
 import type { LogMatch, PredictionBatch } from "./types";
 
 export function matchHasFinalResult(match: LogMatch): boolean {
@@ -29,7 +30,7 @@ export function matchHasFinalResult(match: LogMatch): boolean {
 export function batchAllMatchesFinished(batch: PredictionBatch): boolean {
   if (batch.matches.length === 0) return false;
   if (!batchDateIsPastOrToday(batch.date)) return false;
-  return batch.matches.every((m) => matchHasFinalResult(m));
+  return batchAllMatchesRichSettlement(batch);
 }
 
 /**
@@ -53,7 +54,7 @@ export async function archiveCompletedBatch(batchId: string): Promise<boolean> {
   }
 }
 
-/** Archive when every match is FT-filled; no-op otherwise. */
+/** Archive when every match has rich settlement; no-op otherwise. */
 export async function maybeArchiveCompletedBatch(
   batch: PredictionBatch
 ): Promise<boolean> {

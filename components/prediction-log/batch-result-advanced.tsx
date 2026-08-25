@@ -4,6 +4,7 @@ import { applyTeamStatsSync } from "@/lib/prediction-log/team-stats-sync";
 import { cloneMatchTeamStats } from "@/lib/prediction-log/match-learning";
 import { LOG_MARKETS, LOG_MARKET_MAP, marketHasLineOptions } from "@/lib/prediction-log/markets-config";
 import { scoreMatch } from "@/lib/prediction-log/scoring";
+import { timingGoalsSum } from "@/lib/prediction-log/match-settlement";
 import type { GoalTimingCurve, LogMarketKey, LogMatch, MarketActual, TeamSideStats } from "@/lib/prediction-log/types";
 
 interface BatchResultAdvancedProps {
@@ -38,18 +39,6 @@ function setActual(
     actualResults[key] = { actual } as MarketActual;
   }
   return scoreMatch({ ...match, actualResults });
-}
-
-function setGoalTimingFlag(
-  match: LogMatch,
-  field: "goalInFirst10" | "goalInLast10" | "secondHalfCards",
-  checked: boolean
-): LogMatch {
-  const teamStats = cloneMatchTeamStats(match);
-  teamStats.goalTiming = { ...teamStats.goalTiming };
-  if (checked) teamStats.goalTiming![field] = true;
-  else delete teamStats.goalTiming![field];
-  return applyTeamStatsSync({ ...match, teamStats });
 }
 
 const TIMING_BUCKETS: Array<{ key: keyof GoalTimingCurve; label: string }> = [
@@ -98,76 +87,29 @@ export function BatchResultAdvanced({ match, onChange }: BatchResultAdvancedProp
   return (
     <div style={{ display: "grid", gap: "0.75rem" }}>
       <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--muted)" }}>
-        Half-time &amp; timing
+        Goal timing summary
       </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
-          gap: "0.5rem",
-        }}
-      >
-        <MiniInput
-          label={`${match.homeTeam} HT`}
-          value={match.teamStats?.home?.firstHalfGoals}
-          onChange={(v) => onChange(setTeamStat(match, "home", "firstHalfGoals", v))}
-        />
-        <MiniInput
-          label={`${match.awayTeam} HT`}
-          value={match.teamStats?.away?.firstHalfGoals}
-          onChange={(v) => onChange(setTeamStat(match, "away", "firstHalfGoals", v))}
-        />
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", fontSize: "12px" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-          <input
-            type="checkbox"
-            checked={!!match.teamStats?.goalTiming?.goalInFirst10}
-            onChange={(e) => onChange(setGoalTimingFlag(match, "goalInFirst10", e.target.checked))}
-          />
-          Goal 0–10 min
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-          <input
-            type="checkbox"
-            checked={!!match.teamStats?.goalTiming?.goalInLast10}
-            onChange={(e) => onChange(setGoalTimingFlag(match, "goalInLast10", e.target.checked))}
-          />
-          Goal 80–90+
-        </label>
+      <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+        HT, corners, and timing buckets are edited in the main row. Summary:
       </div>
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))",
           gap: "0.35rem",
+          fontSize: "12px",
         }}
       >
         {TIMING_BUCKETS.map((b) => (
-          <MiniInput
-            key={b.key}
-            label={b.label}
-            value={match.teamStats?.goalTiming?.timingBuckets?.[b.key]}
-            onChange={(v) => {
-              const teamStats = cloneMatchTeamStats(match);
-              teamStats.goalTiming = {
-                ...teamStats.goalTiming,
-                timingBuckets: {
-                  g0_15: 0,
-                  g16_30: 0,
-                  g31_45: 0,
-                  g46_60: 0,
-                  g61_75: 0,
-                  g76_90plus: 0,
-                  ...teamStats.goalTiming?.timingBuckets,
-                },
-              };
-              teamStats.goalTiming!.timingBuckets![b.key] =
-                v === "" || !Number.isFinite(v) ? 0 : v;
-              onChange(applyTeamStatsSync({ ...match, teamStats }));
-            }}
-          />
+          <div key={b.key}>
+            <span style={{ color: "var(--muted)" }}>{b.label}</span>
+            <div>{match.teamStats?.goalTiming?.timingBuckets?.[b.key] ?? "—"}</div>
+          </div>
         ))}
+        <div>
+          <span style={{ color: "var(--muted)" }}>Σ</span>
+          <div>{timingGoalsSum(match.teamStats?.goalTiming) ?? "—"}</div>
+        </div>
       </div>
 
       {numericMarkets.length > 0 ? (
@@ -223,16 +165,6 @@ export function BatchResultAdvanced({ match, onChange }: BatchResultAdvancedProp
           label="Away SOT"
           value={match.teamStats?.away?.shotsOnTarget}
           onChange={(v) => onChange(setTeamStat(match, "away", "shotsOnTarget", v))}
-        />
-        <MiniInput
-          label="Home corners"
-          value={match.teamStats?.home?.corners}
-          onChange={(v) => onChange(setTeamStat(match, "home", "corners", v))}
-        />
-        <MiniInput
-          label="Away corners"
-          value={match.teamStats?.away?.corners}
-          onChange={(v) => onChange(setTeamStat(match, "away", "corners", v))}
         />
       </div>
     </div>

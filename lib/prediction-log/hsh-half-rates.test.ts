@@ -138,7 +138,7 @@ import type { PredictionBatch } from "./types";
 
 {
   process.env.SYSTEM_SEASON_BLEND_ENABLED = "1";
-  const mcCache = new Map([
+  const last5Cache = new Map([
     [
       "man city|premier league",
       {
@@ -148,21 +148,22 @@ import type { PredictionBatch } from "./types";
         af2: 2.5,
         da1: 0.3,
         da2: 0.4,
-        nMatches: 8,
+        nMatches: 5,
         seasonCount: 1,
         seedOnly: false,
-        sourceNote: "match-centre: 2026 n=8",
+        sourceNote: "match-centre-last5: 2026 n=5",
       },
     ],
   ]);
   const withFlag = loadClubHalfAttackDefence("Manchester City", "Premier League", [], {
-    matchCentreCache: mcCache,
+    recentLast5Cache: last5Cache,
   });
   assert.ok(
     withFlag.apiSeasonBlend == null || withFlag.apiSeasonBlend !== "60_40",
     "system season blend on → no nested MC 60/40 on API side"
   );
-  assert.ok(withFlag.sourceNote?.includes("prior-api-60%"));
+  assert.ok(withFlag.sourceNote?.includes("blend: 30/30/40"));
+  assert.ok(withFlag.recentLast5?.nMatches === 5);
 }
 
 {

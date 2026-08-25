@@ -28,8 +28,8 @@ export const WEEKEND_PICK_MIN = 10;
 /** @deprecated Weekend Picks now includes all fixtures in the pool. */
 export const WEEKEND_PICK_MAX = 20;
 export const WEEKEND_WINDOW_DAYS = 7;
-export const WEEKEND_TOTALS_OVER_MIN_LINE = 1.5;
-export const WEEKEND_TOTALS_UNDER_MAX_LINE = 4.5;
+export const WEEKEND_TOTALS_OVER_MIN_LINE = 2.5;
+export const WEEKEND_TOTALS_UNDER_MAX_LINE = 3.5;
 export const WEEKEND_TEAM_GOALS_OVER_MIN_LINE = 0.5;
 export const WEEKEND_TEAM_GOALS_UNDER_MAX_LINE = 1.5;
 /** Minimum calibrated-probability gap between best and 2nd-best (trace only). */
@@ -46,11 +46,8 @@ export const WEEKEND_SPECIALIST_FAMILIES = [
 
 /** Core Double Chance + Over Total combos for Weekend Picks. */
 export const WEEKEND_DC_TOTAL_COMBO_IDS = [
-  "1x_over_1_5",
   "1x_over_2_5",
-  "x2_over_1_5",
   "x2_over_2_5",
-  "12_over_1_5",
   "12_over_2_5",
 ] as const;
 
@@ -62,12 +59,9 @@ export const WEEKEND_COMBO_IDS = new Set([
   "btts_yes_over_2_5",
   "btts_yes_over_3_5",
   "btts_no_under_2_5",
-  "btts_no_over_1_5",
   "btts_no_under_3_5",
-  "home_over_1_5",
   "home_over_2_5",
   "home_under_3_5",
-  "away_over_1_5",
   "away_over_2_5",
   "away_under_3_5",
   "draw_under_2_5",

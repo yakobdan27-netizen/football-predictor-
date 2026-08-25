@@ -69,11 +69,12 @@ test("selectWeekendPickCount returns full pool size", () => {
 
 test("weekendTotalsSelectionAllowed excludes trivial total goals lines", () => {
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_0_5", 0.5), false);
-  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_1_5", 1.5), true);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_1_5", 1.5), false);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "over_2_5", 2.5), true);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_6_5", 6.5), false);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_5_5", 5.5), false);
-  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_4_5", 4.5), true);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_4_5", 4.5), false);
+  assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_3_5", 3.5), true);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_0_5", 0.5), true);
 });
 
@@ -109,7 +110,7 @@ test("weekendTotalsSelectionAllowed passes through non-TOTALS families", () => {
 test("weekendComboSelectionAllowed restricts combo pool for Weekend Picks", () => {
   assert.equal(
     weekendComboSelectionAllowed("COMBO", "1x_over_1_5"),
-    true
+    false
   );
   for (const id of WEEKEND_DC_TOTAL_COMBO_IDS) {
     assert.equal(weekendComboSelectionAllowed("COMBO", id), true, id);
@@ -132,7 +133,7 @@ test("weekendComboSelectionAllowed restricts combo pool for Weekend Picks", () =
   );
   assert.equal(
     weekendComboSelectionAllowed("COMBO", "home_over_1_5"),
-    true
+    false
   );
   assert.equal(
     weekendComboSelectionAllowed("COMBO", "home_btts_yes"),
@@ -250,7 +251,7 @@ function mockEstimate(
   return { ...base, ...overrides };
 }
 
-test("scoreFixtureBestMarket returns pick even when margin is tight", () => {
+test("scoreFixtureBestMarket returns a pick regardless of market margin", () => {
   const fixture = row(99, "2026-08-22T15:00:00.000Z");
   const flat = 0.51;
   const est = mockEstimate({
@@ -275,11 +276,43 @@ test("scoreFixtureBestMarket returns pick even when margin is tight", () => {
         diehYes: flat,
         diehNo: flat,
       },
+      totalGoals: {
+        ...mockEstimate().markets.totalGoals!,
+        lines: {
+          0.5: { over: flat, under: flat },
+          1.5: { over: flat, under: flat },
+          2.5: { over: flat, under: flat },
+          3.5: { over: flat, under: flat },
+          4.5: { over: flat, under: flat },
+          5.5: { over: flat, under: flat },
+          6.5: { over: flat, under: flat },
+        },
+      },
+      sot: {
+        ...mockEstimate().markets.sot!,
+        lines: {
+          match: {
+            3.5: { over: flat, under: flat },
+            4.5: { over: flat, under: flat },
+            5.5: { over: flat, under: flat },
+          },
+          home: {
+            1.5: { over: flat, under: flat },
+            2.5: { over: flat, under: flat },
+            3.5: { over: flat, under: flat },
+          },
+          away: {
+            1.5: { over: flat, under: flat },
+            2.5: { over: flat, under: flat },
+            3.5: { over: flat, under: flat },
+          },
+        },
+      },
     },
   });
   const pick = scoreFixtureBestMarket(fixture, est, null);
   assert.ok(pick);
-  assert.ok((pick!.marketMargin ?? 0) < WEEKEND_MARKET_MARGIN_MIN);
+  assert.ok(typeof pick!.marketMargin === "number");
 });
 
 test("scoreFixtureBestMarket picks clear leader with MSAM gate", () => {

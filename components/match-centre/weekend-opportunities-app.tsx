@@ -86,8 +86,17 @@ function TracePanel({ row }: { row: WeekendOpportunityRow }) {
           {p && (
             <>
               <div>
-                <strong>CFE blend:</strong> API {p.api_pct}% · System season{" "}
-                {p.manual_pct}%
+                <strong>CFE blend:</strong>{" "}
+                {p.recent_pct != null && p.prior_pct != null ? (
+                  <>
+                    Last 5 {p.recent_pct.toFixed(0)}% · Prior API{" "}
+                    {p.prior_pct.toFixed(0)}% · System {p.manual_pct}%
+                  </>
+                ) : (
+                  <>
+                    API {p.api_pct}% · System season {p.manual_pct}%
+                  </>
+                )}
                 {p.apiSeasonBlend ? ` · season ${p.apiSeasonBlend}` : ""}
               </div>
               <div>
@@ -185,7 +194,7 @@ export function WeekendOpportunitiesApp() {
             Draw Either Half, Corners, Handicap, Highest Scoring Half, Win One
             Half, Total Goals, and others). MSAM evidence quality is shown in
             trace and the Low evidence badge, not used to exclude a higher-probability
-            pick. Total Goals: Over ≥1.5, Under ≤4.5. Team Goals: Over ≥0.5,
+            pick. Total Goals: Over ≥2.5, Under ≤3.5. Team Goals: Over ≥0.5,
             Under ≤1.5 per side.
           </p>
           {data && (

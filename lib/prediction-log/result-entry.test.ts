@@ -8,9 +8,11 @@ import {
 import { parsePastedResultGrid } from "./parse-pasted-rows";
 import {
   RESULT_CORE_FIELDS,
+  RESULT_RICH_FIELDS,
   RESULT_SCORE_FIELDS,
   resultEditableFields,
 } from "./result-grid-fields";
+import { applyResultPastePatch } from "@/components/prediction-log/batch-result-row";
 import { applyTeamStatsSync, setHomePossession } from "./team-stats-sync";
 import type { LogMatch } from "./types";
 
@@ -140,11 +142,38 @@ test("parsePastedResultGrid maps HT/FT TSV from focused cell", () => {
   assert.deepEqual(patches[1], { htH: "0", htA: "0", ftH: "1", ftA: "1" });
 });
 
-test("resultEditableFields defaults to FT score only", () => {
-  assert.deepEqual(resultEditableFields(false), [...RESULT_SCORE_FIELDS]);
+test("resultEditableFields includes rich columns by default", () => {
+  assert.deepEqual(resultEditableFields(false), [
+    ...RESULT_SCORE_FIELDS,
+    ...RESULT_RICH_FIELDS,
+  ]);
   const full = resultEditableFields(true);
   assert.equal(full[0], "ftH");
   assert.equal(full[1], "ftA");
   assert.ok(full.includes("htH"));
+  assert.ok(full.includes("t0_15"));
   assert.ok(full.includes("shotsH"));
+});
+
+test("applyResultPastePatch applies HT corners and timing buckets", () => {
+  const next = applyResultPastePatch(baseMatch(), {
+    htH: "1",
+    htA: "0",
+    ftH: "2",
+    ftA: "1",
+    corH: "6",
+    corA: "4",
+    t0_15: "1",
+    t16_30: "0",
+    t31_45: "1",
+    t46_60: "0",
+    t61_75: "0",
+    t76_90: "1",
+  });
+  assert.equal(next.teamStats?.home?.firstHalfGoals, 1);
+  assert.equal(next.teamStats?.away?.firstHalfGoals, 0);
+  assert.equal(next.teamStats?.home?.goals, 2);
+  assert.equal(next.teamStats?.home?.corners, 6);
+  assert.equal(next.teamStats?.goalTiming?.timingBuckets?.g0_15, 1);
+  assert.equal(next.teamStats?.goalTiming?.timingBuckets?.g76_90plus, 1);
 });

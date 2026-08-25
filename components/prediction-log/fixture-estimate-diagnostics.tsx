@@ -57,8 +57,17 @@ export function FixtureEstimateDiagnostics({
           {p.ess.toFixed(1)}
         </li>
         <li>
-          Blend weights (λ inputs): API {p.api_pct.toFixed(0)}% · Manual/AI{" "}
-          {p.manual_pct.toFixed(0)}%
+          Blend weights (λ inputs):{" "}
+          {p.recent_pct != null && p.prior_pct != null ? (
+            <>
+              Last 5 {p.recent_pct.toFixed(0)}% · Prior API{" "}
+              {p.prior_pct.toFixed(0)}% · System {p.manual_pct.toFixed(0)}%
+            </>
+          ) : (
+            <>
+              API {p.api_pct.toFixed(0)}% · Manual/AI {p.manual_pct.toFixed(0)}%
+            </>
+          )}
         </li>
         <li>
           Markets: 2H&gt;1H {(estimate.markets.p2h_gt_1h * 100).toFixed(1)}% ·

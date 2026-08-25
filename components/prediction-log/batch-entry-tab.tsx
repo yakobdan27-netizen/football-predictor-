@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BatchMatchTable } from "./batch-match-table";
 import { BatchSummaryStrip } from "./batch-summary-strip";
+import { FixtureBatchPicker } from "./fixture-batch-picker";
 import { LEAGUE_OPTIONS } from "@/lib/prediction-log/markets-config";
 import {
   deriveBatchLeague,
@@ -14,6 +15,7 @@ import {
   resolveMarketMode,
   validateMatchLeg,
 } from "@/lib/prediction-log/match-entry-helpers";
+import { deriveBatchDateFromMatches } from "@/lib/prediction-log/batch-date";
 import { loadCombinedOddsSettings } from "@/lib/prediction-log/combo-settings";
 import {
   upsertBatch,
@@ -102,6 +104,8 @@ interface BatchEntryTabProps {
   onViewBatch?: (batchId: string) => void;
 }
 
+type EntryMode = "fixtures" | "manual";
+
 export function BatchEntryTab({
   settings,
   comboSettings,
@@ -110,17 +114,26 @@ export function BatchEntryTab({
   onSaved,
   onViewBatch,
 }: BatchEntryTabProps) {
+  const [entryMode, setEntryMode] = useState<EntryMode>("fixtures");
   const [defaultLeague, setDefaultLeague] = useState<string>(LEAGUE_OPTIONS[0]);
   const [batchName, setBatchName] = useState("");
-  const [matches, setMatches] = useState<LogMatch[]>(() => [
-    emptyMatch(comboSettings ?? loadCombinedOddsSettings(), LEAGUE_OPTIONS[0]),
-  ]);
+  const [matches, setMatches] = useState<LogMatch[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [noReco, setNoReco] = useState(false);
   const [duplicateHits, setDuplicateHits] = useState<DuplicateHit[] | null>(null);
   /** Creation stamp only — result filling traces by home/away names, not this date. */
   const stubDate = todayIsoDate();
+
+  function switchEntryMode(mode: EntryMode) {
+    setEntryMode(mode);
+    setError(null);
+    if (mode === "fixtures") {
+      setMatches((prev) => prev.filter((m) => m.apiFixtureId != null && m.homeTeam.trim()));
+    } else if (matches.length === 0 || matches.every((m) => !m.homeTeam.trim() && !m.awayTeam.trim())) {
+      setMatches([emptyMatch(comboSettings, defaultLeague)]);
+    }
+  }
 
   function addMatch() {
     setMatches((prev) => [...prev, emptyMatch(comboSettings, defaultLeague)]);
@@ -132,10 +145,19 @@ export function BatchEntryTab({
       setError("Batch name is required.");
       return;
     }
+    if (matches.length === 0) {
+      setError(entryMode === "fixtures" ? "Add at least one match from the fixture list." : "Add at least one match.");
+      return;
+    }
     for (let i = 0; i < matches.length; i++) {
       const m = matches[i]!;
       const rowLeague = matchLeague(m, defaultLeague);
-      if (!isValidFixture(m.homeTeam, m.awayTeam, rowLeague, teamsQuality)) {
+      if (entryMode === "fixtures") {
+        if (!m.homeTeam.trim() || !m.awayTeam.trim() || m.apiFixtureId == null) {
+          setError(`Match ${i + 1}: pick a fixture from the list.`);
+          return;
+        }
+      } else if (!isValidFixture(m.homeTeam, m.awayTeam, rowLeague, teamsQuality)) {
         setError(`Match ${i + 1}: select home and away from the ${rowLeague} list (must differ).`);
         return;
       }
@@ -190,9 +212,13 @@ export function BatchEntryTab({
       const clubIndex = await refreshClubIndex();
       const normalizedMatches = normalizeMatchLeagues(matches, defaultLeague);
       const batchLeague = deriveBatchLeague(normalizedMatches, defaultLeague);
+      const batchDate =
+        deriveBatchDateFromMatches(
+          normalizedMatches.map((m) => ({ matchDate: m.matchDate }))
+        ) || stubDate;
       const stubBatch: PredictionBatch = {
         id: "freeze-stub",
-        date: stubDate,
+        date: batchDate,
         league: batchLeague,
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
@@ -204,7 +230,7 @@ export function BatchEntryTab({
         freezeComboProbabilities(
           normalizedMatches,
           batchLeague,
-          stubDate,
+          batchDate,
           clubRecords,
           clubIndex,
           allExisting
@@ -217,7 +243,7 @@ export function BatchEntryTab({
 
       const batch: PredictionBatch = {
         id: newId(),
-        date: stubDate,
+        date: batchDate,
         league: batchLeague,
         batchName: batchName.trim(),
         createdAt: new Date().toISOString(),
@@ -278,36 +304,67 @@ export function BatchEntryTab({
               placeholder="PL Matchday 34"
             />
           </div>
-          <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
-            Enter home and away team names and your markets. No date or fixture id is required —
-            results fill automatically when the API finds a finished match with the same ordered
-            home–away pairing.
-          </p>
+          <div
+            className="batch-seg"
+            style={{ display: "inline-flex", marginBottom: "0.5rem" }}
+          >
+            <button
+              type="button"
+              className={entryMode === "fixtures" ? "active" : ""}
+              onClick={() => switchEntryMode("fixtures")}
+            >
+              Pick from fixtures
+            </button>
+            <button
+              type="button"
+              className={entryMode === "manual" ? "active" : ""}
+              onClick={() => switchEntryMode("manual")}
+            >
+              Manual entry
+            </button>
+          </div>
+          {entryMode === "manual" ? (
+            <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: 0 }}>
+              Enter home and away team names and your markets. No date or fixture id is required —
+              results fill automatically when the API finds a finished match with the same ordered
+              home–away pairing.
+            </p>
+          ) : null}
         </div>
       </div>
 
-      <BatchMatchTable
-        mode="entry"
-        matches={matches}
-        defaultLeague={defaultLeague}
-        date={stubDate}
-        comboSettings={comboSettings}
-        bankrollStrategy={settings.bankrollStrategy}
-        teamsQuality={teamsQuality}
-        onChange={setMatches}
-        onAddMatch={addMatch}
-        createEmptyMatch={() => emptyMatch(comboSettings, defaultLeague)}
-      />
+      {entryMode === "fixtures" ? (
+        <FixtureBatchPicker
+          matches={matches}
+          comboSettings={comboSettings}
+          onChange={setMatches}
+        />
+      ) : (
+        <BatchMatchTable
+          mode="entry"
+          matches={matches}
+          defaultLeague={defaultLeague}
+          date={stubDate}
+          comboSettings={comboSettings}
+          bankrollStrategy={settings.bankrollStrategy}
+          teamsQuality={teamsQuality}
+          onChange={setMatches}
+          onAddMatch={addMatch}
+          createEmptyMatch={() => emptyMatch(comboSettings, defaultLeague)}
+        />
+      )}
 
-      <BatchSummaryStrip
-        mode="entry"
-        matches={matches}
-        defaultLeague={defaultLeague}
-        date={stubDate}
-        batchName={batchName}
-        comboSettings={comboSettings}
-        bankrollStrategy={settings.bankrollStrategy}
-      />
+      {matches.length > 0 ? (
+        <BatchSummaryStrip
+          mode="entry"
+          matches={matches}
+          defaultLeague={defaultLeague}
+          date={stubDate}
+          batchName={batchName}
+          comboSettings={comboSettings}
+          bankrollStrategy={settings.bankrollStrategy}
+        />
+      ) : null}
 
       <div className="batch-actions">
         <button type="button" className="btn btn-primary" onClick={saveBatch}>

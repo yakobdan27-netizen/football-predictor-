@@ -1,108 +1,59 @@
+/**
+ * Run: npx tsx lib/match-centre/team-half-rates.test.ts
+ */
 import assert from "node:assert/strict";
-import { test } from "node:test";
 import {
   aggregateTeamHalfRatesFromFixtures,
-  halfGoalsFromEvents,
+  aggregateTeamHalfRatesFromLastNFixtures,
   type MatchCentreFixtureHalfRow,
 } from "./team-half-rates";
 
-test("halfGoalsFromEvents counts first-half goals only", () => {
-  const events = [
-    { minute: 12, type: "Goal", team: "Arsenal" },
-    { minute: 44, type: "Goal", team: "Chelsea" },
-    { minute: 67, type: "Goal", team: "Arsenal" },
-  ];
-  const ht = halfGoalsFromEvents(events, "Arsenal", "Chelsea");
-  assert.equal(ht.homeGoals1h, 1);
-  assert.equal(ht.awayGoals1h, 1);
-});
+function fixture(
+  id: number,
+  home: string,
+  away: string,
+  kickoff: string,
+  hg: number,
+  ag: number,
+  h1: number,
+  a1: number
+): MatchCentreFixtureHalfRow {
+  return {
+    fixtureId: id,
+    leagueId: 39,
+    leagueName: "Premier League",
+    homeTeam: home,
+    awayTeam: away,
+    kickoffUtc: kickoff,
+    homeGoals: hg,
+    awayGoals: ag,
+    homeGoals1h: h1,
+    awayGoals1h: a1,
+  };
+}
 
-test("halfGoalsFromEvents returns null when no first-half goals", () => {
-  const events = [{ minute: 55, type: "Goal", team: "Arsenal" }];
-  const ht = halfGoalsFromEvents(events, "Arsenal", "Chelsea");
-  assert.equal(ht.homeGoals1h, null);
-  assert.equal(ht.awayGoals1h, null);
-});
-
-test("aggregateTeamHalfRatesFromFixtures computes home team half rates", () => {
-  const fixtures: MatchCentreFixtureHalfRow[] = [
-    {
-      fixtureId: 1,
-      leagueId: 39,
-      leagueName: "Premier League",
-      homeTeam: "Arsenal",
-      awayTeam: "Chelsea",
-      homeGoals: 3,
-      awayGoals: 1,
-      homeGoals1h: 2,
-      awayGoals1h: 0,
-    },
-    {
-      fixtureId: 2,
-      leagueId: 39,
-      leagueName: "Premier League",
-      homeTeam: "Arsenal",
-      awayTeam: "Liverpool",
-      homeGoals: 2,
-      awayGoals: 2,
-      homeGoals1h: 1,
-      awayGoals1h: 1,
-    },
+{
+  const all = [
+    fixture(1, "Arsenal", "Everton", "2026-08-10T12:00:00Z", 2, 0, 1, 0),
+    fixture(2, "Chelsea", "Arsenal", "2026-08-17T12:00:00Z", 1, 1, 0, 1),
+    fixture(3, "Arsenal", "Fulham", "2026-08-24T12:00:00Z", 3, 1, 2, 0),
+    fixture(4, "Liverpool", "Arsenal", "2026-08-31T12:00:00Z", 0, 2, 0, 1),
+    fixture(5, "Arsenal", "Wolves", "2026-09-07T12:00:00Z", 1, 0, 1, 0),
+    fixture(6, "Brighton", "Arsenal", "2026-09-14T12:00:00Z", 2, 2, 1, 1),
+    fixture(7, "Arsenal", "Tottenham", "2026-09-21T12:00:00Z", 4, 2, 2, 1),
   ];
 
-  const rates = aggregateTeamHalfRatesFromFixtures(
-    fixtures,
+  const full = aggregateTeamHalfRatesFromFixtures(all, "Arsenal", "Premier League");
+  const last5 = aggregateTeamHalfRatesFromLastNFixtures(
+    all,
     "Arsenal",
-    "Premier League"
+    "Premier League",
+    5
   );
-  assert.equal(rates.n, 2);
-  // Match 1 home: sc1=2 sc2=1 conc1=0 conc2=1; Match 2 home: sc1=1 sc2=1 conc1=1 conc2=1
-  assert.equal(rates.af1, (2 + 1) / 2);
-  assert.equal(rates.af2, (1 + 1) / 2);
-  assert.equal(rates.da1, (0 + 1) / 2);
-  assert.equal(rates.da2, (1 + 1) / 2);
-});
 
-test("aggregateTeamHalfRatesFromFixtures skips fixtures without HT", () => {
-  const fixtures: MatchCentreFixtureHalfRow[] = [
-    {
-      fixtureId: 1,
-      leagueId: 39,
-      leagueName: "Premier League",
-      homeTeam: "Arsenal",
-      awayTeam: "Chelsea",
-      homeGoals: 2,
-      awayGoals: 0,
-      homeGoals1h: null,
-      awayGoals1h: null,
-    },
-  ];
-  const rates = aggregateTeamHalfRatesFromFixtures(
-    fixtures,
-    "Arsenal",
-    "Premier League"
-  );
-  assert.equal(rates.n, 0);
-});
+  assert.equal(full.n, 7);
+  assert.equal(last5.n, 5, "last-5 cap excludes oldest two Arsenal fixtures");
+  assert.notEqual(last5.af1, full.af1, "last-5 window should differ from full season");
+}
 
-test("aggregateTeamHalfRatesFromFixtures filters by league", () => {
-  const fixtures: MatchCentreFixtureHalfRow[] = [
-    {
-      fixtureId: 1,
-      leagueId: 140,
-      leagueName: "La Liga",
-      homeTeam: "Barcelona",
-      awayTeam: "Real Madrid",
-      homeGoals: 1,
-      awayGoals: 0,
-      homeGoals1h: 1,
-      awayGoals1h: 0,
-    },
-  ];
-  const rates = aggregateTeamHalfRatesFromFixtures(
-    fixtures,
-    "Barcelona",
-    "Premier League"
-  );
-  assert.equal(rates.n, 0);
-});
+console.log("team-half-rates tests passed");

@@ -3,8 +3,22 @@
 /** Default result keyboard path: FT home → FT away only. */
 export const RESULT_SCORE_FIELDS = ["ftH", "ftA"] as const;
 
-/** Shown when "Show full stats" is on (after FT score). */
-export const RESULT_OPTIONAL_CORE_FIELDS = ["htH", "htA", "early"] as const;
+/** Always visible after FT — rich settlement fields. */
+export const RESULT_RICH_FIELDS = [
+  "htH",
+  "htA",
+  "corH",
+  "corA",
+  "t0_15",
+  "t16_30",
+  "t31_45",
+  "t46_60",
+  "t61_75",
+  "t76_90",
+] as const;
+
+/** Shown when "Show full stats" is on (after rich block). */
+export const RESULT_OPTIONAL_CORE_FIELDS = ["early"] as const;
 
 /** Legacy core order used by paste tests (HT then FT then early). */
 export const RESULT_CORE_FIELDS = [
@@ -20,8 +34,6 @@ export const RESULT_FULL_FIELDS = [
   "shotsA",
   "sotH",
   "sotA",
-  "corH",
-  "corA",
   "foulH",
   "foulA",
   "yelH",
@@ -37,19 +49,18 @@ export const RESULT_FULL_FIELDS = [
   "abnormal",
 ] as const;
 
+export type ResultRichField = (typeof RESULT_RICH_FIELDS)[number];
 export type ResultScoreField = (typeof RESULT_SCORE_FIELDS)[number];
 export type ResultCoreField = (typeof RESULT_CORE_FIELDS)[number];
 export type ResultFullField = (typeof RESULT_FULL_FIELDS)[number];
 export type ResultGridField =
   | ResultScoreField
+  | ResultRichField
   | ResultCoreField
   | ResultFullField;
 
 export function resultEditableFields(showFullStats: boolean): ResultGridField[] {
-  if (!showFullStats) return [...RESULT_SCORE_FIELDS];
-  return [
-    ...RESULT_SCORE_FIELDS,
-    ...RESULT_OPTIONAL_CORE_FIELDS,
-    ...RESULT_FULL_FIELDS,
-  ];
+  const rich = [...RESULT_SCORE_FIELDS, ...RESULT_RICH_FIELDS];
+  if (!showFullStats) return rich;
+  return [...rich, ...RESULT_OPTIONAL_CORE_FIELDS, ...RESULT_FULL_FIELDS];
 }
