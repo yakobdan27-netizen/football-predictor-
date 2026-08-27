@@ -7,13 +7,8 @@ import { NEXT_MATCHES_LEAGUES } from "@/lib/football-api/fetch-upcoming-league";
 import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { sortDedupeUpcomingFixtures } from "@/lib/prediction-log/batch-fixture-picker";
 import {
-  weekendMsamEligible,
   weekendMsamIneligibilityReasons,
 } from "@/lib/market-advisory/weekend-eligibility-gate";
-import {
-  canonicalHomeHandicapLine,
-  directionallyValidHomeLines,
-} from "@/lib/prediction-log/handicap";
 import type { IneligibilityReasonCode } from "@/lib/market-advisory/types";
 import type { BinCalibrator } from "@/lib/predictor/calibration";
 import { scoreLegFromCanonical } from "@/lib/slip-builder/canonical-leg";
@@ -39,11 +34,15 @@ export const WEEKEND_TEAM_GOALS_UNDER_MAX_LINE = 1.5;
 /** Minimum calibrated-probability gap between best and 2nd-best (trace only). */
 export const WEEKEND_MARKET_MARGIN_MIN = 0.05;
 
+/** Families excluded from Weekend Picks (e.g. unreliable empirical pricing). */
+export const WEEKEND_EXCLUDED_FAMILIES = ["HANDICAP"] as const satisfies readonly MarketFamilyId[];
+
+const WEEKEND_EXCLUDED_FAMILY_SET = new Set<MarketFamilyId>(WEEKEND_EXCLUDED_FAMILIES);
+
 /** Specialist markets trusted on Weekend Picks when they have the highest probability. */
 export const WEEKEND_SPECIALIST_FAMILIES = [
   "DIEH",
   "CORNERS",
-  "HANDICAP",
   "HSH",
   "WIN_ONE_HALF",
 ] as const satisfies readonly MarketFamilyId[];
@@ -102,19 +101,6 @@ export function weekendTeamGoalsSelectionAllowed(
     return line <= WEEKEND_TEAM_GOALS_UNDER_MAX_LINE;
   }
   return true;
-}
-
-/** Handicap: only directionally valid home lines for expected goal diff. */
-export function weekendHandicapSelectionAllowed(
-  family: MarketFamilyId,
-  selectionKey: string,
-  line: number | undefined,
-  expectedDiff: number
-): boolean {
-  if (family !== "HANDICAP" || line == null) return true;
-  if (!selectionKey.startsWith("home_")) return true;
-  const valid = directionallyValidHomeLines(expectedDiff);
-  return valid.includes(line);
 }
 
 /** Weekend Picks combos: DC+BTTS, DC+Total (Over), BTTS+Total, Win+Total. */
@@ -251,10 +237,6 @@ type ScoredCandidate = {
   coherenceOk: boolean;
   msamGatePassed: boolean;
   ineligibilityReasons: IneligibilityReasonCode[];
-  handicapSource?: "hist" | "estimated_fallback" | "insufficient";
-  handicapN?: number;
-  expectedDiff?: number;
-  canonicalLine?: number;
 };
 
 export type BestMarketPick = {
@@ -272,10 +254,6 @@ export type BestMarketPick = {
   marketMargin?: number;
   msamGatePassed: boolean;
   ineligibilityReasons: IneligibilityReasonCode[];
-  handicapSource?: "hist" | "estimated_fallback" | "insufficient";
-  handicapN?: number;
-  expectedDiff?: number;
-  canonicalLine?: number;
 } | null;
 
 export function scoreFixtureBestMarket(
@@ -285,10 +263,8 @@ export function scoreFixtureBestMarket(
 ): BestMarketPick {
   const candidates: ScoredCandidate[] = [];
 
-  const expectedDiff = estimate.lambdas.home - estimate.lambdas.away;
-  const canonicalLine = canonicalHomeHandicapLine(expectedDiff);
-
   for (const family of MARKET_FAMILY_IDS) {
+    if (WEEKEND_EXCLUDED_FAMILY_SET.has(family)) continue;
     if (!familyDataOk(family, estimate)) continue;
 
     for (const sel of enumerateFamilySelections(family)) {
@@ -298,16 +274,6 @@ export function scoreFixtureBestMarket(
       }
       if (
         !weekendTeamGoalsSelectionAllowed(family, sel.selectionKey, sel.line)
-      ) {
-        continue;
-      }
-      if (
-        !weekendHandicapSelectionAllowed(
-          family,
-          sel.selectionKey,
-          sel.line,
-          expectedDiff
-        )
       ) {
         continue;
       }
@@ -337,15 +303,6 @@ export function scoreFixtureBestMarket(
       });
       const msamGatePassed = ineligibilityReasons.length === 0;
 
-      const handicapSource =
-        family === "HANDICAP"
-          ? (scored.meta?.handicapSource as ScoredCandidate["handicapSource"])
-          : undefined;
-      const handicapN =
-        family === "HANDICAP" && typeof scored.meta?.handicapN === "number"
-          ? scored.meta.handicapN
-          : undefined;
-
       candidates.push({
         marketLabel: FAMILY_LABELS[family],
         predictionLabel: sel.selectionLabel,
@@ -359,10 +316,6 @@ export function scoreFixtureBestMarket(
         coherenceOk: scored.coherenceOk,
         msamGatePassed,
         ineligibilityReasons,
-        handicapSource,
-        handicapN,
-        expectedDiff: family === "HANDICAP" ? expectedDiff : undefined,
-        canonicalLine: family === "HANDICAP" ? canonicalLine : undefined,
       });
     }
   }
@@ -397,10 +350,6 @@ export function scoreFixtureBestMarket(
     marketMargin: margin,
     msamGatePassed: best.msamGatePassed,
     ineligibilityReasons: best.ineligibilityReasons,
-    handicapSource: best.handicapSource,
-    handicapN: best.handicapN,
-    expectedDiff: best.expectedDiff,
-    canonicalLine: best.canonicalLine,
   };
 }
 
@@ -529,10 +478,6 @@ export function rankWeekendOpportunities(input: {
             pick.ineligibilityReasons.length > 0
               ? pick.ineligibilityReasons
               : undefined,
-          handicapSource: pick.handicapSource,
-          handicapN: pick.handicapN,
-          expectedDiff: pick.expectedDiff,
-          canonicalLine: pick.canonicalLine,
         },
       };
     }

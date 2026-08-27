@@ -10,9 +10,9 @@ import {
   weekendLeagueSortIndex,
   WEEKEND_DC_TOTAL_COMBO_IDS,
   weekendComboSelectionAllowed,
-  weekendHandicapSelectionAllowed,
   weekendTeamGoalsSelectionAllowed,
   weekendTotalsSelectionAllowed,
+  WEEKEND_EXCLUDED_FAMILIES,
   WEEKEND_MARKET_MARGIN_MIN,
   WEEKEND_SPECIALIST_FAMILIES,
 } from "./weekend-opportunities";
@@ -77,25 +77,6 @@ test("weekendTotalsSelectionAllowed excludes trivial total goals lines", () => {
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_4_5", 4.5), false);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_3_5", 3.5), true);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_0_5", 0.5), true);
-});
-
-test("weekendHandicapSelectionAllowed filters mis-signed home lines", () => {
-  assert.equal(
-    weekendHandicapSelectionAllowed("HANDICAP", "home_1.5", 1.5, 1.8),
-    false
-  );
-  assert.equal(
-    weekendHandicapSelectionAllowed("HANDICAP", "home_-1.5", -1.5, 1.8),
-    true
-  );
-  assert.equal(
-    weekendHandicapSelectionAllowed("HANDICAP", "home_1.5", 1.5, -1.2),
-    true
-  );
-  assert.equal(
-    weekendHandicapSelectionAllowed("HANDICAP", "away_-1.5", -1.5, 1.8),
-    true
-  );
 });
 
 test("weekendTeamGoalsSelectionAllowed enforces Over 0.5 and Under 1.5", () => {
@@ -478,10 +459,45 @@ test("WEEKEND_SPECIALIST_FAMILIES lists trusted specialist markets", () => {
   assert.deepEqual(WEEKEND_SPECIALIST_FAMILIES, [
     "DIEH",
     "CORNERS",
-    "HANDICAP",
     "HSH",
     "WIN_ONE_HALF",
   ]);
+});
+
+test("WEEKEND_EXCLUDED_FAMILIES excludes Handicap from Weekend Picks", () => {
+  assert.deepEqual(WEEKEND_EXCLUDED_FAMILIES, ["HANDICAP"]);
+});
+
+test("scoreFixtureBestMarket never picks Handicap even for strong favorites", () => {
+  const fixture = row(99, "2026-08-22T15:00:00.000Z");
+  const est = mockEstimate({
+    lambdas: {
+      home: 2.8,
+      away: 0.4,
+      home_1h: 1.3,
+      away_1h: 0.2,
+      home_2h: 1.5,
+      away_2h: 0.2,
+      home_corners: 6,
+      away_corners: 3,
+      home_sot: 3,
+      away_sot: 1.5,
+    },
+    markets: {
+      ...mockEstimate().markets,
+      home: 0.78,
+      draw: 0.14,
+      away: 0.08,
+      dieh: {
+        ...mockEstimate().markets.dieh,
+        diehYes: 0.58,
+        diehNo: 0.42,
+      },
+    },
+  });
+  const pick = scoreFixtureBestMarket(fixture, est, null);
+  assert.ok(pick);
+  assert.notEqual(pick!.family, "HANDICAP");
 });
 
 test("weekendLeagueSortIndex follows Big-5 order", () => {
