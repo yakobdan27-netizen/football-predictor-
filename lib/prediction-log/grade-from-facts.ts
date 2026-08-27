@@ -148,6 +148,14 @@ export function explainMarketGrade(
     return `Correct: picked ${predDesc}; actual ${formatActual(actual)}.`;
   }
   if (result === "push") {
+    if (
+      (key === "handicap" || key === "ht_handicap") &&
+      line != null &&
+      typeof actual === "number"
+    ) {
+      const adj = actual + line;
+      return `Push: goal diff ${formatActual(actual)} + line ${line} = ${adj} (exact).`;
+    }
     return `Push: actual ${formatActual(actual)} equals line ${line}.`;
   }
   if (key === "btts" && prediction === "yes" && actual === "no") {

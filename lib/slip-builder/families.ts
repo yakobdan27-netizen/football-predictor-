@@ -3,6 +3,10 @@
  */
 import { DEFAULT_COMBO_MARKETS } from "@/lib/prediction-log/combo-markets-config";
 import {
+  DEFAULT_HANDICAP_LINES,
+  formatHandicapLine,
+} from "@/lib/prediction-log/handicap";
+import {
   MATCH_SOT_LINES,
   TEAM_SOT_LINES,
 } from "@/lib/prediction-log/sot-model";
@@ -33,19 +37,13 @@ export const DEFAULT_FOUR_FAMILIES: MarketFamilyId[] = [
   "COMBO",
 ];
 
-const HANDICAP_LINES = [-1.5, -1, -0.5, 0.5, 1, 1.5] as const;
+const HANDICAP_LINES = DEFAULT_HANDICAP_LINES;
 const TEAM_GOAL_LINES = [0.5, 1.5, 2.5, 3.5] as const;
 
 function formatHandicap(line: number, side: "home" | "away"): string {
-  const signed =
-    side === "home"
-      ? line > 0
-        ? `+${line}`
-        : String(line)
-      : -line > 0
-        ? `+${-line}`
-        : String(-line);
-  return `${side === "home" ? "Home" : "Away"} ${signed}`;
+  const homeSigned = formatHandicapLine(line, { showRole: true });
+  const awaySigned = formatHandicapLine(-line, { showRole: true });
+  return `${side === "home" ? "Home" : "Away"} ${side === "home" ? homeSigned : awaySigned}`;
 }
 
 /** Enumerate candidate selections for a market family. */

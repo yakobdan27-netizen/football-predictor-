@@ -10,6 +10,7 @@ import {
   weekendLeagueSortIndex,
   WEEKEND_DC_TOTAL_COMBO_IDS,
   weekendComboSelectionAllowed,
+  weekendHandicapSelectionAllowed,
   weekendTeamGoalsSelectionAllowed,
   weekendTotalsSelectionAllowed,
   WEEKEND_MARKET_MARGIN_MIN,
@@ -76,6 +77,25 @@ test("weekendTotalsSelectionAllowed excludes trivial total goals lines", () => {
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_4_5", 4.5), false);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_3_5", 3.5), true);
   assert.equal(weekendTotalsSelectionAllowed("TOTALS", "under_0_5", 0.5), true);
+});
+
+test("weekendHandicapSelectionAllowed filters mis-signed home lines", () => {
+  assert.equal(
+    weekendHandicapSelectionAllowed("HANDICAP", "home_1.5", 1.5, 1.8),
+    false
+  );
+  assert.equal(
+    weekendHandicapSelectionAllowed("HANDICAP", "home_-1.5", -1.5, 1.8),
+    true
+  );
+  assert.equal(
+    weekendHandicapSelectionAllowed("HANDICAP", "home_1.5", 1.5, -1.2),
+    true
+  );
+  assert.equal(
+    weekendHandicapSelectionAllowed("HANDICAP", "away_-1.5", -1.5, 1.8),
+    true
+  );
 });
 
 test("weekendTeamGoalsSelectionAllowed enforces Over 0.5 and Under 1.5", () => {

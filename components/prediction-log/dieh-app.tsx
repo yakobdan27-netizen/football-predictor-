@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useHalfParamsCache } from "./use-half-params-cache";
 import { useDiehPredictions, type DiehRow } from "./use-dieh-predictions";
+import { useWeekendPicksBatch } from "./use-weekend-picks-batch";
 import { FixtureEstimateDiagnostics } from "./fixture-estimate-diagnostics";
 import { HistCoverageBadge } from "./hist-coverage-badge";
 import { matchLeague } from "@/lib/prediction-log/match-league";
@@ -11,6 +12,8 @@ import {
   BlendedAnalysisNotice,
   pickBlendFromEstimates,
 } from "@/components/analysis/blended-analysis-notice";
+
+type FixtureSource = "weekend" | "saved";
 
 type SortKey =
   | "yes"
@@ -42,6 +45,8 @@ export function DiehApp() {
   const { ready, error, batches } = usePredictionLogData();
   const { store: halfStore, loading: halfLoading, error: halfError } =
     useHalfParamsCache();
+  const weekend = useWeekendPicksBatch();
+  const [fixtureSource, setFixtureSource] = useState<FixtureSource>("weekend");
   const [batchId, setBatchId] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
@@ -61,7 +66,9 @@ export function DiehApp() {
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
   }, [sortedBatches, batchId]);
 
-  const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
+  const savedBatch = sortedBatches.find((b) => b.id === batchId) ?? null;
+  const batch =
+    fixtureSource === "weekend" ? weekend.batch : savedBatch;
   const { rows, estimatesById } = useDiehPredictions(batch, batches, halfStore);
   const blendNotice = useMemo(
     () => pickBlendFromEstimates(estimatesById),
@@ -107,15 +114,15 @@ export function DiehApp() {
     return sorted;
   }, [rows, leagueFilter, sortKey, batch]);
 
-  if (!ready || halfLoading) {
+  if (!ready || halfLoading || (fixtureSource === "weekend" && weekend.loading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
   return (
     <div>
-      {(error || halfError) && (
+      {(error || halfError || (fixtureSource === "weekend" && weekend.error)) && (
         <div className="alert alert-error" style={{ marginBottom: "1rem" }}>
-          {error ?? halfError}
+          {error ?? halfError ?? weekend.error}
         </div>
       )}
 
@@ -128,8 +135,17 @@ export function DiehApp() {
           (isolated 46′–90′) ends level — including 0-0. This is{" "}
           <strong>not</strong> half-time draw and <strong>not</strong> HT/FT
           draw. Half rates come from historical HT/FT shares, never by halving
-          full-match λ. Advisory only — never blocks a pick.
+          full-match λ. Analyzes all Weekend Picks fixtures (next 7 days, five
+          leagues) by default. Advisory only — never blocks a pick.
         </p>
+        {fixtureSource === "weekend" && weekend.fixturePoolCount > 0 && (
+          <p className="page-sub" style={{ marginTop: "0.25rem" }}>
+            {weekend.fixturePoolCount} matches
+            {weekend.generatedAt
+              ? ` · updated ${new Date(weekend.generatedAt).toLocaleTimeString()}`
+              : ""}
+          </p>
+        )}
         <HistCoverageBadge />
       </div>
 
@@ -144,24 +160,50 @@ export function DiehApp() {
         }}
       >
         <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-          Batch
+          Fixture source
           <select
             className="select"
-            style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
-            value={batchId}
+            style={{ display: "block", marginTop: "0.25rem", minWidth: "14rem" }}
+            value={fixtureSource}
             onChange={(e) => {
-              setBatchId(e.target.value);
+              setFixtureSource(e.target.value as FixtureSource);
               setExpandedId(null);
             }}
           >
-            {sortedBatches.length === 0 && <option value="">No batches</option>}
-            {sortedBatches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.batchName} ({b.date}) · {b.matches.length} matches
-              </option>
-            ))}
+            <option value="weekend">Weekend Picks (API)</option>
+            <option value="saved">Saved batch</option>
           </select>
         </label>
+        {fixtureSource === "saved" ? (
+          <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+            Batch
+            <select
+              className="select"
+              style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
+              value={batchId}
+              onChange={(e) => {
+                setBatchId(e.target.value);
+                setExpandedId(null);
+              }}
+            >
+              {sortedBatches.length === 0 && <option value="">No batches</option>}
+              {sortedBatches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.batchName} ({b.date}) · {b.matches.length} matches
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={weekend.refreshing}
+            onClick={() => void weekend.refresh()}
+          >
+            {weekend.refreshing ? "Refreshing…" : "Refresh from API"}
+          </button>
+        )}
         <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
           League
           <select
@@ -245,8 +287,28 @@ export function DiehApp() {
         )}
       </div>
 
+      {fixtureSource === "weekend" &&
+        weekend.warnings.map((w) => (
+          <p
+            key={w}
+            style={{
+              padding: "0.65rem 0.85rem",
+              marginBottom: "0.75rem",
+              background: "rgba(245, 158, 11, 0.12)",
+              borderRadius: 8,
+              fontSize: "0.8125rem",
+            }}
+          >
+            {w}
+          </p>
+        ))}
+
       {!batch ? (
-        <p className="page-sub">Select a saved batch.</p>
+        <p className="page-sub">
+          {fixtureSource === "weekend"
+            ? "No Weekend Picks fixtures in the next 7 days."
+            : "Select a saved batch."}
+        </p>
       ) : filteredSorted.length === 0 ? (
         <p className="page-sub">No matches for this filter.</p>
       ) : (

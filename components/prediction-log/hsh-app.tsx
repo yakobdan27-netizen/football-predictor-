@@ -25,6 +25,8 @@ import {
 } from "@/lib/prediction-log/prediction-weights";
 import type { CanonicalFixtureEstimate } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { useAnalysisFixtureBatch } from "./use-analysis-fixture-batch";
+import { AnalysisFixtureSourceControls } from "./analysis-fixture-source-controls";
 import {
   useHshPredictions,
   type HshPredictionWithBlend,
@@ -73,19 +75,19 @@ function profileStyle(profile: string): CSSProperties {
 
 export function HshApp() {
   const { ready, error, batches } = usePredictionLogData();
-  const sortedBatches = useMemo(
-    () => [...batches].sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)),
-    [batches]
-  );
-  const [batchId, setBatchId] = useState("");
+  const {
+    batch,
+    fixtureSource,
+    setFixtureSource,
+    batchId,
+    setBatchId,
+    sortedBatches,
+    weekend,
+    loading: weekendLoading,
+  } = useAnalysisFixtureBatch();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [concededExpandedId, setConcededExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
-  }, [sortedBatches, batchId]);
-
-  const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
   const {
     predictions,
     loading,
@@ -200,7 +202,7 @@ export function HshApp() {
   }, [ready, sortedBatches.length, batchId, predictions.length, error, predError]);
   // #endregion
 
-  if (!ready) {
+  if (!ready || loading || (fixtureSource === "weekend" && weekendLoading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
@@ -217,8 +219,9 @@ export function HshApp() {
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Half Goals (1H vs 2H)</h1>
         <p className="page-sub">
-          Attack × defence λs with tempo nudges, then Dixon-Coles Stage B — plus defence / conceded
-          half support. Advisory only, never blocks a pick.
+          Attack × defence λs with tempo nudges, then Dixon-Coles Stage B — plus defence /
+          conceded half support. Analyzes all Weekend Picks fixtures (next 7 days, five leagues)
+          by default. Advisory only, never blocks a pick.
         </p>
         <HistCoverageBadge />
       </div>
@@ -230,29 +233,22 @@ export function HshApp() {
           display: "flex",
           gap: "0.75rem",
           flexWrap: "wrap",
-          alignItems: "center",
+          alignItems: "flex-end",
         }}
       >
-        <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-          Batch
-          <select
-            className="select"
-            style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
-            value={batchId}
-            onChange={(e) => {
-              setBatchId(e.target.value);
-              setExpandedId(null);
-              setConcededExpandedId(null);
-            }}
-          >
-            {sortedBatches.length === 0 && <option value="">No batches</option>}
-            {sortedBatches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.batchName} ({b.date}) · {b.matches.length} matches
-              </option>
-            ))}
-          </select>
-        </label>
+        <AnalysisFixtureSourceControls
+          fixtureSource={fixtureSource}
+          onSourceChange={setFixtureSource}
+          batchId={batchId}
+          onBatchIdChange={setBatchId}
+          sortedBatches={sortedBatches}
+          onRefresh={() => void weekend.refresh()}
+          refreshing={weekend.refreshing}
+          onExpandedReset={() => {
+            setExpandedId(null);
+            setConcededExpandedId(null);
+          }}
+        />
         {summary && (
           <p style={{ fontSize: "0.8125rem", color: "var(--muted)", margin: 0 }}>
             Recs: 1H {summary["1H"]} · 2H {summary["2H"]} · Tie {summary.Tie}
@@ -279,7 +275,11 @@ export function HshApp() {
       )}
 
       {!batch ? (
-        <p className="page-sub">Select a saved batch to run half-goals predictions.</p>
+        <p className="page-sub">
+          {fixtureSource === "weekend"
+            ? "No Weekend Picks fixtures in the next 7 days."
+            : "Select a saved batch to run half-goals predictions."}
+        </p>
       ) : predictions.length === 0 ? (
         <p className="page-sub">This batch has no matches.</p>
       ) : (

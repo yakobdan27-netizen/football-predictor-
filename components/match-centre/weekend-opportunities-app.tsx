@@ -115,6 +115,17 @@ function TracePanel({ row }: { row: WeekendOpportunityRow }) {
               ? ` · ${row.trace.ineligibilityReasons.join(", ")}`
               : ""}
           </div>
+          {row.trace.family === "HANDICAP" && (
+            <div>
+              <strong>Handicap:</strong> expected diff{" "}
+              {row.trace.expectedDiff != null
+                ? row.trace.expectedDiff.toFixed(2)
+                : "—"}{" "}
+              · canonical line {row.trace.canonicalLine ?? "—"} · source{" "}
+              {row.trace.handicapSource ?? "—"}
+              {row.trace.handicapN != null ? ` · hist n=${row.trace.handicapN}` : ""}
+            </div>
+          )}
           {row.trace.marketMargin != null && (
             <div>
               <strong>Market margin:</strong>{" "}

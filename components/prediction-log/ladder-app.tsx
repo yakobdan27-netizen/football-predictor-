@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   buildLadder,
   LADDER_CONFIG,
+  labelTier,
   legsForRound,
   shortLeagueLabel,
   suggestStakeSplit,
@@ -17,6 +18,7 @@ import { blendBadgeLabel, blendBadgeTitle } from "@/lib/prediction-log/predictio
 import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useTwoHHeavyRanking } from "./use-two-h-heavy-ranking";
+import { useWeekendPicksBatch } from "./use-weekend-picks-batch";
 import {
   BlendedAnalysisNotice,
   pickBlendFromEstimates,
@@ -30,6 +32,8 @@ const TIER_TOOLTIP =
 
 const INDEPENDENCE_NOTE =
   "Diversifying legs across leagues makes this independence estimate more realistic, but correlation is never zero.";
+
+type FixtureSource = "weekend" | "saved";
 
 function riskBadgeStyle(r: RiskExposure): CSSProperties {
   switch (r) {
@@ -77,6 +81,7 @@ function matchHref(batchId: string, apiFixtureId?: number): string {
 
 export function LadderApp() {
   const { ready, error, batches, refresh } = usePredictionLogData();
+  const weekend = useWeekendPicksBatch();
   const sortedBatches = useMemo(
     () =>
       [...batches].sort(
@@ -85,6 +90,7 @@ export function LadderApp() {
     [batches]
   );
 
+  const [fixtureSource, setFixtureSource] = useState<FixtureSource>("weekend");
   const [batchId, setBatchId] = useState("");
   const [expandedRound, setExpandedRound] = useState<number | null>(1);
   const [bankrollInput, setBankrollInput] = useState("");
@@ -98,7 +104,8 @@ export function LadderApp() {
     if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
   }, [sortedBatches, batchId]);
 
-  const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
+  const savedBatch = sortedBatches.find((b) => b.id === batchId) ?? null;
+  const batch = fixtureSource === "weekend" ? weekend.batch : savedBatch;
   const { ranked, loading, estimatesById } = useTwoHHeavyRanking(batch, batches, {
     refreshToken,
   });
@@ -135,26 +142,35 @@ export function LadderApp() {
 
   const tierCounts = ladder?.selection.tierCounts;
 
+  const ladderMatchIds = useMemo(() => {
+    if (!ladder) return new Set<string>();
+    return new Set(ladder.matches.map((m) => m.matchId));
+  }, [ladder]);
+
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await reloadBatchesFromServer();
-      await refresh();
+      if (fixtureSource === "weekend") {
+        await weekend.refresh();
+      } else {
+        await reloadBatchesFromServer();
+        await refresh();
+      }
       setRefreshToken((t) => t + 1);
     } finally {
       setRefreshing(false);
     }
   }
 
-  if (!ready) {
+  if (!ready || (fixtureSource === "weekend" && weekend.loading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
   return (
     <div className="ladder-page">
-      {error && (
+      {(error || (fixtureSource === "weekend" && weekend.error)) && (
         <div className="alert alert-error" style={{ marginBottom: "1rem" }}>
-          {error}
+          {error ?? weekend.error}
         </div>
       )}
 
@@ -163,9 +179,19 @@ export function LadderApp() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 className="page-title">Survival Ladder (2H &gt; 1H)</h1>
         <p className="page-sub">
-          Round-reduction parlays from the top {LADDER_CONFIG.LADDER_SIZE} ranked matches,
-          spread across leagues. Confidence labels quality — it never filters matches out.
+          Ranks all Weekend Picks fixtures (next 7 days, five leagues) by P(2H&gt;1H),
+          then builds round-reduction parlays from the top {LADDER_CONFIG.LADDER_SIZE}{" "}
+          matches, spread across leagues. Confidence labels quality — it never filters
+          matches out.
         </p>
+        {fixtureSource === "weekend" && weekend.fixturePoolCount > 0 && (
+          <p className="page-sub" style={{ marginTop: "0.25rem" }}>
+            {weekend.fixturePoolCount} matches in pool
+            {weekend.generatedAt
+              ? ` · updated ${new Date(weekend.generatedAt).toLocaleTimeString()}`
+              : ""}
+          </p>
+        )}
       </div>
 
       <div className="alert ladder-honesty-banner" role="status">
@@ -188,24 +214,42 @@ export function LadderApp() {
         }}
       >
         <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-          Batch
+          Fixture source
           <select
             className="select"
-            style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
-            value={batchId}
+            style={{ display: "block", marginTop: "0.25rem", minWidth: "14rem" }}
+            value={fixtureSource}
             onChange={(e) => {
-              setBatchId(e.target.value);
+              setFixtureSource(e.target.value as FixtureSource);
               setExpandedRound(1);
             }}
           >
-            {sortedBatches.length === 0 && <option value="">No batches</option>}
-            {sortedBatches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.batchName} ({b.date}) · {b.matches.length} matches
-              </option>
-            ))}
+            <option value="weekend">Weekend Picks (API)</option>
+            <option value="saved">Saved batch</option>
           </select>
         </label>
+
+        {fixtureSource === "saved" ? (
+          <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
+            Batch
+            <select
+              className="select"
+              style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
+              value={batchId}
+              onChange={(e) => {
+                setBatchId(e.target.value);
+                setExpandedRound(1);
+              }}
+            >
+              {sortedBatches.length === 0 && <option value="">No batches</option>}
+              {sortedBatches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.batchName} ({b.date}) · {b.matches.length} matches
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
 
         <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
           Ladder bankroll (optional)
@@ -224,12 +268,32 @@ export function LadderApp() {
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={refreshing || loading}
+          disabled={refreshing || loading || (fixtureSource === "weekend" && weekend.refreshing)}
           onClick={() => void handleRefresh()}
         >
-          {refreshing || loading ? "Refreshing…" : "Refresh ranking"}
+          {refreshing || loading || (fixtureSource === "weekend" && weekend.refreshing)
+            ? "Refreshing…"
+            : fixtureSource === "weekend"
+              ? "Refresh from API"
+              : "Refresh ranking"}
         </button>
       </div>
+
+      {fixtureSource === "weekend" &&
+        weekend.warnings.map((w) => (
+          <p
+            key={w}
+            style={{
+              padding: "0.65rem 0.85rem",
+              marginBottom: "0.75rem",
+              background: "rgba(245, 158, 11, 0.12)",
+              borderRadius: 8,
+              fontSize: "0.8125rem",
+            }}
+          >
+            {w}
+          </p>
+        ))}
 
       <div className="card" style={{ marginBottom: "1rem", fontSize: "0.8125rem" }}>
         <button
@@ -287,14 +351,97 @@ export function LadderApp() {
       )}
 
       {!batch ? (
-        <p className="page-sub">Select a saved batch to build the ladder.</p>
-      ) : !ladder || ladder.n === 0 ? (
         <p className="page-sub">
-          {loading
-            ? "Ranking matches…"
-            : "Enter matches in a batch to build the ladder. Need at least 10 for a full ladder."}
+          {fixtureSource === "weekend"
+            ? "No Weekend Picks fixtures in the next 7 days."
+            : "Select a saved batch to build the ladder."}
+        </p>
+      ) : ranked.length === 0 ? (
+        <p className="page-sub">
+          {loading ? "Ranking matches…" : "No rankable matches in this pool."}
         </p>
       ) : (
+        <>
+          <div className="card" style={{ marginBottom: "1.25rem" }}>
+            <h2 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>
+              Full pool ranking ({ranked.length} matches)
+            </h2>
+            <table
+              className="table mobile-stack-table"
+              style={{ width: "100%", fontSize: "0.8125rem" }}
+            >
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Match</th>
+                  <th>League</th>
+                  <th>P(2H&gt;1H)</th>
+                  <th>Tier</th>
+                  <th>Ladder</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ranked.map((r, i) => {
+                  const inLadder = ladderMatchIds.has(r.matchId);
+                  const p =
+                    Number.isFinite(r.p_2h_gt_1h) && r.p_2h_gt_1h != null
+                      ? `${(r.p_2h_gt_1h * 100).toFixed(1)}%`
+                      : "—";
+                  const tier = labelTier(r.confidence);
+                  return (
+                    <tr
+                      key={r.matchId}
+                      style={
+                        inLadder
+                          ? { background: "rgba(34, 197, 94, 0.08)" }
+                          : undefined
+                      }
+                    >
+                      <td>{i + 1}</td>
+                      <td>
+                        <strong>
+                          {r.homeTeam} vs {r.awayTeam}
+                        </strong>
+                      </td>
+                      <td>{shortLeagueLabel(r.league)}</td>
+                      <td>{p}</td>
+                      <td>
+                        <TierChip tier={tier} />
+                      </td>
+                      <td>
+                        {inLadder ? (
+                          <span
+                            style={{
+                              fontSize: "0.7rem",
+                              fontWeight: 700,
+                              color: "#15803d",
+                            }}
+                          >
+                            Top {LADDER_CONFIG.LADDER_SIZE}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}>
+                            —
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <p className="page-sub" style={{ marginTop: "0.75rem", marginBottom: 0 }}>
+              Rank score = P(2H&gt;1H) × ladder confidence. Highlighted rows feed the
+              top-{LADDER_CONFIG.LADDER_SIZE} survival ladder below.
+            </p>
+          </div>
+
+          {!ladder || ladder.n === 0 ? (
+            <p className="page-sub">
+              Need at least one rankable match for a ladder. A full ladder needs{" "}
+              {LADDER_CONFIG.LADDER_SIZE} legs when enough matches exist.
+            </p>
+          ) : (
         <>
           {distStrip.length > 0 && (
             <div
@@ -428,6 +575,8 @@ export function LadderApp() {
               />
             ))}
           </div>
+        </>
+          )}
         </>
       )}
     </div>

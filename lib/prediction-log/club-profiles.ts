@@ -56,6 +56,7 @@ function emptyOddsRanges(): ClubOddsRangeStats[] {
 function emptyMetrics(): ClubProfileMetrics {
   return {
     result1x2: emptyHit(),
+    handicapLines: {},
     doubleChance: emptyHit(),
     btts: emptyHit(),
     bttsByOddsRange: emptyOddsRanges(),
@@ -162,6 +163,25 @@ function applyEvent(metrics: ClubProfileMetrics, e: ClubPickEvent): void {
     addResult(target, e.result, e.weight);
   }
 
+  if (
+    (e.market === "handicap" || e.market === "ht_handicap") &&
+    e.line != null
+  ) {
+    const lineKey = String(e.line);
+    if (!metrics.handicapLines[lineKey]) {
+      metrics.handicapLines[lineKey] = emptyHit();
+    }
+    addResult(metrics.handicapLines[lineKey]!, e.result, e.weight);
+  }
+
+  if (e.market === "three_way_handicap" && e.line != null) {
+    const lineKey = String(e.line);
+    if (!metrics.handicapLines[lineKey]) {
+      metrics.handicapLines[lineKey] = emptyHit();
+    }
+    addResult(metrics.handicapLines[lineKey]!, e.result, e.weight);
+  }
+
   if (e.market === "btts" && e.odds != null && isValidOdds(e.odds)) {
     const range = clubOddsRange(e.odds);
     if (range && (e.result === "correct" || e.result === "wrong")) {
@@ -198,6 +218,9 @@ function finalizeMetrics(m: ClubProfileMetrics): ClubProfileMetrics {
     sot: finalizeHit(out.numericLines.sot),
     corners: finalizeHit(out.numericLines.corners),
   };
+  out.handicapLines = Object.fromEntries(
+    Object.entries(out.handicapLines).map(([k, v]) => [k, finalizeHit(v)])
+  );
   out.bttsByOddsRange = out.bttsByOddsRange.map((b) => {
     const sample = b.correct + b.wrong;
     return { ...b, sample, pct: sample > 0 ? Math.round((b.correct / sample) * 100) : null };

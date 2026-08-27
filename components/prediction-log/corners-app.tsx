@@ -13,6 +13,8 @@ import {
   type CornersMatchPrediction,
 } from "@/lib/prediction-log/corners-model";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { useAnalysisFixtureBatch } from "./use-analysis-fixture-batch";
+import { AnalysisFixtureSourceControls } from "./analysis-fixture-source-controls";
 import { useHshPredictions } from "./use-hsh-predictions";
 import { PerTeamLinesPanel } from "./per-team-lines-panel";
 import {
@@ -40,11 +42,20 @@ function confidenceStyle(c: CornersConfidence): CSSProperties {
 export function CornersApp() {
   const searchParams = useSearchParams();
   const { ready, error, batches } = usePredictionLogData();
+  const {
+    batch,
+    fixtureSource,
+    setFixtureSource,
+    batchId,
+    setBatchId,
+    sortedBatches,
+    weekend,
+    loading: weekendLoading,
+  } = useAnalysisFixtureBatch();
 
   const [tab, setTab] = useState<"batch" | "clubs">("batch");
   const [league, setLeague] = useState<string>("");
   const [season, setSeason] = useState<string>("all");
-  const [batchId, setBatchId] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,19 +73,6 @@ export function CornersApp() {
     }
   }, [searchParams]);
 
-  const sortedBatches = useMemo(
-    () =>
-      [...batches].sort(
-        (a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)
-      ),
-    [batches]
-  );
-
-  useEffect(() => {
-    if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
-  }, [sortedBatches, batchId]);
-
-  const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
   const { predictions: hshPredictions, estimatesById } = useHshPredictions(
     batch,
     batches,
@@ -124,7 +122,7 @@ export function CornersApp() {
     [estimatesById]
   );
 
-  if (!ready) {
+  if (!ready || (fixtureSource === "weekend" && weekendLoading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
@@ -141,8 +139,9 @@ export function CornersApp() {
       <div style={{ marginBottom: "1.25rem" }}>
         <h1 className="page-title">Corners Analysis</h1>
         <p className="page-sub">
-          Both-club corners won × conceded interaction (seed prior + live blend). Advisory only —
-          never blocks a pick.
+          Both-club corners won × conceded interaction (seed prior + live blend). Analyzes
+          all Weekend Picks fixtures (next 7 days, five leagues) by default. Advisory only
+          — never blocks a pick.
         </p>
       </div>
 
@@ -172,32 +171,27 @@ export function CornersApp() {
               display: "flex",
               gap: "0.75rem",
               flexWrap: "wrap",
-              alignItems: "center",
+              alignItems: "flex-end",
             }}
           >
-            <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-              Batch
-              <select
-                className="select"
-                style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
-                value={batchId}
-                onChange={(e) => {
-                  setBatchId(e.target.value);
-                  setExpandedId(null);
-                }}
-              >
-                {sortedBatches.length === 0 && <option value="">No batches</option>}
-                {sortedBatches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.batchName} ({b.date}) · {b.matches.length} matches
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AnalysisFixtureSourceControls
+              fixtureSource={fixtureSource}
+              onSourceChange={setFixtureSource}
+              batchId={batchId}
+              onBatchIdChange={setBatchId}
+              sortedBatches={sortedBatches}
+              onRefresh={() => void weekend.refresh()}
+              refreshing={weekend.refreshing}
+              onExpandedReset={() => setExpandedId(null)}
+            />
           </div>
 
           {!batch ? (
-            <p className="page-sub">Select a saved batch to price corners O/U.</p>
+            <p className="page-sub">
+              {fixtureSource === "weekend"
+                ? "No Weekend Picks fixtures in the next 7 days."
+                : "Select a saved batch to price corners O/U."}
+            </p>
           ) : predictions.length === 0 ? (
             <p className="page-sub">This batch has no matches.</p>
           ) : (

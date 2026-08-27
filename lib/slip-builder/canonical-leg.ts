@@ -12,6 +12,7 @@ export type CanonicalLegScore = {
   coherenceOk: boolean;
   available: boolean;
   reason?: string;
+  meta?: Record<string, unknown>;
 };
 
 export function scoreLegFromCanonical(input: {
@@ -41,6 +42,7 @@ export function scoreLegFromCanonical(input: {
       nEffective: result.sampleSize ?? 0,
       coherenceOk,
       available: true,
+      meta: result.meta,
     };
   } catch (e) {
     return {

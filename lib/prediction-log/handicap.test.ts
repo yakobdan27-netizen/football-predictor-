@@ -4,9 +4,14 @@ import { buildScoreMatrix } from "@/lib/predictor/score-matrix";
 import {
   asianHandicapProb,
   asianHandicapResult,
+  canonicalHomeHandicapLine,
+  directionallyValidHomeLines,
   europeanHandicapProb,
   europeanHandicapResult,
+  formatHandicapLine,
   goalDifference,
+  handicapAdjustedDiff,
+  handicapLineRole,
 } from "./handicap";
 import { deriveActualsFromFacts, gradeMatchFromFacts } from "./grade-from-facts";
 import { pickProbFromMatrix } from "./statistics-engine";
@@ -21,6 +26,52 @@ test("goal difference and asian handicap results", () => {
   assert.equal(asianHandicapResult(0, -0.5), "away");
 });
 
+test("explicit score table: Home -1.5 vs Home +1.5", () => {
+  const cases: Array<{
+    home: number;
+    away: number;
+    minus15: "home" | "away" | "push";
+    plus15: "home" | "away" | "push";
+  }> = [
+    { home: 3, away: 1, minus15: "home", plus15: "home" },
+    { home: 2, away: 1, minus15: "away", plus15: "home" },
+    { home: 1, away: 2, minus15: "away", plus15: "home" },
+    { home: 0, away: 2, minus15: "away", plus15: "away" },
+  ];
+
+  for (const c of cases) {
+    const diff = goalDifference(c.home, c.away);
+    assert.equal(
+      asianHandicapResult(diff, -1.5),
+      c.minus15,
+      `3–1 style ${c.home}-${c.away} @ -1.5`
+    );
+    assert.equal(
+      asianHandicapResult(diff, 1.5),
+      c.plus15,
+      `${c.home}-${c.away} @ +1.5`
+    );
+  }
+});
+
+test("handicap sign helpers", () => {
+  assert.equal(handicapAdjustedDiff(1, -1.5), -0.5);
+  assert.equal(handicapLineRole(-1.5), "giving");
+  assert.equal(handicapLineRole(1.5), "receiving");
+  assert.equal(handicapLineRole(0), "pickem");
+  assert.equal(canonicalHomeHandicapLine(2), -1.5);
+  assert.equal(canonicalHomeHandicapLine(-2), 1.5);
+  assert.ok(formatHandicapLine(-1.5, { showRole: true }).includes("giving"));
+  assert.deepEqual(
+    directionallyValidHomeLines(1.5),
+    [-2.5, -1.5, -0.5, 0]
+  );
+  assert.deepEqual(
+    directionallyValidHomeLines(-1.5),
+    [0, 0.5, 1.5, 2.5]
+  );
+});
+
 test("european handicap results", () => {
   assert.equal(europeanHandicapResult(2, -1), "home");
   assert.equal(europeanHandicapResult(1, -1), "draw");
@@ -31,6 +82,8 @@ test("scoreMarket grades handicap from goal difference actual", () => {
   assert.equal(scoreMarket("handicap", "home", -0.5, 1), "correct");
   assert.equal(scoreMarket("handicap", "away", -0.5, 1), "wrong");
   assert.equal(scoreMarket("handicap", "home", -1, 1), "push");
+  assert.equal(scoreMarket("handicap", "home", -1.5, 1), "wrong");
+  assert.equal(scoreMarket("handicap", "home", 1.5, 1), "correct");
   assert.equal(scoreMarket("three_way_handicap", "draw", -1, 1), "correct");
 });
 

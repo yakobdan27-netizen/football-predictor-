@@ -4,6 +4,10 @@ import { findClubInIndex } from "./club-index";
 import type { ClubIndex, ClubRecord } from "./club-record-types";
 import { computeLeagueBaselines } from "./league-baselines";
 import { resolveMarketMode, singleMarketKey } from "./match-entry-helpers";
+import {
+  buildHandicapSamplesFromBatches,
+  resolveHandicapProbability,
+} from "./handicap-empirical";
 import { computeDixonColes } from "./statistics-engine";
 import type { LogMatch } from "./types";
 
@@ -12,6 +16,11 @@ export interface EntryLegProbability {
   valueEdge: number | null;
   hasGrid: boolean;
   error?: string;
+  handicapMeta?: {
+    n: number;
+    coverPct: number;
+    source: "hist" | "estimated_fallback" | "insufficient";
+  };
 }
 
 export function entryValueFromGrid(pGrid: number | null, odds: number | undefined): number | null {
@@ -90,9 +99,43 @@ export function computeEntryLegProbability(
       leagueBaselines,
       null
     );
-    const pGrid = Math.round(dc.marketProb * 100);
+
+    let pProb = dc.marketProb;
+    let handicapMeta: EntryLegProbability["handicapMeta"];
+
+    if (
+      (marketKey === "handicap" || marketKey === "ht_handicap") &&
+      pred.line != null
+    ) {
+      const side = pred.prediction.toLowerCase() === "away" ? "away" : "home";
+      const rows = buildHandicapSamplesFromBatches(
+        match.homeTeam,
+        match.awayTeam,
+        league,
+        allBatches,
+        undefined,
+        { ht: marketKey === "ht_handicap" }
+      );
+      const resolved = resolveHandicapProbability({
+        rows,
+        homeLine: pred.line,
+        side,
+        grid: dc.scoreGrid,
+        ht: marketKey === "ht_handicap",
+        lambdaHome: dc.lambdaHome,
+        lambdaAway: dc.lambdaAway,
+      });
+      pProb = resolved.prob;
+      handicapMeta = {
+        n: resolved.n,
+        coverPct: Math.round(resolved.prob * 1000) / 10,
+        source: resolved.source,
+      };
+    }
+
+    const pGrid = Math.round(pProb * 100);
     const valueEdge = entryValueFromGrid(pGrid, pred.odds);
-    return { pGrid, valueEdge, hasGrid: true };
+    return { pGrid, valueEdge, hasGrid: true, handicapMeta };
   } catch (e) {
     return {
       pGrid: null,

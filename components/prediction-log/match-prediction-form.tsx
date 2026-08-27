@@ -13,6 +13,7 @@ import {
   marketHasLineOptions,
   pickOptionsForMarket,
 } from "@/lib/prediction-log/markets-config";
+import { formatHandicapLine } from "@/lib/prediction-log/handicap";
 import {
   resolveMarketMode,
   setSingleMarket,
@@ -195,7 +196,9 @@ export function MatchPredictionForm({
                   className={`chip${line === l ? " selected" : ""}`}
                   onClick={() => onChange(updatePrediction(match, key, { line: l }))}
                 >
-                  {l}
+                  {key === "handicap" || key === "ht_handicap"
+                    ? formatHandicapLine(l, { showRole: true })
+                    : l}
                 </button>
               ))}
             </div>
@@ -256,6 +259,17 @@ export function MatchPredictionForm({
             highlightPositive={comboSettings.highlightPositiveValue}
             warnNegative={comboSettings.warnNegativeValue}
           />
+          {(key === "handicap" || key === "ht_handicap") && prob.handicapMeta && (
+            <p style={{ color: "var(--muted)", fontSize: "0.75rem", margin: "0.35rem 0 0" }}>
+              Handicap cover: {prob.handicapMeta.coverPct}% · hist n=
+              {prob.handicapMeta.n}
+              {prob.handicapMeta.source === "estimated_fallback"
+                ? " · Dixon-Coles fallback (thin hist sample)"
+                : prob.handicapMeta.source === "insufficient"
+                  ? " · insufficient hist (grid estimate)"
+                  : " · empirical"}
+            </p>
+          )}
         </div>
       </div>
     );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { matchLeague } from "@/lib/prediction-log/match-league";
 import {
   predictCornersMatch,
@@ -12,6 +12,8 @@ import {
 } from "@/lib/prediction-log/hsh-model";
 import { poissonOverLine } from "@/lib/prediction-log/poisson-ou";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { useAnalysisFixtureBatch } from "./use-analysis-fixture-batch";
+import { AnalysisFixtureSourceControls } from "./analysis-fixture-source-controls";
 import { useHshPredictions } from "./use-hsh-predictions";
 import {
   BlendedAnalysisNotice,
@@ -55,20 +57,16 @@ type HalftimeCornersRow = {
 
 export function HalftimeCornersApp() {
   const { ready, error, batches } = usePredictionLogData();
-  const sortedBatches = useMemo(
-    () =>
-      [...batches].sort(
-        (a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)
-      ),
-    [batches]
-  );
-  const [batchId, setBatchId] = useState("");
-
-  useEffect(() => {
-    if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
-  }, [sortedBatches, batchId]);
-
-  const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
+  const {
+    batch,
+    fixtureSource,
+    setFixtureSource,
+    batchId,
+    setBatchId,
+    sortedBatches,
+    weekend,
+    loading: weekendLoading,
+  } = useAnalysisFixtureBatch();
   const { estimatesById } = useHshPredictions(batch, batches, {});
 
   const rows = useMemo(() => {
@@ -148,7 +146,7 @@ export function HalftimeCornersApp() {
     [estimatesById]
   );
 
-  if (!ready) {
+  if (!ready || (fixtureSource === "weekend" && weekendLoading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
@@ -178,29 +176,28 @@ export function HalftimeCornersApp() {
           display: "flex",
           gap: "0.75rem",
           flexWrap: "wrap",
-          alignItems: "center",
+          alignItems: "flex-end",
         }}
       >
-        <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-          Batch
-          <select
-            className="select"
-            style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
-            value={batchId}
-            onChange={(e) => setBatchId(e.target.value)}
-          >
-            {sortedBatches.length === 0 && <option value="">No batches</option>}
-            {sortedBatches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.batchName} ({b.date}) · {b.matches.length} matches
-              </option>
-            ))}
-          </select>
-        </label>
+        <AnalysisFixtureSourceControls
+          fixtureSource={fixtureSource}
+          onSourceChange={setFixtureSource}
+          batchId={batchId}
+          onBatchIdChange={setBatchId}
+          sortedBatches={sortedBatches}
+          onRefresh={() => void weekend.refresh()}
+          refreshing={weekend.refreshing}
+        />
       </div>
 
       {!batch ? (
-        <p className="page-sub">Select a saved batch to run halftime corner estimates.</p>
+        <p className="page-sub">
+          {fixtureSource === "weekend"
+            ? weekendLoading
+              ? "Loading Weekend Picks…"
+              : "No Weekend Picks batch available. Run Match Centre weekend scoring or switch to a saved batch."
+            : "Select a saved batch to run halftime corner estimates."}
+        </p>
       ) : rows.length === 0 ? (
         <p className="page-sub">This batch has no matches.</p>
       ) : (

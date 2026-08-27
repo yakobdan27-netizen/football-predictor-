@@ -83,6 +83,12 @@ import {
   type CoverageBreakdown,
 } from "./specialist-data-coverage";
 import type { PredictionBatch } from "./types";
+import {
+  buildHandicapSamplesFromBatches,
+  fetchHandicapHistSamples,
+  mergeHandicapSamples,
+  type HandicapHistRow,
+} from "./handicap-empirical";
 
 export type CanonicalFixtureEstimate = {
   lambdas: {
@@ -153,6 +159,8 @@ export type CanonicalFixtureEstimate = {
     lambdaHome: number;
     lambdaAway: number;
   }>;
+  /** Finished-score samples for empirical handicap probabilities. */
+  handicapHistRows?: HandicapHistRow[];
 };
 
 export type CanonicalFixtureInput = {
@@ -584,6 +592,13 @@ export function canonicalFixtureEstimateSync(
       lambdaFt,
       halfSumOk,
     },
+    handicapHistRows: buildHandicapSamplesFromBatches(
+      input.homeTeam,
+      input.awayTeam,
+      input.league,
+      input.batches,
+      input.beforeDate
+    ),
   };
 
   // Flag-gated provenance envelope — does not change markets when flag off.
@@ -803,6 +818,16 @@ export async function estimateBatchCanonicalAsync(
         recentLast5Cache,
       });
       try {
+        const histRows = await fetchHandicapHistSamples({
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          league,
+          beforeDate: batch.date,
+        });
+        const handicapHistRows = mergeHandicapSamples(
+          est.handicapHistRows ?? [],
+          histRows
+        );
         const enriched = await enrichCoverageAsync({
           homeTeam: match.homeTeam,
           awayTeam: match.awayTeam,
@@ -815,6 +840,7 @@ export async function estimateBatchCanonicalAsync(
         return attachCfeBlendedEnvelopeAsync(
           {
             ...est,
+            handicapHistRows,
             coverage: {
               ht_pct: enriched.ht.pct,
               corners_pct: enriched.corners.pct,

@@ -5,6 +5,10 @@ import {
   europeanHandicapProb,
   halfTimeScoreGrid,
 } from "./handicap";
+import {
+  resolveHandicapProbability,
+  type HandicapHistRow,
+} from "./handicap-empirical";
 import { getLeagueBaseline, type LeagueBaselinesStore } from "./league-baselines";
 import { scaleLambdasForLeague } from "./league-character";
 import { STAT_ENGINE_CONFIG } from "./stat-engine-config";
@@ -80,7 +84,12 @@ export function pickProbFromMatrix(
   marketKey: LogMarketKey,
   prediction: string,
   line?: number,
-  ctx?: { scoreGrid?: number[][]; lambdaHome?: number; lambdaAway?: number }
+  ctx?: {
+    scoreGrid?: number[][];
+    lambdaHome?: number;
+    lambdaAway?: number;
+    handicapHistRows?: HandicapHistRow[];
+  }
 ): number {
   const p = prediction.toLowerCase().trim();
 
@@ -108,11 +117,24 @@ export function pickProbFromMatrix(
   if (marketKey === "handicap" || marketKey === "ht_handicap") {
     const side = p === "away" ? "away" : "home";
     if (line == null) return 0.5;
+    const isHt = marketKey === "ht_handicap";
     const grid =
-      marketKey === "ht_handicap" && ctx?.lambdaHome != null && ctx?.lambdaAway != null
+      isHt && ctx?.lambdaHome != null && ctx?.lambdaAway != null
         ? halfTimeScoreGrid(ctx.lambdaHome, ctx.lambdaAway)
         : ctx?.scoreGrid;
     if (!grid) return 0.5;
+    if (ctx?.handicapHistRows?.length) {
+      const resolved = resolveHandicapProbability({
+        rows: ctx.handicapHistRows,
+        homeLine: line,
+        side,
+        grid,
+        ht: isHt,
+        lambdaHome: ctx.lambdaHome,
+        lambdaAway: ctx.lambdaAway,
+      });
+      return resolved.prob;
+    }
     return asianHandicapProb(grid, line, side);
   }
   if (marketKey === "three_way_handicap") {

@@ -207,7 +207,10 @@ export function pickOptionsForMarket(
       ];
     case "handicap":
     case "ht_handicap": {
-      const lineLabel = line != null ? formatHandicapLine(line) : "?";
+      const lineLabel =
+        line != null ? formatHandicapLine(line, { showRole: true }) : "?";
+      const awayLineLabel =
+        line != null ? formatHandicapLine(-line, { showRole: true }) : "?";
       return [
         {
           value: "home",
@@ -215,7 +218,7 @@ export function pickOptionsForMarket(
         },
         {
           value: "away",
-          label: `${short(away) || "Away"} (${line != null ? formatHandicapLine(-line) : "?"})`,
+          label: `${short(away) || "Away"} (${awayLineLabel})`,
         },
       ];
     }

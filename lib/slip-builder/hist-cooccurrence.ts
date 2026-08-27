@@ -48,6 +48,7 @@ export function outcomeHit(
       const line = Number(parts.slice(1).join("_"));
       if (!Number.isFinite(line)) return null;
       const v = h - a + line;
+      if (v === 0) return null;
       if (side === "home") return v > 0 ? 1 : 0;
       if (side === "away") return v < 0 ? 1 : 0;
       return null;

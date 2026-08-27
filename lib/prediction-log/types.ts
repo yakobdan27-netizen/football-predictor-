@@ -778,6 +778,8 @@ export interface ClubStreakStats {
 
 export interface ClubProfileMetrics {
   result1x2: HitStats;
+  /** Asian handicap cover rate keyed by home-signed line (e.g. "-1.5"). */
+  handicapLines: Record<string, HitStats>;
   doubleChance: HitStats;
   btts: HitStats;
   bttsByOddsRange: ClubOddsRangeStats[];

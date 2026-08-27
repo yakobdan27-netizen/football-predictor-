@@ -4,6 +4,10 @@ import { useMemo } from "react";
 import { computeLearnerPatterns, overallWinRate, totalMatchesInBatches, totalSavedBatches } from "@/lib/prediction-log/learner-patterns";
 import { buildGlobalCalibrationReport } from "@/lib/prediction-log/global-calibration";
 import { AI_ENHANCED_MIN_SAMPLES } from "@/lib/prediction-log/ai-enhanced-prediction";
+import {
+  countWeekendAnalysisScoredPicks,
+  WEEKEND_ANALYSIS_SURFACES,
+} from "@/lib/prediction-log/weekend-analysis-learner";
 import { LearnerAdvicePanel } from "./learner-advice-panel";
 import { LearnedPatternsPanel } from "./learned-patterns-panel";
 import { ClubCapacityBrowser } from "./club-capacity-browser";
@@ -40,6 +44,11 @@ export function AiLearnerApp() {
 
   const calibrationReport = useMemo(
     () => buildGlobalCalibrationReport(batches),
+    [batches]
+  );
+
+  const weekendAnalysis = useMemo(
+    () => countWeekendAnalysisScoredPicks(batches),
     [batches]
   );
 
@@ -125,6 +134,19 @@ export function AiLearnerApp() {
             Matchup mode ({scored}/{AI_ENHANCED_MIN_SAMPLES} scored)
           </div>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: "1rem", fontSize: "0.8125rem" }}>
+        <strong style={{ color: "inherit" }}>Weekend Picks analysis learning</strong>
+        <p style={{ margin: "0.35rem 0 0", color: "var(--muted)" }}>
+          When Match Centre Weekend Picks runs, system predictions from analysis pages are saved
+          into learner batches ({WEEKEND_ANALYSIS_SURFACES.map((s) => s.label).join(", ")}).
+          Finished-match results sync automatically; graded picks feed the stats below.
+        </p>
+        <p style={{ margin: "0.35rem 0 0" }}>
+          Weekend analysis batches: <strong>{weekendAnalysis.batches}</strong> · Scored picks from
+          those batches: <strong>{weekendAnalysis.scoredPicks}</strong>
+        </p>
       </div>
 
       <EnhancedMatchupPanel learnerStats={learnerStats} />

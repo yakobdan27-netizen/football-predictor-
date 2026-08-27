@@ -18,6 +18,8 @@ import {
 } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { fitSlipCalibrator } from "@/lib/slip-builder/slip-calibration";
 import { sumFilterReasons } from "@/lib/football-api/fixture-eligibility";
+import { persistWeekendAnalysisLearnerBatches } from "@/lib/prediction-log/weekend-analysis-learner";
+import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -111,19 +113,36 @@ export async function GET(request: Request) {
         matchCentreCache,
       });
       const calibrator = fitSlipCalibrator(allBatches);
-      return rankWeekendOpportunities({
+      const ranked = rankWeekendOpportunities({
         fixtures: weekendFixtures,
         estimates,
         calibrator,
       });
+
+      let learnerSync: { saved: number; batchIds: string[] } | null = null;
+      try {
+        learnerSync = await persistWeekendAnalysisLearnerBatches({
+          baseBatch: batch,
+          estimates,
+          weekendRows: ranked.rows,
+        });
+        await recomputeAndPersistLearnerStats().catch(() => {});
+      } catch {
+        learnerSync = null;
+      }
+
+      return { ranked, learnerSync };
     };
 
     const dayKey = new Date().toISOString().slice(0, 10);
-    const result = refresh
+    const scored = refresh
       ? await runScoring()
       : await unstable_cache(runScoring, ["weekend-opportunities", dayKey], {
           revalidate: WEEKEND_CACHE_SECONDS,
         })();
+
+    const result = scored.ranked;
+    const learnerSync = scored.learnerSync;
 
     const warnings: string[] = [];
     for (const r of leagueResults) {
@@ -141,6 +160,7 @@ export async function GET(request: Request) {
       warnings,
       filteredCount,
       filterReasons,
+      learnerSync,
     });
   } catch (e) {
     return NextResponse.json(

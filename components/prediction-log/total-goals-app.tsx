@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { usePredictionLogData } from "./use-prediction-log-data";
+import { useAnalysisFixtureBatch } from "./use-analysis-fixture-batch";
+import { AnalysisFixtureSourceControls } from "./analysis-fixture-source-controls";
 import { useHalfParamsCache } from "./use-half-params-cache";
 import {
   useTotalGoalsPredictions,
@@ -46,25 +48,20 @@ export function TotalGoalsApp() {
   const { ready, error, batches } = usePredictionLogData();
   const { store: halfStore, loading: halfLoading, error: halfError } =
     useHalfParamsCache();
-  const [batchId, setBatchId] = useState("");
+  const {
+    batch,
+    fixtureSource,
+    setFixtureSource,
+    batchId,
+    setBatchId,
+    sortedBatches,
+    weekend,
+    loading: weekendLoading,
+  } = useAnalysisFixtureBatch();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("expected");
 
-  const sortedBatches = useMemo(
-    () =>
-      [...batches].sort(
-        (a, b) =>
-          b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)
-      ),
-    [batches]
-  );
-
-  useEffect(() => {
-    if (!batchId && sortedBatches[0]) setBatchId(sortedBatches[0].id);
-  }, [sortedBatches, batchId]);
-
-  const batch = sortedBatches.find((b) => b.id === batchId) ?? null;
   const { rows, estimatesById } = useTotalGoalsPredictions(
     batch,
     batches,
@@ -120,7 +117,7 @@ export function TotalGoalsApp() {
     return sorted;
   }, [rows, leagueFilter, sortKey, batch]);
 
-  if (!ready || halfLoading) {
+  if (!ready || halfLoading || (fixtureSource === "weekend" && weekendLoading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
@@ -138,9 +135,10 @@ export function TotalGoalsApp() {
         <h1 className="page-title">Total Goals</h1>
         <p className="page-sub">
           Full-match goals by both teams at 90 minutes (stoppage included; no
-          extra time / penalties). Distribution from the canonical FT score
-          matrix (Dixon–Coles), or NegBin when the competition is overdispersed.
-          Advisory only — never blocks a pick.
+          extra time / penalties). Analyzes all Weekend Picks fixtures (next 7
+          days, five leagues) by default. Distribution from the canonical FT
+          score matrix (Dixon–Coles), or NegBin when overdispersed. Advisory only
+          — never blocks a pick.
         </p>
       </div>
 
@@ -154,25 +152,16 @@ export function TotalGoalsApp() {
           alignItems: "flex-end",
         }}
       >
-        <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
-          Batch
-          <select
-            className="select"
-            style={{ display: "block", marginTop: "0.25rem", minWidth: "16rem" }}
-            value={batchId}
-            onChange={(e) => {
-              setBatchId(e.target.value);
-              setExpandedId(null);
-            }}
-          >
-            {sortedBatches.length === 0 && <option value="">No batches</option>}
-            {sortedBatches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.batchName} ({b.date}) · {b.matches.length} matches
-              </option>
-            ))}
-          </select>
-        </label>
+        <AnalysisFixtureSourceControls
+          fixtureSource={fixtureSource}
+          onSourceChange={setFixtureSource}
+          batchId={batchId}
+          onBatchIdChange={setBatchId}
+          sortedBatches={sortedBatches}
+          onRefresh={() => void weekend.refresh()}
+          refreshing={weekend.refreshing}
+          onExpandedReset={() => setExpandedId(null)}
+        />
         <label style={{ fontSize: "0.8125rem", fontWeight: 600 }}>
           League
           <select
@@ -211,7 +200,11 @@ export function TotalGoalsApp() {
       </div>
 
       {!batch ? (
-        <p className="page-sub">Select a saved batch.</p>
+        <p className="page-sub">
+          {fixtureSource === "weekend"
+            ? "No Weekend Picks fixtures in the next 7 days."
+            : "Select a saved batch."}
+        </p>
       ) : filteredSorted.length === 0 ? (
         <p className="page-sub">No matches for this filter.</p>
       ) : (

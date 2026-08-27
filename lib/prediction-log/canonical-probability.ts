@@ -248,6 +248,10 @@ export function canonicalProbability(
         rawProb: resolved.prob,
         coherenceOk: resolved.coherenceOk,
         nEffective: resolved.nEffective,
+        handicapSource: resolved.handicapSource,
+        handicapN: resolved.handicapN,
+        expectedDiff: resolved.expectedDiff,
+        canonicalLine: resolved.canonicalLine,
       },
     });
   }

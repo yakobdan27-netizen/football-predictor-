@@ -3,9 +3,13 @@
  * Never multiplies marginals for COMBO — always joint grid summation.
  */
 import {
-  asianHandicapProb,
+  canonicalHomeHandicapLine,
   halfTimeScoreGrid,
 } from "@/lib/prediction-log/handicap";
+import {
+  resolveHandicapProbability,
+  type HandicapHistRow,
+} from "@/lib/prediction-log/handicap-empirical";
 import { comboGridProbabilityPercent } from "@/lib/prediction-log/combo-markets-config";
 import {
   awayGoalsPmf,
@@ -61,6 +65,8 @@ export type CfeLegEstimateSlice = {
   };
   provenance: { ess: number; matches_used: number };
   rho: number;
+  /** Finished-score samples for empirical handicap rates. */
+  handicapHistRows?: HandicapHistRow[];
 };
 
 export type CfeLegResolveResult = {
@@ -69,6 +75,10 @@ export type CfeLegResolveResult = {
   coherenceOk: boolean;
   available: boolean;
   reason?: string;
+  handicapSource?: "hist" | "estimated_fallback" | "insufficient";
+  handicapN?: number;
+  expectedDiff?: number;
+  canonicalLine?: number;
 };
 
 function ouFromPmf(pmf: number[], line: number, side: "over" | "under"): number {
@@ -145,7 +155,27 @@ export function resolveCfeLegProbability(input: {
       const line = input.line ?? Number(selectionKey.split("_").slice(1).join("_"));
       if (!Number.isFinite(line)) return fail("handicap line missing");
       const side = selectionKey.startsWith("away") ? "away" : "home";
-      return ok(asianHandicapProb(grid, line, side));
+      const expectedDiff = est.lambdas.home - est.lambdas.away;
+      const rows = est.handicapHistRows ?? [];
+      const resolved = resolveHandicapProbability({
+        rows,
+        homeLine: line,
+        side,
+        grid,
+        lambdaHome: est.lambdas.home,
+        lambdaAway: est.lambdas.away,
+      });
+      const nEff = resolved.source === "hist" ? resolved.n : nEffective;
+      return {
+        prob: resolved.prob,
+        nEffective: nEff,
+        coherenceOk: true,
+        available: true,
+        handicapSource: resolved.source,
+        handicapN: resolved.n,
+        expectedDiff,
+        canonicalLine: canonicalHomeHandicapLine(expectedDiff),
+      };
     }
     case "TOTALS": {
       const line = (input.line ??
