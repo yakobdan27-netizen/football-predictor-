@@ -7,6 +7,7 @@ import { MatchPerTeamLines } from "./match-per-team-lines";
 import { usePredictionLogData } from "./use-prediction-log-data";
 
 interface CombinedOddsMatchCardProps {
+  rank: number;
   batch: PredictionBatch;
   match: MatchComboResult;
   accentColor: string;
@@ -15,6 +16,7 @@ interface CombinedOddsMatchCardProps {
 }
 
 export function CombinedOddsMatchCard({
+  rank,
   batch,
   match,
   accentColor,
@@ -36,6 +38,16 @@ export function CombinedOddsMatchCard({
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
         <strong>
+          <span
+            style={{
+              display: "inline-block",
+              minWidth: "1.75rem",
+              marginRight: "0.35rem",
+              color: "var(--muted)",
+            }}
+          >
+            #{rank}
+          </span>
           {match.homeTeam} vs {match.awayTeam}
         </strong>
         <Link

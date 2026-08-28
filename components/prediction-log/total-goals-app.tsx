@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { usePredictionLogData } from "./use-prediction-log-data";
 import { useAnalysisFixtureBatch } from "./use-analysis-fixture-batch";
 import { AnalysisFixtureSourceControls } from "./analysis-fixture-source-controls";
@@ -60,7 +60,7 @@ export function TotalGoalsApp() {
   } = useAnalysisFixtureBatch();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("expected");
+  const [sortKey, setSortKey] = useState<SortKey>("over_2.5");
 
   const { rows, estimatesById } = useTotalGoalsPredictions(
     batch,
@@ -136,9 +136,9 @@ export function TotalGoalsApp() {
         <p className="page-sub">
           Full-match goals by both teams at 90 minutes (stoppage included; no
           extra time / penalties). Analyzes all Weekend Picks fixtures (next 7
-          days, five leagues) by default. Distribution from the canonical FT
-          score matrix (Dixon–Coles), or NegBin when overdispersed. Advisory only
-          — never blocks a pick.
+          days, five leagues) by default, ranked by Over 2.5 probability (highest
+          first). Distribution from the canonical FT score matrix (Dixon–Coles),
+          or NegBin when overdispersed. Advisory only — never blocks a pick.
         </p>
       </div>
 
@@ -186,10 +186,10 @@ export function TotalGoalsApp() {
             value={sortKey}
             onChange={(e) => setSortKey(e.target.value as SortKey)}
           >
+            <option value="over_2.5">Over 2.5</option>
             <option value="expected">Expected total</option>
             <option value="over_1.5">Over 1.5</option>
             <option value="under_1.5">Under 1.5</option>
-            <option value="over_2.5">Over 2.5</option>
             <option value="under_2.5">Under 2.5</option>
             <option value="over_3.5">Over 3.5</option>
             <option value="under_3.5">Under 3.5</option>
@@ -215,21 +215,23 @@ export function TotalGoalsApp() {
           >
             <thead>
               <tr>
+                <th>#</th>
                 <th>Match</th>
+                <th>O2.5</th>
                 <th>E[T]</th>
                 <th>Mode</th>
                 <th>O1.5</th>
-                <th>O2.5</th>
                 <th>O3.5</th>
                 <th>Family</th>
                 <th>Confidence</th>
               </tr>
             </thead>
             <tbody>
-              {filteredSorted.map((row) => (
+              {filteredSorted.map((row, idx) => (
                 <TgRowView
                   key={row.matchId}
                   row={row}
+                  rank={idx + 1}
                   expanded={expandedId === row.matchId}
                   onToggle={() =>
                     setExpandedId((id) =>
@@ -248,10 +250,12 @@ export function TotalGoalsApp() {
 
 function TgRowView({
   row,
+  rank,
   expanded,
   onToggle,
 }: {
   row: TotalGoalsRow;
+  rank: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -263,7 +267,10 @@ function TgRowView({
         style={{ cursor: "pointer" }}
         data-expanded={expanded ? "true" : undefined}
       >
-        <td>
+        <td data-label="#">
+          <strong>{rank}</strong>
+        </td>
+        <td data-label="Match">
           <strong>
             {row.homeTeam} vs {row.awayTeam}
           </strong>
@@ -271,17 +278,17 @@ function TgRowView({
             {row.kickoff}
           </div>
         </td>
-        <td>{tg.expectedTotal.toFixed(2)}</td>
-        <td>{tg.mode >= 8 ? "8+" : tg.mode}</td>
-        <td>{pct(tg.lines[1.5].over)}</td>
-        <td>
+        <td data-label="O2.5">
           <strong>{pct(tg.lines[2.5].over)}</strong>
         </td>
-        <td>{pct(tg.lines[3.5].over)}</td>
-        <td style={{ textTransform: "uppercase", fontSize: "0.7rem" }}>
+        <td data-label="E[T]">{tg.expectedTotal.toFixed(2)}</td>
+        <td data-label="Mode">{tg.mode >= 8 ? "8+" : tg.mode}</td>
+        <td data-label="O1.5">{pct(tg.lines[1.5].over)}</td>
+        <td data-label="O3.5">{pct(tg.lines[3.5].over)}</td>
+        <td data-label="Family" style={{ textTransform: "uppercase", fontSize: "0.7rem" }}>
           {tg.distributionFamily}
         </td>
-        <td>
+        <td data-label="Confidence">
           <span
             style={{
               ...confidenceStyle(row.confidence),
@@ -298,7 +305,7 @@ function TgRowView({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={8} style={{ background: "var(--surface2)" }}>
+          <td colSpan={9} style={{ background: "var(--surface2)" }}>
             <TgDetail row={row} />
           </td>
         </tr>

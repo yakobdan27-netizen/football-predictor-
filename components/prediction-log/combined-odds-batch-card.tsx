@@ -81,9 +81,13 @@ export function CombinedOddsBatchCard({
         </p>
       )}
       <div style={{ marginTop: "1rem", display: "grid", gap: "0.75rem" }}>
-        {matches.map((m) => (
+        <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--muted)" }}>
+          Ranked by combo probability (highest first) · one pick per match
+        </p>
+        {matches.map((m, idx) => (
           <CombinedOddsMatchCard
             key={m.matchId}
+            rank={idx + 1}
             batch={batch}
             match={m}
             accentColor={accentColor}

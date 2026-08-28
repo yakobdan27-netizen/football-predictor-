@@ -3,15 +3,17 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { EXTENDED_COMBO_FAMILY_IDS } from "@/lib/prediction-log/combo-markets-config";
-import { evaluateBatchCombos } from "@/lib/prediction-log/combo-selection";
+import {
+  evaluateBatchCombos,
+  sortMatchCombosByProbability,
+} from "@/lib/prediction-log/combo-selection";
 import { ensureComboRecommendedShell } from "@/lib/prediction-log/prepare-batch-combos";
 import { upsertBatch } from "@/lib/prediction-log/storage";
 import type { ComboMarketDef, PredictionBatch, RecommendationTier } from "@/lib/prediction-log/types";
-import { BatchSelect } from "./batch-select";
+import { AnalysisFixtureSourceControls } from "./analysis-fixture-source-controls";
 import { CombinedOddsBatchCard } from "./combined-odds-batch-card";
+import { useComboFixtureBatch } from "./use-combo-fixture-batch";
 import { usePredictionLogData } from "./use-prediction-log-data";
-import { usePreparedComboBatches } from "./use-prepared-combo-batches";
-import { useSelectedBatchId } from "./use-selected-batch-id";
 
 const TIER_OPTIONS: Array<{ value: RecommendationTier; label: string }> = [
   { value: "safe", label: "Extreme Safe" },
@@ -28,36 +30,46 @@ export function CombinedOddsExtendedApp() {
 
   const [tier, setTier] = useState<RecommendationTier>("balanced");
   const [savingOdds, setSavingOdds] = useState(false);
-  const { preparedBatches, preparing } = usePreparedComboBatches(batches);
-
-  const sortedEligible = useMemo(
-    () =>
-      [...preparedBatches].sort(
-        (a, b) => b.createdAt.localeCompare(a.createdAt) || b.date.localeCompare(a.date)
-      ),
-    [preparedBatches]
-  );
-
-  const { batchId, setBatchId, selected } = useSelectedBatchId(sortedEligible);
+  const {
+    fixtureSource,
+    setFixtureSource,
+    batchId,
+    setBatchId,
+    sortedEligible,
+    activeBatch,
+    weekend,
+    loading: weekendLoading,
+    preparing,
+  } = useComboFixtureBatch();
 
   const evaluated = useMemo(() => {
-    if (!selected) return null;
+    if (!activeBatch) return null;
+    const result = evaluateBatchCombos(
+      activeBatch,
+      comboSettings,
+      analysis,
+      batches,
+      teamsQuality,
+      learnerStats,
+      tier,
+      extendedComboFilter
+    );
     return {
-      batch: selected,
-      ...evaluateBatchCombos(
-        selected,
-        comboSettings,
-        analysis,
-        batches,
-        teamsQuality,
-        learnerStats,
-        tier,
-        extendedComboFilter
-      ),
+      batch: activeBatch,
+      matches: sortMatchCombosByProbability(result.matches),
+      accumulator: result.accumulator,
     };
-  }, [selected, comboSettings, analysis, batches, teamsQuality, learnerStats, tier]);
+  }, [
+    activeBatch,
+    comboSettings,
+    analysis,
+    batches,
+    teamsQuality,
+    learnerStats,
+    tier,
+  ]);
 
-  if (!ready) {
+  if (!ready || (fixtureSource === "weekend" && weekendLoading)) {
     return <p className="page-sub">Loading…</p>;
   }
 
@@ -85,9 +97,9 @@ export function CombinedOddsExtendedApp() {
 
   return (
     <div>
-      {error && (
+      {(error || (fixtureSource === "weekend" && weekend.error)) && (
         <div className="alert alert-error" style={{ marginBottom: "1rem" }}>
-          {error}
+          {error ?? weekend.error}
         </div>
       )}
 
@@ -95,7 +107,8 @@ export function CombinedOddsExtendedApp() {
         <h1 className="page-title">Extended Combined Odds</h1>
         <p className="page-sub">
           Only the four new combo families: Result + Total, At Least One Team Not To Score (BTTS No) + Total,
-          Double Chance + BTTS Yes, and Double Chance + Total. Results for the selected batch.{" "}
+          Double Chance + BTTS Yes, and Double Chance + Total. Weekend Picks by default — one pick per match,
+          ranked by combo probability (highest first).{" "}
           <Link href="/combo-centre?tab=combined-odd" style={{ color: "var(--accent)" }}>
             ← Original combos
           </Link>
@@ -117,16 +130,35 @@ export function CombinedOddsExtendedApp() {
           display: "flex",
           gap: "0.75rem",
           flexWrap: "wrap",
-          alignItems: "center",
+          alignItems: "flex-end",
         }}
       >
-        <BatchSelect
-          batches={sortedEligible}
-          value={batchId}
-          onChange={setBatchId}
-          emptyLabel="No batches"
+        <AnalysisFixtureSourceControls
+          fixtureSource={fixtureSource}
+          onSourceChange={setFixtureSource}
+          batchId={batchId}
+          onBatchIdChange={setBatchId}
+          sortedBatches={sortedEligible}
+          onRefresh={() => void weekend.refresh()}
+          refreshing={weekend.refreshing}
         />
       </div>
+
+      {fixtureSource === "weekend" &&
+        weekend.warnings.map((w) => (
+          <p
+            key={w}
+            style={{
+              padding: "0.65rem 0.85rem",
+              marginBottom: "0.75rem",
+              background: "rgba(245, 158, 11, 0.12)",
+              borderRadius: 8,
+              fontSize: "0.8125rem",
+            }}
+          >
+            {w}
+          </p>
+        ))}
 
       <div style={{ marginBottom: "1rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         {TIER_OPTIONS.map((opt) => (
@@ -147,20 +179,28 @@ export function CombinedOddsExtendedApp() {
 
       {(savingOdds || preparing) && (
         <p className="page-sub" style={{ marginBottom: "0.5rem" }}>
-          {savingOdds ? "Saving odds…" : "Preparing combo grids for all batch matches…"}
+          {savingOdds ? "Saving odds…" : "Preparing combo grids for batch matches…"}
         </p>
       )}
 
-      {sortedEligible.length === 0 ? (
+      {!activeBatch ? (
         <p className="page-sub">
-          No batches with matches yet. Save a batch from the{" "}
-          <Link href="/prediction-log" style={{ color: "var(--accent)" }}>
-            Prediction Log
-          </Link>{" "}
-          first.
+          {fixtureSource === "weekend"
+            ? "No Weekend Picks fixtures in the next 7 days."
+            : sortedEligible.length === 0
+              ? (
+                <>
+                  No batches with matches yet. Save a batch from the{" "}
+                  <Link href="/prediction-log" style={{ color: "var(--accent)" }}>
+                    Prediction Log
+                  </Link>{" "}
+                  first.
+                </>
+              )
+              : "Select a saved batch to view extended combo results."}
         </p>
       ) : !evaluated ? (
-        <p className="page-sub">Select a batch to view extended combo results.</p>
+        <p className="page-sub">Preparing combo results…</p>
       ) : (
         <CombinedOddsBatchCard
           batch={evaluated.batch}

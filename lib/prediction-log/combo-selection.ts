@@ -370,3 +370,12 @@ export function evaluateBatchCombos(
 
   return { matches, accumulator };
 }
+
+/** Display order: highest combo pFinal first; no selection sorts last. */
+export function sortMatchCombosByProbability(
+  matches: MatchComboResult[]
+): MatchComboResult[] {
+  return [...matches].sort(
+    (a, b) => (b.selected?.pFinal ?? -1) - (a.selected?.pFinal ?? -1)
+  );
+}
