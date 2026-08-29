@@ -10,7 +10,11 @@ import {
   resolveHandicapProbability,
   type HandicapHistRow,
 } from "@/lib/prediction-log/handicap-empirical";
-import { comboGridProbabilityPercent } from "@/lib/prediction-log/combo-markets-config";
+import {
+  comboGridProbabilityPercent,
+  goalBothHalvesProbabilityPercent,
+} from "@/lib/prediction-log/combo-markets-config";
+import { poissonOverLine } from "@/lib/prediction-log/poisson-ou";
 import {
   awayGoalsPmf,
   homeGoalsPmf,
@@ -219,6 +223,15 @@ export function resolveCfeLegProbability(input: {
       if (selectionKey === "2h_gt_1h") return ok(m.p2h_gt_1h);
       if (selectionKey === "1h_gt_2h") return ok(m.p1h);
       if (selectionKey === "tie") return ok(m.pTie);
+      if (selectionKey === "goal_both_halves") {
+        const pct = goalBothHalvesProbabilityPercent({
+          grid,
+          lambdaHome: est.lambdas.home,
+          lambdaAway: est.lambdas.away,
+        });
+        if (pct == null) return fail("goal_both_halves unavailable");
+        return ok(pct / 100);
+      }
       if (selectionKey === "home_1h_over_0_5") {
         return ok(poissonOverHalf(est.lambdas.home_1h, 0.5));
       }
@@ -280,6 +293,24 @@ export function resolveCfeLegProbability(input: {
         Math.abs(m.cornersOver95 + m.cornersUnder95 - 1) < 1e-6;
       if (selectionKey === "over_9_5") return ok(m.cornersOver95, coherenceOk);
       if (selectionKey === "under_9_5") return ok(m.cornersUnder95, coherenceOk);
+      const teamCornerMatch = selectionKey.match(
+        /^(home|away)_(over|under)_(\d)_(\d)$/
+      );
+      if (teamCornerMatch) {
+        const side = teamCornerMatch[1] as "home" | "away";
+        const direction = teamCornerMatch[2] as "over" | "under";
+        const line = parseFloat(`${teamCornerMatch[3]}.${teamCornerMatch[4]}`);
+        const lambda =
+          side === "home" ? est.lambdas.home_corners : est.lambdas.away_corners;
+        if (!Number.isFinite(lambda) || lambda <= 0) {
+          return fail(`team corners lambda unavailable for ${side}`);
+        }
+        const pOver = poissonOverLine(line, lambda);
+        const pUnder = 1 - pOver;
+        const prob = direction === "over" ? pOver : pUnder;
+        const pairCoherence = Math.abs(pOver + pUnder - 1) < 1e-6;
+        return ok(prob, pairCoherence);
+      }
       return fail(`unknown CORNERS key ${selectionKey}`);
     }
     case "SOT": {

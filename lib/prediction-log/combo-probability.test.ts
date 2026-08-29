@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { buildScoreMatrix, jointProbFromGrid, jointProbPercent } from "@/lib/predictor/score-matrix";
-import { comboGridProbabilityPercent, EXTENDED_COMBO_FAMILY_IDS } from "./combo-markets-config";
+import { comboGridProbabilityPercent, EXTENDED_COMBO_FAMILY_IDS, goalBothHalvesProbabilityPercent } from "./combo-markets-config";
 import { computeComboPFinal } from "./combo-probability";
 import { defaultCombinedOddsSettings } from "./combo-settings";
 import { evaluateBatchCombos, evaluateMatchCombos, buildComboAccumulator } from "./combo-selection";
@@ -202,6 +202,24 @@ const filteredResult = evaluateBatchCombos(
 assert.ok(
   filteredResult.matches[0]!.allEvaluated.every((c) => EXTENDED_COMBO_FAMILY_IDS.includes(c.comboId)),
   "comboFilter must restrict evaluated combos to the extended family ids"
+);
+
+const goalGrid = buildScoreMatrix(1.8, 1.4, -0.13, 6);
+const highGoalBothHalves = goalBothHalvesProbabilityPercent({
+  grid: goalGrid,
+  lambdaHome: 1.8,
+  lambdaAway: 1.4,
+});
+const lowGoalBothHalves = goalBothHalvesProbabilityPercent({
+  grid: buildScoreMatrix(0.2, 0.2, -0.13, 4),
+  lambdaHome: 0.2,
+  lambdaAway: 0.2,
+});
+assert.ok(highGoalBothHalves != null && highGoalBothHalves > 0);
+assert.ok(lowGoalBothHalves != null && lowGoalBothHalves >= 0);
+assert.ok(
+  highGoalBothHalves! > lowGoalBothHalves!,
+  "high-scoring lambdas should yield higher P(goal in both halves)"
 );
 
 console.log("combo-probability tests passed");

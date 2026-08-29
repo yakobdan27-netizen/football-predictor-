@@ -4,6 +4,12 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { confidenceTone } from "@/lib/prediction-log/decision-maker/confidence";
 import type { WeekendOpportunityRow } from "@/lib/match-centre/weekend-opportunities";
+import type {
+  PortfolioCategoryId,
+  PortfolioPick,
+  WeekendPortfolioResult,
+} from "@/lib/match-centre/weekend-portfolio";
+import { PORTFOLIO_TARGET_TOTAL } from "@/lib/match-centre/weekend-portfolio";
 
 type WeekendApiResponse = {
   ok?: boolean;
@@ -14,6 +20,7 @@ type WeekendApiResponse = {
   selectedCount?: number;
   insufficientPool?: boolean;
   rows?: WeekendOpportunityRow[];
+  portfolio?: WeekendPortfolioResult;
   warnings?: string[];
   filteredCount?: number;
 };
@@ -134,6 +141,224 @@ function TracePanel({ row }: { row: WeekendOpportunityRow }) {
         </>
       )}
     </div>
+  );
+}
+
+function PortfolioSection({ portfolio }: { portfolio: WeekendPortfolioResult }) {
+  const picksByCategory = new Map<PortfolioCategoryId, PortfolioPick[]>();
+  for (const pick of portfolio.picks) {
+    const list = picksByCategory.get(pick.category) ?? [];
+    list.push(pick);
+    picksByCategory.set(pick.category, list);
+  }
+
+  const reducedLabels = portfolio.categories
+    .filter((c) => c.reduced)
+    .map((c) => c.label);
+
+  const copyText = portfolio.picks
+    .map(
+      (p) =>
+        `${p.matchLabel} · ${p.prediction} (${Math.round(p.pCalibrated * 1000) / 10}%)`
+    )
+    .join("\n");
+
+  return (
+    <section style={{ marginTop: "2.5rem" }}>
+      <header style={{ marginBottom: "1rem" }}>
+        <h2 style={{ margin: 0, fontSize: "1.15rem" }}>
+          Weekend Portfolio ({PORTFOLIO_TARGET_TOTAL})
+        </h2>
+        <p className="page-sub" style={{ marginTop: "0.35rem", maxWidth: "48rem" }}>
+          {portfolio.picks.length} unique matches across specialist markets — ranked by
+          collaborative score (50% existing system + 50% independent MSAM advisory).
+          Canonical probability shown separately; three weakest categories auto-trimmed
+          from 3 to 2 picks.
+          {reducedLabels.length > 0 && (
+            <>
+              {" "}
+              Trimmed: {reducedLabels.join(", ")}.
+            </>
+          )}
+        </p>
+        {portfolio.warnings.length > 0 && (
+          <div style={{ marginTop: "0.5rem" }}>
+            {portfolio.warnings.map((w) => (
+              <p
+                key={w}
+                style={{
+                  padding: "0.5rem 0.75rem",
+                  marginBottom: "0.35rem",
+                  background: "rgba(234, 179, 8, 0.12)",
+                  borderRadius: 8,
+                  fontSize: "0.85rem",
+                }}
+              >
+                {w}
+              </p>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn btn-sm"
+          style={{ marginTop: "0.5rem" }}
+          onClick={() => void navigator.clipboard.writeText(copyText)}
+        >
+          Copy all picks
+        </button>
+      </header>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+        {portfolio.categories.map((cat) => {
+          const picks = picksByCategory.get(cat.id) ?? [];
+          if (picks.length === 0) return null;
+          return (
+            <div
+              key={cat.id}
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  padding: "0.65rem 0.85rem",
+                  background: "var(--surface2)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <strong>{cat.label}</strong>
+                <span style={{ fontSize: "0.8rem", color: "var(--muted)" }}>
+                  {picks.length}/{cat.quota} picks
+                </span>
+                {cat.reduced && (
+                  <span
+                    style={{
+                      fontSize: "0.7rem",
+                      fontWeight: 600,
+                      padding: "0.1rem 0.4rem",
+                      borderRadius: 4,
+                      background: "rgba(234, 179, 8, 0.2)",
+                      color: "#a16207",
+                    }}
+                  >
+                    trimmed to 2
+                  </span>
+                )}
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: "0.88rem",
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      <th style={{ padding: "0.45rem 0.65rem" }}>#</th>
+                      <th style={{ padding: "0.45rem 0.65rem" }}>Match</th>
+                      <th style={{ padding: "0.45rem 0.65rem" }}>League</th>
+                      <th style={{ padding: "0.45rem 0.65rem" }}>Kickoff</th>
+                      <th style={{ padding: "0.45rem 0.65rem" }}>Pick</th>
+                      <th style={{ padding: "0.45rem 0.65rem" }} title="Existing system (CFE)">
+                        Existing
+                      </th>
+                      <th style={{ padding: "0.45rem 0.65rem" }} title="Independent MSAM">
+                        MSAM
+                      </th>
+                      <th style={{ padding: "0.45rem 0.65rem" }} title="Collaborative ranking score">
+                        Collab
+                      </th>
+                      <th style={{ padding: "0.45rem 0.65rem" }}>Agreement</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {picks.map((pick) => (
+                      <tr
+                        key={`${cat.id}-${pick.apiFixtureId}`}
+                        style={{ borderBottom: "1px solid var(--border)" }}
+                      >
+                        <td style={{ padding: "0.45rem 0.65rem", fontWeight: 700 }}>
+                          {pick.rankInCategory}
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem", fontWeight: 600 }}>
+                          {pick.matchLabel}
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem" }}>{pick.league}</td>
+                        <td
+                          style={{
+                            padding: "0.45rem 0.65rem",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {formatKickoff(pick.kickoffIso)}
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem" }}>
+                          {pick.prediction}
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem" }}>
+                          <span
+                            style={{
+                              ...toneStyle(
+                                Math.round(pick.pCalibrated * 1000) / 10
+                              ),
+                              padding: "0.12rem 0.4rem",
+                              borderRadius: 6,
+                              fontWeight: 700,
+                            }}
+                            title="Existing system selection"
+                          >
+                            {Math.round(pick.pCalibrated * 1000) / 10}%
+                          </span>
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem" }}>
+                          {pick.trace.msamNormalizedScore != null
+                            ? `${Math.round(pick.trace.msamNormalizedScore)}`
+                            : "—"}
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem" }}>
+                          {pick.trace.finalAdvisoryScore != null ? (
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                color: "var(--foreground)",
+                              }}
+                            >
+                              {Math.round(pick.trace.finalAdvisoryScore)}
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--muted)" }}>Review</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.45rem 0.65rem", fontSize: "0.78rem" }}>
+                          {pick.trace.agreementStatus ?? "—"}
+                          {pick.trace.advisoryStatus === "Insufficient Data" && (
+                            <span style={{ display: "block", color: "var(--muted)" }}>
+                              Insufficient data
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -360,6 +585,10 @@ export function WeekendOpportunitiesApp() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {data?.portfolio && data.portfolio.picks.length > 0 && (
+        <PortfolioSection portfolio={data.portfolio} />
       )}
     </main>
   );

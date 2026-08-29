@@ -275,6 +275,18 @@ export function comboGridProbabilityPercent(
   return null;
 }
 
+/** P(≥1 goal in 1H AND ≥1 goal in 2H) — portfolio / advisory use. */
+export function goalBothHalvesProbabilityPercent(
+  ctx: ComboGridContext
+): number | null {
+  const p = jointHalfFtProb(
+    ctx,
+    (hHt, aHt, hFt, aFt) =>
+      hHt + aHt >= 1 && hFt - hHt + (aFt - aHt) >= 1
+  );
+  return p != null ? Math.round(p * 100) : null;
+}
+
 export function comboGridProbability(
   comboId: string,
   ctx: ComboGridContext

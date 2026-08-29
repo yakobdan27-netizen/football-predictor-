@@ -342,6 +342,61 @@ export function leanLabel(lean: CornersLean): string {
   return "No lean";
 }
 
+export type TeamCornerOuLeg = {
+  side: "home" | "away";
+  direction: "over" | "under";
+  line: number;
+  prob: number;
+  label: string;
+};
+
+const DEFAULT_TEAM_CORNER_LINES = [4.5, 5.5, 6.5] as const;
+
+/** Best per-team corner Over/Under leg from Poisson lambdas. */
+export function bestTeamCornerOuLeg(
+  lambdaHome: number,
+  lambdaAway: number,
+  lines: readonly number[] = DEFAULT_TEAM_CORNER_LINES
+): TeamCornerOuLeg | null {
+  if (!Number.isFinite(lambdaHome) || !Number.isFinite(lambdaAway)) return null;
+  if (lambdaHome <= 0 || lambdaAway <= 0) return null;
+
+  let best: TeamCornerOuLeg | null = null;
+
+  const sides: Array<{ side: "home" | "away"; lambda: number }> = [
+    { side: "home", lambda: lambdaHome },
+    { side: "away", lambda: lambdaAway },
+  ];
+
+  for (const { side, lambda } of sides) {
+    for (const line of lines) {
+      const pOver = poissonOverLine(line, lambda);
+      const pUnder = 1 - pOver;
+      const candidates: TeamCornerOuLeg[] = [
+        {
+          side,
+          direction: "over",
+          line,
+          prob: pOver,
+          label: `${side === "home" ? "Home" : "Away"} Over ${line}`,
+        },
+        {
+          side,
+          direction: "under",
+          line,
+          prob: pUnder,
+          label: `${side === "home" ? "Home" : "Away"} Under ${line}`,
+        },
+      ];
+      for (const leg of candidates) {
+        if (!best || leg.prob > best.prob) best = leg;
+      }
+    }
+  }
+
+  return best;
+}
+
 export function listSeedClubRows(
   league?: string | null,
   season?: string | null

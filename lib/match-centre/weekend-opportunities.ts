@@ -224,7 +224,7 @@ function familyDataOk(
   return true;
 }
 
-type ScoredCandidate = {
+export type ScoredLeg = {
   marketLabel: string;
   predictionLabel: string;
   family: MarketFamilyId;
@@ -238,6 +238,8 @@ type ScoredCandidate = {
   msamGatePassed: boolean;
   ineligibilityReasons: IneligibilityReasonCode[];
 };
+
+type ScoredCandidate = ScoredLeg;
 
 export type BestMarketPick = {
   marketLabel: string;
@@ -255,6 +257,128 @@ export type BestMarketPick = {
   msamGatePassed: boolean;
   ineligibilityReasons: IneligibilityReasonCode[];
 } | null;
+
+export function scoreFixtureSelection(
+  fixture: UpcomingFixtureRow,
+  estimate: CanonicalFixtureEstimate,
+  calibrator: BinCalibrator | null,
+  leg: {
+    family: MarketFamilyId;
+    selectionKey: string;
+    selectionLabel: string;
+    line?: number;
+    comboId?: string;
+    marketLabel?: string;
+  }
+): ScoredLeg | null {
+  if (WEEKEND_EXCLUDED_FAMILY_SET.has(leg.family)) return null;
+  if (!familyDataOk(leg.family, estimate)) return null;
+
+  const scored = scoreLegFromCanonical({
+    estimate,
+    family: leg.family,
+    selectionKey: leg.selectionKey,
+    line: leg.line,
+    comboId: leg.comboId,
+    fixtureKey: `api:${fixture.apiFixtureId}`,
+  });
+  if (!scored.available || !Number.isFinite(scored.pRaw)) return null;
+
+  const cal = applySlipCalibration(
+    scored.pRaw,
+    scored.nEffective,
+    calibrator
+  );
+
+  const ineligibilityReasons = weekendMsamIneligibilityReasons({
+    family: leg.family,
+    pRaw: scored.pRaw,
+    nEffective: scored.nEffective,
+    coherenceOk: scored.coherenceOk,
+    cfe: estimate,
+  });
+
+  return {
+    marketLabel: leg.marketLabel ?? FAMILY_LABELS[leg.family],
+    predictionLabel: leg.selectionLabel,
+    family: leg.family,
+    selectionKey: leg.selectionKey,
+    line: leg.line,
+    comboId: leg.comboId,
+    pRaw: scored.pRaw,
+    pCalibrated: cal.pCalibrated,
+    nEffective: scored.nEffective,
+    coherenceOk: scored.coherenceOk,
+    msamGatePassed: ineligibilityReasons.length === 0,
+    ineligibilityReasons,
+  };
+}
+
+export function scoreFixtureFamilyBest(
+  fixture: UpcomingFixtureRow,
+  estimate: CanonicalFixtureEstimate,
+  calibrator: BinCalibrator | null,
+  family: MarketFamilyId,
+  opts?: {
+    selectionFilter?: (sel: {
+      selectionKey: string;
+      selectionLabel: string;
+      line?: number;
+      comboId?: string;
+    }) => boolean;
+    comboFilter?: (comboId: string) => boolean;
+    totalsFilter?: boolean;
+    teamGoalsFilter?: boolean;
+  }
+): ScoredLeg | null {
+  if (WEEKEND_EXCLUDED_FAMILY_SET.has(family)) return null;
+  if (!familyDataOk(family, estimate)) return null;
+
+  let best: ScoredLeg | null = null;
+
+  for (const sel of enumerateFamilySelections(family)) {
+    if (opts?.selectionFilter && !opts.selectionFilter(sel)) continue;
+    if (opts?.comboFilter && sel.comboId && !opts.comboFilter(sel.comboId)) {
+      continue;
+    }
+    if (
+      opts?.totalsFilter !== false &&
+      !weekendTotalsSelectionAllowed(family, sel.selectionKey, sel.line)
+    ) {
+      continue;
+    }
+    if (
+      opts?.teamGoalsFilter !== false &&
+      !weekendTeamGoalsSelectionAllowed(family, sel.selectionKey, sel.line)
+    ) {
+      continue;
+    }
+    if (
+      opts?.comboFilter == null &&
+      !weekendComboSelectionAllowed(family, sel.comboId)
+    ) {
+      continue;
+    }
+
+    const scored = scoreFixtureSelection(fixture, estimate, calibrator, {
+      family,
+      selectionKey: sel.selectionKey,
+      selectionLabel: sel.selectionLabel,
+      line: sel.line,
+      comboId: sel.comboId,
+    });
+    if (!scored) continue;
+    if (
+      !best ||
+      scored.pCalibrated > best.pCalibrated ||
+      (scored.pCalibrated === best.pCalibrated && scored.pRaw > best.pRaw)
+    ) {
+      best = scored;
+    }
+  }
+
+  return best;
+}
 
 export function scoreFixtureBestMarket(
   fixture: UpcomingFixtureRow,
@@ -278,45 +402,15 @@ export function scoreFixtureBestMarket(
         continue;
       }
 
-      const scored = scoreLegFromCanonical({
-        estimate,
+      const scored = scoreFixtureSelection(fixture, estimate, calibrator, {
         family,
         selectionKey: sel.selectionKey,
+        selectionLabel: sel.selectionLabel,
         line: sel.line,
         comboId: sel.comboId,
-        fixtureKey: `api:${fixture.apiFixtureId}`,
       });
-      if (!scored.available || !Number.isFinite(scored.pRaw)) continue;
-
-      const cal = applySlipCalibration(
-        scored.pRaw,
-        scored.nEffective,
-        calibrator
-      );
-
-      const ineligibilityReasons = weekendMsamIneligibilityReasons({
-        family,
-        pRaw: scored.pRaw,
-        nEffective: scored.nEffective,
-        coherenceOk: scored.coherenceOk,
-        cfe: estimate,
-      });
-      const msamGatePassed = ineligibilityReasons.length === 0;
-
-      candidates.push({
-        marketLabel: FAMILY_LABELS[family],
-        predictionLabel: sel.selectionLabel,
-        family,
-        selectionKey: sel.selectionKey,
-        line: sel.line,
-        comboId: sel.comboId,
-        pRaw: scored.pRaw,
-        pCalibrated: cal.pCalibrated,
-        nEffective: scored.nEffective,
-        coherenceOk: scored.coherenceOk,
-        msamGatePassed,
-        ineligibilityReasons,
-      });
+      if (!scored) continue;
+      candidates.push(scored);
     }
   }
 

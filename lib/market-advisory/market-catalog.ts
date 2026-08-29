@@ -29,6 +29,47 @@ export function buildMarketCode(
   return `${family}:${selectionKey}`;
 }
 
+const TEAM_CORNER_LINES = [4.5, 5.5, 6.5] as const;
+
+function lineSelectionSuffix(line: number): string {
+  return String(line).replace(".", "_");
+}
+
+/** Portfolio-only and extended corner propositions (not in slip-builder enum). */
+export function enumeratePortfolioCatalogExtensions(): CatalogEntry[] {
+  const out: CatalogEntry[] = [
+    {
+      marketCode: buildMarketCode("HALF_GOALS", "goal_both_halves"),
+      marketFamily: "HALF_GOALS",
+      conflictGroup: msamConflictGroupOf("HALF_GOALS"),
+      selectionKey: "goal_both_halves",
+      selectionLabel: "Goal in 1H & 2H",
+    },
+  ];
+  for (const side of ["home", "away"] as const) {
+    for (const line of TEAM_CORNER_LINES) {
+      const suffix = lineSelectionSuffix(line);
+      out.push({
+        marketCode: buildMarketCode("CORNERS", `${side}_over_${suffix}`, line),
+        marketFamily: "CORNERS",
+        conflictGroup: msamConflictGroupOf("CORNERS"),
+        selectionKey: `${side}_over_${suffix}`,
+        selectionLabel: `${side === "home" ? "Home" : "Away"} Over ${line}`,
+        line,
+      });
+      out.push({
+        marketCode: buildMarketCode("CORNERS", `${side}_under_${suffix}`, line),
+        marketFamily: "CORNERS",
+        conflictGroup: msamConflictGroupOf("CORNERS"),
+        selectionKey: `${side}_under_${suffix}`,
+        selectionLabel: `${side === "home" ? "Home" : "Away"} Under ${line}`,
+        line,
+      });
+    }
+  }
+  return out;
+}
+
 /** Full MSAM proposition catalog from slip-builder families. */
 export function enumerateMsamCatalog(): CatalogEntry[] {
   const out: CatalogEntry[] = [];
@@ -57,6 +98,7 @@ export function enumerateMsamCatalog(): CatalogEntry[] {
       });
     }
   }
+  out.push(...enumeratePortfolioCatalogExtensions());
   return out;
 }
 

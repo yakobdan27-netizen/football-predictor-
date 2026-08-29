@@ -43,7 +43,7 @@ export type AgreementStatus =
 
 export type AdvisoryTier = "Strong" | "Usable" | "Caution" | "Insufficient Data";
 
-export type EmsKind = "decision_maker" | "weekend_picks";
+export type EmsKind = "decision_maker" | "weekend_picks" | "weekend_portfolio";
 
 /** Stable market code: FAMILY:selectionKey[:line] */
 export type MarketCode = string;

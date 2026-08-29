@@ -9,6 +9,7 @@ import {
   filterWeekendFixtures,
   rankWeekendOpportunities,
 } from "@/lib/match-centre/weekend-opportunities";
+import { curateWeekendPortfolio } from "@/lib/match-centre/weekend-portfolio";
 import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
 import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { buildUpcomingPredictionBatch } from "@/lib/prediction-log/batch-fixture-picker";
@@ -32,6 +33,10 @@ export async function GET(request: Request) {
     const refresh =
       url.searchParams.get("refresh") === "1" ||
       url.searchParams.get("refresh") === "true";
+
+    const portfolioShadow =
+      url.searchParams.get("portfolioShadow") === "1" ||
+      url.searchParams.get("portfolioShadow") === "true";
 
     const leagueResults = await Promise.all(
       NEXT_MATCHES_LEAGUES.map((league) =>
@@ -119,6 +124,15 @@ export async function GET(request: Request) {
         calibrator,
       });
 
+      const portfolio = curateWeekendPortfolio({
+        fixtures: weekendFixtures,
+        estimates,
+        calibrator,
+        batches: allBatches,
+        analysis: null,
+        shadowCompare: portfolioShadow,
+      });
+
       let learnerSync: { saved: number; batchIds: string[] } | null = null;
       try {
         learnerSync = await persistWeekendAnalysisLearnerBatches({
@@ -131,7 +145,7 @@ export async function GET(request: Request) {
         learnerSync = null;
       }
 
-      return { ranked, learnerSync };
+      return { ranked, portfolio, learnerSync };
     };
 
     const dayKey = new Date().toISOString().slice(0, 10);
@@ -142,6 +156,7 @@ export async function GET(request: Request) {
         })();
 
     const result = scored.ranked;
+    const portfolio = scored.portfolio;
     const learnerSync = scored.learnerSync;
 
     const warnings: string[] = [];
@@ -157,6 +172,7 @@ export async function GET(request: Request) {
       selectedCount: result.selectedCount,
       insufficientPool: result.insufficientPool,
       rows: result.rows,
+      portfolio,
       warnings,
       filteredCount,
       filterReasons,
