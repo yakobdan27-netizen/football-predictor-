@@ -886,6 +886,70 @@ async function runEnsureSchema(): Promise<void> {
   await ddl`CREATE INDEX IF NOT EXISTS prediction_log_settlement_core_fixture_idx ON prediction_log_settlement (core_fixture_id)`;
 
   await ddl`
+    CREATE TABLE IF NOT EXISTS ai_learner_pick_outcomes (
+      id serial PRIMARY KEY,
+      batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      weekend_surface text NOT NULL,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      market_key text NOT NULL,
+      prediction text NOT NULL,
+      line real,
+      confidence integer,
+      result text NOT NULL,
+      actual_value text,
+      loss_reason text,
+      ft_home integer,
+      ft_away integer,
+      ht_home integer,
+      ht_away integer,
+      corners_home integer,
+      corners_away integer,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS ai_learner_pick_outcomes_batch_match_market_uidx ON ai_learner_pick_outcomes (batch_id, match_id, market_key)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_pick_outcomes_batch_idx ON ai_learner_pick_outcomes (batch_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_pick_outcomes_league_idx ON ai_learner_pick_outcomes (league)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_pick_outcomes_result_idx ON ai_learner_pick_outcomes (result)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS ai_learner_market_rules (
+      id serial PRIMARY KEY,
+      league text NOT NULL,
+      lost_market text NOT NULL,
+      lost_prediction text NOT NULL,
+      lost_line real,
+      win_market text NOT NULL,
+      win_prediction text NOT NULL,
+      win_line real,
+      wins integer NOT NULL DEFAULT 0,
+      losses integer NOT NULL DEFAULT 0,
+      sample integer NOT NULL DEFAULT 0,
+      win_rate integer,
+      rule_text text NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS ai_learner_market_rules_rule_uidx ON ai_learner_market_rules (league, lost_market, lost_prediction, lost_line, win_market, win_prediction, win_line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_market_rules_league_idx ON ai_learner_market_rules (league)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_market_rules_lost_market_idx ON ai_learner_market_rules (lost_market)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS ai_learner_stats_snapshot (
+      id text PRIMARY KEY,
+      stats_json text NOT NULL,
+      total_scored_picks integer NOT NULL DEFAULT 0,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+
+  await ddl`
     CREATE TABLE IF NOT EXISTS core_coverage_audit (
       id serial PRIMARY KEY,
       competition_id integer NOT NULL,

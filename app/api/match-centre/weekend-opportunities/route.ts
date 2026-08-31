@@ -19,13 +19,29 @@ import {
 } from "@/lib/prediction-log/canonical-fixture-estimate";
 import { fitSlipCalibrator } from "@/lib/slip-builder/slip-calibration";
 import { sumFilterReasons } from "@/lib/football-api/fixture-eligibility";
-import { persistWeekendAnalysisLearnerBatches } from "@/lib/prediction-log/weekend-analysis-learner";
+import {
+  persistWeekendAnalysisLearnerBatches,
+  type WeekendLearnerSyncResult,
+} from "@/lib/prediction-log/weekend-analysis-learner";
 import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 
 const WEEKEND_CACHE_SECONDS = 300;
+
+function normalizeWeekendBatch(batch: NonNullable<ReturnType<typeof buildUpcomingPredictionBatch>>) {
+  const weekendId = `WEEKEND-${batch.date}`;
+  return {
+    ...batch,
+    id: weekendId,
+    batchName: "Weekend Picks Pool",
+    matches: batch.matches.map((m, i) => ({
+      ...m,
+      id: `${weekendId}-m${i + 1}`,
+    })),
+  };
+}
 
 export async function GET(request: Request) {
   try {
@@ -81,9 +97,8 @@ export async function GET(request: Request) {
       ).catch(() => {});
     }
 
-    const batch = buildUpcomingPredictionBatch(weekendFixtures, {
-      batchId: `WEEKEND-${new Date().toISOString().slice(0, 10)}`,
-    });
+    const rawBatch = buildUpcomingPredictionBatch(weekendFixtures);
+    const batch = rawBatch ? normalizeWeekendBatch(rawBatch) : null;
 
     if (!batch || batch.matches.length === 0) {
       return NextResponse.json({
@@ -104,7 +119,13 @@ export async function GET(request: Request) {
       });
     }
 
-    const runScoring = async () => {
+    type ScoredPayload = {
+      ranked: Awaited<ReturnType<typeof rankWeekendOpportunities>>;
+      portfolio: ReturnType<typeof curateWeekendPortfolio>;
+      estimates: Awaited<ReturnType<typeof estimateBatchCanonicalAsync>>;
+    };
+
+    const runScoring = async (): Promise<ScoredPayload> => {
       const [matchCentreCache, allBatches] = await Promise.all([
         preloadMatchCentreHalfRates(collectBatchTeamLeaguePairs(batch)).catch(
           () => undefined
@@ -133,31 +154,37 @@ export async function GET(request: Request) {
         shadowCompare: portfolioShadow,
       });
 
-      let learnerSync: { saved: number; batchIds: string[] } | null = null;
-      try {
-        learnerSync = await persistWeekendAnalysisLearnerBatches({
-          baseBatch: batch,
-          estimates,
-          weekendRows: ranked.rows,
-        });
-        await recomputeAndPersistLearnerStats().catch(() => {});
-      } catch {
-        learnerSync = null;
-      }
-
-      return { ranked, portfolio, learnerSync };
+      return { ranked, portfolio, estimates };
     };
 
-    const dayKey = new Date().toISOString().slice(0, 10);
+    const dayKey = batch.date;
     const scored = refresh
       ? await runScoring()
       : await unstable_cache(runScoring, ["weekend-opportunities", dayKey], {
           revalidate: WEEKEND_CACHE_SECONDS,
         })();
 
+    let learnerSync: WeekendLearnerSyncResult | null = null;
+    try {
+      learnerSync = await persistWeekendAnalysisLearnerBatches({
+        baseBatch: batch,
+        estimates: scored.estimates,
+        weekendRows: scored.ranked.rows,
+        portfolioPicks: scored.portfolio.picks,
+      });
+      await recomputeAndPersistLearnerStats().catch(() => {});
+    } catch (e) {
+      learnerSync = {
+        saved: 0,
+        batchIds: [],
+        pendingFill: 0,
+        scoredPicks: 0,
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+
     const result = scored.ranked;
     const portfolio = scored.portfolio;
-    const learnerSync = scored.learnerSync;
 
     const warnings: string[] = [];
     for (const r of leagueResults) {
@@ -177,6 +204,7 @@ export async function GET(request: Request) {
       filteredCount,
       filterReasons,
       learnerSync,
+      weekendBatchId: batch.id,
     });
   } catch (e) {
     return NextResponse.json(

@@ -3,7 +3,8 @@ import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import { batchNeedsResults } from "@/lib/prediction-log/scoring";
 import { matchNeedsNamePairTrace } from "@/lib/prediction-log/result-trace";
 import { matchNeedsApiDetailFill } from "@/lib/football-api/map-fixture-to-match";
-import { syncAllPredictionLogFromApi } from "@/lib/football-api/sync-all-prediction-log-from-api";
+import { syncAllPredictionLogFromApiLoop } from "@/lib/football-api/sync-all-prediction-log-from-api";
+import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -16,8 +17,8 @@ function authorize(request: Request): boolean {
 }
 
 /**
- * Every 30 minutes (06–22 UTC): unified API trace + live merge + enrich for
- * all pending Prediction Log batches (web + telegram).
+ * Fri–Sun every 30 min (06–23 UTC) + daily catch-up: unified API trace + live merge
+ * + enrich for all pending Prediction Log batches (web + telegram).
  */
 export async function GET(request: Request) {
   return run(request);
@@ -42,7 +43,8 @@ async function run(request: Request) {
         )
     );
 
-    const summary = await syncAllPredictionLogFromApi();
+    const summary = await syncAllPredictionLogFromApiLoop();
+    const learnerStats = await recomputeAndPersistLearnerStats().catch(() => null);
 
     return NextResponse.json({
       ok: !summary.unavailable,
@@ -55,9 +57,11 @@ async function run(request: Request) {
       enriched: summary.enriched,
       failed: summary.failed,
       remaining: summary.remaining.length,
+      rounds: summary.rounds ?? 1,
       liveMerged: summary.liveMerged,
       liveUpdatedBatches: summary.liveUpdatedBatches,
       trace: summary.trace,
+      learnerStatsUpdated: learnerStats != null,
       errors: summary.errors.slice(0, 10),
       unavailable: summary.unavailable,
     });

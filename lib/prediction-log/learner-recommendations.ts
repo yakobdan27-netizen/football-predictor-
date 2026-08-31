@@ -1,5 +1,6 @@
 import { generateRecommendedBatch } from "./generate-recommended-batch";
 import { isCautiousClub, isWeakOddsBandForLearner, learnerConfidenceForOdds } from "./ai-learner";
+import { findMatchingLossRecoveryRule } from "./learner-market-rules";
 import {
   isRiskyCharacteristicsMatchup,
   teamCharacteristicsMatchScore,
@@ -95,6 +96,17 @@ function annotatePick(
 
   if (charScore.reason && charScore.score < 50 && selected) {
     learnerWhy += ` ${charScore.reason}`;
+  }
+
+  const recoveryRule = findMatchingLossRecoveryRule(
+    league,
+    marketKey,
+    pick.prediction,
+    pick.line,
+    stats.advice.lossRecoveryRuleEntries
+  );
+  if (recoveryRule && selected) {
+    learnerWhy += ` Weekend history: ${recoveryRule.ruleText}`;
   }
 
   return {

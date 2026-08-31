@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { WeekendOpportunityRow } from "@/lib/match-centre/weekend-opportunities";
 import { buildWeekendPicksBatchFromRows } from "@/lib/prediction-log/weekend-picks-batch";
+import type { WeekendLearnerSyncResult } from "@/lib/prediction-log/weekend-analysis-learner";
 import { reloadBatchesFromServer } from "@/lib/prediction-log/storage";
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 
@@ -16,7 +17,8 @@ export type WeekendPicksApiResponse = {
   insufficientPool?: boolean;
   rows?: WeekendOpportunityRow[];
   warnings?: string[];
-  learnerSync?: { saved: number; batchIds: string[] } | null;
+  learnerSync?: WeekendLearnerSyncResult | null;
+  weekendBatchId?: string;
 };
 
 export function useWeekendPicksBatch(): {
@@ -74,11 +76,11 @@ export function useWeekendPicksBatch(): {
   const rows = data?.rows ?? [];
   const batch = useMemo(() => {
     if (rows.length === 0) return null;
-    const date = data?.generatedAt?.slice(0, 10) ?? rows[0]!.kickoffIso.slice(0, 10);
-    return buildWeekendPicksBatchFromRows(rows, {
-      batchId: `WEEKEND-${date}`,
-    });
-  }, [rows, data?.generatedAt]);
+    const batchId =
+      data?.weekendBatchId ??
+      `WEEKEND-${rows[0]!.kickoffIso.slice(0, 10)}`;
+    return buildWeekendPicksBatchFromRows(rows, { batchId });
+  }, [rows, data?.weekendBatchId]);
 
   const refresh = useCallback(async () => {
     await load(true);

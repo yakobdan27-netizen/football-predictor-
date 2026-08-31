@@ -91,6 +91,17 @@ export function LearnerAdvicePanel({ stats, enabled }: LearnerAdvicePanelProps) 
             </ul>
           </div>
         )}
+
+        {(advice.lossRecoveryRules?.length ?? 0) > 0 && (
+          <div>
+            <div className="stat-label">Weekend loss-recovery rules (database)</div>
+            <ul style={{ fontSize: "0.8125rem", paddingLeft: "1.25rem", margin: 0 }}>
+              {advice.lossRecoveryRules!.slice(0, 8).map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.75rem" }}>

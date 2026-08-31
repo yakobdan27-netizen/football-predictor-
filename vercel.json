@@ -6,7 +6,11 @@
     },
     {
       "path": "/api/cron/fill-telegram-results",
-      "schedule": "0 7 * * *"
+      "schedule": "0 7 * * 1-4"
+    },
+    {
+      "path": "/api/cron/fill-telegram-results",
+      "schedule": "*/30 6-23 * * 5,6,0"
     },
     {
       "path": "/api/cron/live-daily-sweep",
@@ -22,7 +26,11 @@
     },
     {
       "path": "/api/cron/match-centre-results",
-      "schedule": "0 8 * * *"
+      "schedule": "0 8 * * 1-4"
+    },
+    {
+      "path": "/api/cron/match-centre-results",
+      "schedule": "15,45 6-23 * * 5,6,0"
     },
     {
       "path": "/api/cron/live-poll",

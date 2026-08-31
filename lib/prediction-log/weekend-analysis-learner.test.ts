@@ -3,6 +3,8 @@ import { test } from "node:test";
 import type { CanonicalFixtureEstimate } from "./canonical-fixture-estimate";
 import {
   buildWeekendAnalysisLearnerBatches,
+  buildWeekendBaseBatch,
+  unionMergeBatchMatches,
   WEEKEND_ANALYSIS_SURFACES,
 } from "./weekend-analysis-learner";
 import type { PredictionBatch } from "./types";
@@ -130,4 +132,91 @@ test("buildWeekendAnalysisLearnerBatches stamps one pick per surface", () => {
 
   const dieh = batches.find((b) => b.id.includes("DIEH"))!;
   assert.equal(dieh.matches[0]!.predictions.draw_one_half?.prediction, "yes");
+});
+
+test("buildWeekendBaseBatch persists full pool with stable ids", () => {
+  const baseBatch: PredictionBatch = {
+    id: "UPCOMING-2026-08-30",
+    date: "2026-08-30",
+    league: "Mixed",
+    batchName: "Upcoming",
+    createdAt: new Date().toISOString(),
+    batchKind: "manual",
+    matches: [
+      {
+        id: "UPCOMING-2026-08-30-m1",
+        homeTeam: "Arsenal",
+        awayTeam: "Chelsea",
+        league: "Premier League",
+        matchDate: "2026-08-30",
+        apiFixtureId: 101,
+        predictions: { "1x2": { prediction: "home", confidence: 50 } },
+        actualResults: {},
+        scored: {},
+      },
+    ],
+  };
+
+  const base = buildWeekendBaseBatch(baseBatch);
+  assert.equal(base.id, "WEEKEND-2026-08-30");
+  assert.equal(base.batchName, "Weekend Picks Pool");
+  assert.equal(base.matches[0]!.id, "WEEKEND-2026-08-30-m1");
+  assert.deepEqual(base.matches[0]!.predictions, {});
+});
+
+test("unionMergeBatchMatches keeps filled fixtures missing from refresh", () => {
+  const filled: PredictionBatch = {
+    id: "WEEKEND-CORNERS-2026-08-30",
+    date: "2026-08-30",
+    league: "Mixed",
+    batchName: "corners",
+    createdAt: new Date().toISOString(),
+    batchKind: "manual",
+    matches: [
+      {
+        id: "old-1",
+        homeTeam: "Arsenal",
+        awayTeam: "Chelsea",
+        league: "Premier League",
+        apiFixtureId: 101,
+        predictions: { corners_ou: { prediction: "over", line: 9.5, confidence: 58 } },
+        actualResults: { corners_ou: { actual: 11 } },
+        scored: { corners_ou: "correct" },
+        teamStats: {
+          home: { goals: 2, corners: 6 },
+          away: { goals: 1, corners: 5 },
+        },
+        resultFilled: true,
+      },
+      {
+        id: "old-2",
+        homeTeam: "Liverpool",
+        awayTeam: "Everton",
+        league: "Premier League",
+        apiFixtureId: 102,
+        predictions: { corners_ou: { prediction: "under", line: 9.5, confidence: 55 } },
+        actualResults: {},
+        scored: {},
+      },
+    ],
+  };
+
+  const built = [
+    {
+      id: "new-2",
+      homeTeam: "Liverpool",
+      awayTeam: "Everton",
+      league: "Premier League",
+      apiFixtureId: 102,
+      predictions: { corners_ou: { prediction: "under", line: 9.5, confidence: 56 } },
+      actualResults: {},
+      scored: {},
+    },
+  ];
+
+  const merged = unionMergeBatchMatches(filled, built);
+  assert.equal(merged.length, 2);
+  const kept = merged.find((m) => m.apiFixtureId === 101)!;
+  assert.equal(kept.scored.corners_ou, "correct");
+  assert.equal(kept.teamStats?.home?.goals, 2);
 });

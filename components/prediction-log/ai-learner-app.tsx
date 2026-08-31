@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { computeLearnerPatterns, overallWinRate, totalMatchesInBatches, totalSavedBatches } from "@/lib/prediction-log/learner-patterns";
 import { buildGlobalCalibrationReport } from "@/lib/prediction-log/global-calibration";
 import { AI_ENHANCED_MIN_SAMPLES } from "@/lib/prediction-log/ai-enhanced-prediction";
@@ -30,6 +30,23 @@ export function AiLearnerApp() {
     setLearner,
     refresh,
   } = usePredictionLogData();
+
+  const [dbMeta, setDbMeta] = useState<{
+    weekendOutcomeCount: number;
+    marketRulesCount: number;
+  } | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/learner-stats")
+      .then((r) => r.json())
+      .then((json: { weekendOutcomeCount?: number; marketRulesCount?: number }) => {
+        setDbMeta({
+          weekendOutcomeCount: json.weekendOutcomeCount ?? 0,
+          marketRulesCount: json.marketRulesCount ?? 0,
+        });
+      })
+      .catch(() => setDbMeta(null));
+  }, [learnerStats?.updatedAt, batches.length]);
 
   const patterns = useMemo(() => {
     if (!learnerStats || !teamCharacteristics) return null;
@@ -146,6 +163,13 @@ export function AiLearnerApp() {
         <p style={{ margin: "0.35rem 0 0" }}>
           Weekend analysis batches: <strong>{weekendAnalysis.batches}</strong> · Scored picks from
           those batches: <strong>{weekendAnalysis.scoredPicks}</strong>
+          {dbMeta != null && (
+            <>
+              {" "}
+              · Database outcomes: <strong>{dbMeta.weekendOutcomeCount}</strong> · Active rules:{" "}
+              <strong>{dbMeta.marketRulesCount}</strong>
+            </>
+          )}
         </p>
       </div>
 

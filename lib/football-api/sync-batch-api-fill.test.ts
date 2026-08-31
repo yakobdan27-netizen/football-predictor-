@@ -1,97 +1,94 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  collectApiFillWorkItems,
-  matchFillPriority,
-} from "./sync-batch-api-fill";
-import { batchDateIsPastOrToday } from "./sync-batch-persist";
 import type { LogMatch, PredictionBatch } from "@/lib/prediction-log/types";
+import {
+  batchFillPriority,
+  groupApiFillWorkByFixture,
+  propagateFillData,
+  type ApiFillWorkItem,
+} from "./sync-batch-api-fill";
 
-function batch(
-  id: string,
-  date: string,
-  matches: LogMatch[]
-): PredictionBatch {
+function stubBatch(id: string, matches: LogMatch[]): PredictionBatch {
   return {
     id,
-    date,
-    league: "Premier League",
+    date: "2026-08-30",
+    league: "Mixed",
     batchName: id,
-    createdAt: "2026-01-01T00:00:00Z",
+    createdAt: new Date().toISOString(),
     batchKind: "manual",
-    source: "web",
     matches,
   };
 }
 
-function match(
+function stubMatch(
   id: string,
+  apiFixtureId: number,
   extra?: Partial<LogMatch>
 ): LogMatch {
   return {
     id,
     homeTeam: "Arsenal",
     awayTeam: "Chelsea",
-    predictions: {},
+    league: "Premier League",
+    apiFixtureId,
+    predictions: { corners_ou: { prediction: "over", line: 9.5, confidence: 55 } },
     actualResults: {},
     scored: {},
     ...extra,
   };
 }
 
-test("batchDateIsPastOrToday accepts today and past ISO dates", () => {
-  const today = new Date();
-  const iso = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}-${String(today.getUTCDate()).padStart(2, "0")}`;
-  assert.equal(batchDateIsPastOrToday(iso), true);
-  assert.equal(batchDateIsPastOrToday("2020-01-01"), true);
+test("batchFillPriority prefers base weekend pool batch", () => {
+  assert.ok(batchFillPriority("WEEKEND-2026-08-30") < batchFillPriority("WEEKEND-CORNERS-2026-08-30"));
+  assert.ok(batchFillPriority("WEEKEND-CORNERS-2026-08-30") < batchFillPriority("TELEGRAM-2026-08-30"));
 });
 
-test("batchDateIsPastOrToday rejects far-future batch dates", () => {
-  assert.equal(batchDateIsPastOrToday("2099-12-31"), false);
+test("groupApiFillWorkByFixture dedupes same apiFixtureId across batches", () => {
+  const fixtureId = 101;
+  const items: ApiFillWorkItem[] = [
+    {
+      batchId: "WEEKEND-2026-08-30",
+      batch: stubBatch("WEEKEND-2026-08-30", [stubMatch("a1", fixtureId)]),
+      match: stubMatch("a1", fixtureId),
+      priority: 1,
+    },
+    {
+      batchId: "WEEKEND-CORNERS-2026-08-30",
+      batch: stubBatch("WEEKEND-CORNERS-2026-08-30", [stubMatch("b1", fixtureId)]),
+      match: stubMatch("b1", fixtureId),
+      priority: 1,
+    },
+    {
+      batchId: "WEEKEND-HSH-2026-08-30",
+      batch: stubBatch("WEEKEND-HSH-2026-08-30", [stubMatch("c1", fixtureId)]),
+      match: stubMatch("c1", fixtureId),
+      priority: 1,
+    },
+  ];
+
+  const groups = groupApiFillWorkByFixture(items);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0]!.items.length, 3);
 });
 
-test("matchFillPriority ranks FOUND_NOT_FINAL before FILLED-with-gaps", () => {
-  const notFinal = match("m1", {
-    resultTraceState: "FOUND_NOT_FINAL",
-    resultFilled: false,
-    teamStats: { home: { goals: 1 }, away: { goals: 0 } },
-  });
-  const filledMissingCorners = match("m2", {
+test("propagateFillData copies stats and grades target predictions", () => {
+  const source = stubMatch("src", 101, {
+    predictions: {},
+    teamStats: {
+      home: { goals: 2, firstHalfGoals: 1, corners: 6 },
+      away: { goals: 1, firstHalfGoals: 0, corners: 5 },
+    },
     resultFilled: true,
     resultTraceState: "FILLED",
-    teamStats: { home: { goals: 2 }, away: { goals: 1 } },
   });
-  assert.ok(matchFillPriority(notFinal) < matchFillPriority(filledMissingCorners));
-});
 
-test("collectApiFillWorkItems skips future batches and sorts by priority", () => {
-  const items = collectApiFillWorkItems([
-    batch("future", "2099-01-01", [match("m-future")]),
-    batch("past", "2026-01-01", [
-      match("m-low", {
-        resultFilled: true,
-        resultTraceState: "FILLED",
-        teamStats: { home: { goals: 1, corners: 2 }, away: { goals: 0, corners: 1 } },
-      }),
-      match("m-high", {
-        resultTraceState: "FOUND_NOT_FINAL",
-        resultFilled: false,
-      }),
-    ]),
-  ]);
-  assert.equal(items.length, 2);
-  assert.equal(items[0]!.match.id, "m-high");
-  assert.equal(items[1]!.match.id, "m-low");
-});
+  const target = stubMatch("tgt", 101, {
+    predictions: { corners_ou: { prediction: "over", line: 9.5, confidence: 58 } },
+  });
 
-test("collectApiFillWorkItems respects batchId scope", () => {
-  const items = collectApiFillWorkItems(
-    [
-      batch("a", "2026-01-01", [match("m1")]),
-      batch("b", "2026-01-01", [match("m2")]),
-    ],
-    { batchId: "b" }
-  );
-  assert.equal(items.length, 1);
-  assert.equal(items[0]!.batchId, "b");
+  const propagated = propagateFillData(source, target);
+  assert.equal(propagated.teamStats?.home?.goals, 2);
+  assert.equal(propagated.teamStats?.home?.corners, 6);
+  assert.equal(propagated.resultFilled, true);
+  assert.equal(propagated.scored.corners_ou, "correct");
 });

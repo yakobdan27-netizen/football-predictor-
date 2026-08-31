@@ -9,8 +9,9 @@ import { syncPredictionLogFromLiveFixtures } from "@/lib/prediction-log/sync-fro
 import type { PredictionBatch } from "@/lib/prediction-log/types";
 import {
   runApiFillPass,
-  DEFAULT_MAX_MATCHES_PER_PASS,
   DEFAULT_TIME_BUDGET_MS,
+  collectApiFillWorkItems,
+  resolveMaxMatchesForWork,
 } from "./sync-batch-api-fill";
 import {
   persistUpdatedBatch,
@@ -27,7 +28,37 @@ export type SyncAllPredictionLogSummary = SyncResultsSummary & {
   liveMerged: number;
   liveUpdatedBatches: number;
   archivedBatchIds: string[];
+  rounds?: number;
 };
+
+const LOOP_MAX_ROUNDS = 15;
+const LOOP_TIME_BUDGET_MS = 55_000;
+
+async function persistApiFillPass(
+  pass: Awaited<ReturnType<typeof runApiFillPass>>
+): Promise<{ enrichUpdatedBatches: number; archivedBatchIds: string[]; errors: string[] }> {
+  let enrichUpdatedBatches = 0;
+  const archivedBatchIds: string[] = [];
+  const errors: string[] = [];
+  for (const [batchId, state] of pass.updatedBatches) {
+    try {
+      const updatedBatch = scoreBatchWithUpdatedMatches(
+        state.batch,
+        state.batch.matches.map((m) => state.byId.get(m.id) ?? m)
+      );
+      const { archived } = await persistUpdatedBatch(updatedBatch);
+      enrichUpdatedBatches += 1;
+      if (archived) archivedBatchIds.push(batchId);
+    } catch (e) {
+      errors.push(
+        `Failed to save ${state.batch.batchName}: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      );
+    }
+  }
+  return { enrichUpdatedBatches, archivedBatchIds, errors };
+}
 
 export async function syncAllPredictionLogFromApi(opts?: {
   batchId?: string;
@@ -38,7 +69,6 @@ export async function syncAllPredictionLogFromApi(opts?: {
 }): Promise<SyncAllPredictionLogSummary> {
   const started = Date.now();
   const timeBudgetMs = opts?.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS;
-  const maxMatches = opts?.maxMatches ?? DEFAULT_MAX_MATCHES_PER_PASS;
 
   const emptyTrace: TraceStatusCounts = {
     pending: 0,
@@ -125,39 +155,23 @@ export async function syncAllPredictionLogFromApi(opts?: {
 
   const pass = await runApiFillPass(batches, {
     batchId: opts?.batchId,
-    maxMatches,
+    maxMatches:
+      opts?.maxMatches ??
+      resolveMaxMatchesForWork(collectApiFillWorkItems(batches, { batchId: opts?.batchId })),
     timeBudgetMs: remainingBudget,
     startedAt: started,
   });
 
-  let enrichUpdatedBatches = 0;
-  const archivedBatchIds: string[] = [];
-  for (const [batchId, state] of pass.updatedBatches) {
-    try {
-      const updatedBatch = scoreBatchWithUpdatedMatches(
-        state.batch,
-        state.batch.matches.map((m) => state.byId.get(m.id) ?? m)
-      );
-      const { archived } = await persistUpdatedBatch(updatedBatch);
-      enrichUpdatedBatches += 1;
-      if (archived) archivedBatchIds.push(batchId);
-    } catch (e) {
-      pass.errors.push(
-        `Failed to save ${state.batch.batchName}: ${
-          e instanceof Error ? e.message : String(e)
-        }`
-      );
-    }
-  }
+  const persisted = await persistApiFillPass(pass);
 
   const totalUpdated =
-    traceSummary.updatedBatches + liveUpdatedBatches + enrichUpdatedBatches;
+    traceSummary.updatedBatches + liveUpdatedBatches + persisted.enrichUpdatedBatches;
 
   return {
     updatedBatches: totalUpdated,
     matchesSynced: traceSummary.matchesSynced + pass.filled,
     matchesNotFound: traceSummary.matchesNotFound,
-    errors: [...traceSummary.errors, ...liveErrors, ...pass.errors],
+    errors: [...traceSummary.errors, ...liveErrors, ...pass.errors, ...persisted.errors],
     conflicts: traceSummary.conflicts,
     unavailable: traceSummary.unavailable || pass.unavailable,
     trace: traceSummary.trace,
@@ -171,8 +185,87 @@ export async function syncAllPredictionLogFromApi(opts?: {
       ...new Set([
         ...traceSummary.archivedBatchIds,
         ...liveArchivedBatchIds,
-        ...archivedBatchIds,
+        ...persisted.archivedBatchIds,
       ]),
     ],
   };
+}
+
+/** Multi-round sync for crons — repeats until pending work is cleared or budget exhausted. */
+export async function syncAllPredictionLogFromApiLoop(opts?: {
+  batchId?: string;
+  maxMatches?: number;
+  timeBudgetMs?: number;
+  maxRounds?: number;
+  skipTrace?: boolean;
+  skipLive?: boolean;
+}): Promise<SyncAllPredictionLogSummary> {
+  const started = Date.now();
+  const timeBudgetMs = opts?.timeBudgetMs ?? LOOP_TIME_BUDGET_MS;
+  const maxRounds = opts?.maxRounds ?? LOOP_MAX_ROUNDS;
+
+  let aggregate: SyncAllPredictionLogSummary = {
+    updatedBatches: 0,
+    matchesSynced: 0,
+    matchesNotFound: 0,
+    errors: [],
+    conflicts: [],
+    trace: {
+      pending: 0,
+      foundNotFinal: 0,
+      filled: 0,
+      ambiguous: 0,
+      needsReview: 0,
+      retry: 0,
+    },
+    filled: 0,
+    enriched: 0,
+    failed: 0,
+    remaining: [],
+    liveMerged: 0,
+    liveUpdatedBatches: 0,
+    archivedBatchIds: [],
+    rounds: 0,
+  };
+
+  for (let round = 1; round <= maxRounds; round++) {
+    if (Date.now() - started >= timeBudgetMs) break;
+
+    const roundSummary = await syncAllPredictionLogFromApi({
+      ...opts,
+      timeBudgetMs: Math.max(5_000, timeBudgetMs - (Date.now() - started)),
+      skipTrace: round > 1 ? true : opts?.skipTrace,
+      skipLive: round > 1 ? true : opts?.skipLive,
+    });
+
+    aggregate = {
+      ...roundSummary,
+      updatedBatches: aggregate.updatedBatches + roundSummary.updatedBatches,
+      matchesSynced: aggregate.matchesSynced + roundSummary.matchesSynced,
+      matchesNotFound: aggregate.matchesNotFound + roundSummary.matchesNotFound,
+      errors: [...aggregate.errors, ...roundSummary.errors],
+      conflicts: [...aggregate.conflicts, ...roundSummary.conflicts],
+      filled: aggregate.filled + roundSummary.filled,
+      enriched: aggregate.enriched + roundSummary.enriched,
+      failed: aggregate.failed + roundSummary.failed,
+      remaining: roundSummary.remaining,
+      liveMerged: aggregate.liveMerged + roundSummary.liveMerged,
+      liveUpdatedBatches:
+        aggregate.liveUpdatedBatches + roundSummary.liveUpdatedBatches,
+      archivedBatchIds: [
+        ...new Set([
+          ...aggregate.archivedBatchIds,
+          ...roundSummary.archivedBatchIds,
+        ]),
+      ],
+      trace: roundSummary.trace,
+      unavailable: roundSummary.unavailable,
+      rounds: round,
+    };
+
+    if (roundSummary.unavailable) break;
+    if (roundSummary.remaining.length === 0) break;
+  }
+
+  return aggregate;
 }

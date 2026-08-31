@@ -938,12 +938,29 @@ export interface ClubCautionStat {
   reason: string;
 }
 
+export interface LossRecoveryRuleEntry {
+  league: string;
+  lostMarket: LogMarketKey;
+  lostPrediction: string;
+  lostLine?: number;
+  winMarket: LogMarketKey;
+  winPrediction: string;
+  winLine?: number;
+  winRate: number;
+  sample: number;
+  ruleText: string;
+}
+
 export interface LearnerAdvice {
   topReliableRanges: Array<{ band: OddsBandId; winRate: number; sample: number }>;
   cautiousClubs: ClubCautionStat[];
   suggestedCombinedOddsCeiling: number;
   batchPatternWarnings: string[];
   summaryLine: string;
+  /** Human-readable loss-recovery rules from weekend pick DB aggregation. */
+  lossRecoveryRules?: string[];
+  /** Structured rules for recommendation annotation matching. */
+  lossRecoveryRuleEntries?: LossRecoveryRuleEntry[];
 }
 
 export interface LearnerStatsStore {

@@ -10,6 +10,7 @@ import type {
   WeekendPortfolioResult,
 } from "@/lib/match-centre/weekend-portfolio";
 import { PORTFOLIO_TARGET_TOTAL } from "@/lib/match-centre/weekend-portfolio";
+import type { WeekendLearnerSyncResult } from "@/lib/prediction-log/weekend-analysis-learner";
 
 type WeekendApiResponse = {
   ok?: boolean;
@@ -23,6 +24,8 @@ type WeekendApiResponse = {
   portfolio?: WeekendPortfolioResult;
   warnings?: string[];
   filteredCount?: number;
+  learnerSync?: WeekendLearnerSyncResult | null;
+  weekendBatchId?: string;
 };
 
 function toneStyle(confidence: number | null): React.CSSProperties {
@@ -366,8 +369,12 @@ export function WeekendOpportunitiesApp() {
   const [data, setData] = useState<WeekendApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncingResults, setSyncingResults] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+
+  const weekendBatchId = data?.weekendBatchId ?? null;
 
   const load = useCallback(async (refresh: boolean) => {
     if (refresh) setRefreshing(true);
@@ -396,7 +403,50 @@ export function WeekendOpportunitiesApp() {
     void load(false);
   }, [load]);
 
+  async function syncResultsNow() {
+    if (!weekendBatchId) return;
+    setSyncingResults(true);
+    setSyncMsg("Syncing match results from API…");
+    let remaining: string[] = [];
+    let rounds = 0;
+    try {
+      do {
+        rounds++;
+        const res = await fetch("/api/sync-results", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchId: weekendBatchId, batchFill: true }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          unavailable?: boolean;
+          filled?: number;
+          enriched?: number;
+          remaining?: string[];
+        };
+        if (!res.ok || json.unavailable) {
+          throw new Error(json.error ?? "Result sync unavailable");
+        }
+        remaining = json.remaining ?? [];
+      } while (remaining.length > 0 && rounds < 15);
+
+      setSyncMsg(
+        remaining.length > 0
+          ? `${remaining.length} fixture(s) still pending after sync`
+          : "All saved weekend fixtures synced"
+      );
+      await load(true);
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : "Result sync failed");
+    } finally {
+      setSyncingResults(false);
+      setTimeout(() => setSyncMsg(null), 8000);
+    }
+  }
+
   const rows = data?.rows ?? [];
+  const learnerSync = data?.learnerSync;
 
   return (
     <main style={{ maxWidth: "72rem", margin: "0 auto" }}>
@@ -431,15 +481,61 @@ export function WeekendOpportunitiesApp() {
             </p>
           )}
         </div>
-        <button
-          type="button"
-          className="btn"
-          disabled={loading || refreshing}
-          onClick={() => void load(true)}
-        >
-          {refreshing ? "Refreshing…" : "Refresh from API"}
-        </button>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+          <button
+            type="button"
+            className="btn"
+            disabled={loading || refreshing}
+            onClick={() => void load(true)}
+          >
+            {refreshing ? "Refreshing…" : "Refresh from API"}
+          </button>
+          {weekendBatchId && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={loading || refreshing || syncingResults}
+              onClick={() => void syncResultsNow()}
+            >
+              {syncingResults ? "Syncing results…" : "Sync results now"}
+            </button>
+          )}
+        </div>
       </header>
+
+      {learnerSync && (
+        <div
+          style={{
+            padding: "0.65rem 0.85rem",
+            marginBottom: "0.75rem",
+            background: learnerSync.error
+              ? "rgba(239, 68, 68, 0.12)"
+              : "rgba(34, 197, 94, 0.12)",
+            borderRadius: 8,
+            fontSize: "0.9rem",
+          }}
+        >
+          {learnerSync.error ? (
+            <span>Save failed: {learnerSync.error}</span>
+          ) : (
+            <span>
+              Saved {learnerSync.saved} batch(es) to database
+              {learnerSync.pendingFill > 0
+                ? ` · ${learnerSync.pendingFill} fixture(s) awaiting results`
+                : " · all fixtures filled"}
+              {learnerSync.scoredPicks > 0
+                ? ` · ${learnerSync.scoredPicks} pick(s) graded for AI learner`
+                : ""}
+            </span>
+          )}
+        </div>
+      )}
+
+      {syncMsg && (
+        <p className="page-sub" style={{ marginBottom: "0.75rem" }}>
+          {syncMsg}
+        </p>
+      )}
 
       {loading && !data && (
         <p className="page-sub">Loading weekend opportunities…</p>

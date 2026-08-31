@@ -1162,6 +1162,98 @@ export const predictionLogSettlement = pgTable(
   })
 );
 
+/** Graded weekend-pick outcomes for AI Learner (source for loss-recovery rules). */
+export const aiLearnerPickOutcomes = pgTable(
+  "ai_learner_pick_outcomes",
+  {
+    id: serial("id").primaryKey(),
+    batchId: text("batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    weekendSurface: text("weekend_surface").notNull(),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    marketKey: text("market_key").notNull(),
+    prediction: text("prediction").notNull(),
+    line: real("line"),
+    confidence: integer("confidence"),
+    result: text("result").notNull(),
+    actualValue: text("actual_value"),
+    lossReason: text("loss_reason"),
+    ftHome: integer("ft_home"),
+    ftAway: integer("ft_away"),
+    htHome: integer("ht_home"),
+    htAway: integer("ht_away"),
+    cornersHome: integer("corners_home"),
+    cornersAway: integer("corners_away"),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    batchMatchMarketUniq: uniqueIndex("ai_learner_pick_outcomes_batch_match_market_uidx").on(
+      t.batchId,
+      t.matchId,
+      t.marketKey
+    ),
+    batchIdx: index("ai_learner_pick_outcomes_batch_idx").on(t.batchId),
+    leagueIdx: index("ai_learner_pick_outcomes_league_idx").on(t.league),
+    resultIdx: index("ai_learner_pick_outcomes_result_idx").on(t.result),
+  })
+);
+
+/** Aggregated loss-recovery rules from weekend pick history. */
+export const aiLearnerMarketRules = pgTable(
+  "ai_learner_market_rules",
+  {
+    id: serial("id").primaryKey(),
+    league: text("league").notNull(),
+    lostMarket: text("lost_market").notNull(),
+    lostPrediction: text("lost_prediction").notNull(),
+    lostLine: real("lost_line"),
+    winMarket: text("win_market").notNull(),
+    winPrediction: text("win_prediction").notNull(),
+    winLine: real("win_line"),
+    wins: integer("wins").notNull().default(0),
+    losses: integer("losses").notNull().default(0),
+    sample: integer("sample").notNull().default(0),
+    winRate: integer("win_rate"),
+    ruleText: text("rule_text").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    ruleUniq: uniqueIndex("ai_learner_market_rules_rule_uidx").on(
+      t.league,
+      t.lostMarket,
+      t.lostPrediction,
+      t.lostLine,
+      t.winMarket,
+      t.winPrediction,
+      t.winLine
+    ),
+    leagueIdx: index("ai_learner_market_rules_league_idx").on(t.league),
+    lostMarketIdx: index("ai_learner_market_rules_lost_market_idx").on(t.lostMarket),
+  })
+);
+
+/** Postgres mirror of LearnerStatsStore JSON for AI Learner recommendations. */
+export const aiLearnerStatsSnapshot = pgTable(
+  "ai_learner_stats_snapshot",
+  {
+    id: text("id").primaryKey(),
+    statsJson: text("stats_json").notNull(),
+    totalScoredPicks: integer("total_scored_picks").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  }
+);
+
+export type AiLearnerPickOutcome = typeof aiLearnerPickOutcomes.$inferSelect;
+export type NewAiLearnerPickOutcome = typeof aiLearnerPickOutcomes.$inferInsert;
+export type AiLearnerMarketRule = typeof aiLearnerMarketRules.$inferSelect;
+export type NewAiLearnerMarketRule = typeof aiLearnerMarketRules.$inferInsert;
+export type AiLearnerStatsSnapshot = typeof aiLearnerStatsSnapshot.$inferSelect;
+
 export const coreCoverageAudit = pgTable(
   "core_coverage_audit",
   {
