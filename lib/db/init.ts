@@ -1,7 +1,7 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 /** Bump when additive DDL changes so cold starts can skip full bootstrap. */
-const SCHEMA_BOOTSTRAP_VERSION = 5;
+const SCHEMA_BOOTSTRAP_VERSION = 7;
 
 let initialized = false;
 let ensureSchemaPromise: Promise<void> | null = null;
@@ -948,6 +948,208 @@ async function runEnsureSchema(): Promise<void> {
       updated_at timestamptz NOT NULL
     )
   `;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS ai_learner_market_reliability (
+      id serial PRIMARY KEY,
+      team text NOT NULL,
+      league text NOT NULL,
+      market_family text NOT NULL,
+      selection text NOT NULL,
+      line real,
+      wins integer NOT NULL DEFAULT 0,
+      losses integer NOT NULL DEFAULT 0,
+      sample integer NOT NULL DEFAULT 0,
+      win_rate integer,
+      rule_text text NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS ai_learner_market_reliability_uidx ON ai_learner_market_reliability (team, league, market_family, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_market_reliability_team_idx ON ai_learner_market_reliability (team)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_market_reliability_league_idx ON ai_learner_market_reliability (league)`;
+  await ddl`CREATE INDEX IF NOT EXISTS ai_learner_market_reliability_family_idx ON ai_learner_market_reliability (market_family)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_win_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_win_results_uidx ON weekend_market_win_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_win_results_batch_idx ON weekend_market_win_results (weekend_batch_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_win_results_league_idx ON weekend_market_win_results (league)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_half_goal_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_half_goal_results_uidx ON weekend_market_half_goal_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_half_goal_results_batch_idx ON weekend_market_half_goal_results (weekend_batch_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_corner_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      corners_1h_home integer,
+      corners_1h_away integer,
+      corners_2h_home integer,
+      corners_2h_away integer,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_corner_results_uidx ON weekend_market_corner_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_corner_results_batch_idx ON weekend_market_corner_results (weekend_batch_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_combo_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_combo_results_uidx ON weekend_market_combo_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_combo_results_batch_idx ON weekend_market_combo_results (weekend_batch_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_btts_halves_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_btts_halves_results_uidx ON weekend_market_btts_halves_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_btts_halves_results_batch_idx ON weekend_market_btts_halves_results (weekend_batch_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_draw_half_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_draw_half_results_uidx ON weekend_market_draw_half_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_draw_half_results_batch_idx ON weekend_market_draw_half_results (weekend_batch_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_total_goals_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_total_goals_results_uidx ON weekend_market_total_goals_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_total_goals_results_batch_idx ON weekend_market_total_goals_results (weekend_batch_id)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS weekend_market_stats_results (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      match_id text NOT NULL,
+      provider_fixture_id integer,
+      league text,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      match_date text,
+      selection text NOT NULL,
+      line real,
+      actual_value text,
+      result text NOT NULL,
+      was_weekend_pick integer NOT NULL DEFAULT 0,
+      filled_at timestamptz NOT NULL,
+      updated_at timestamptz NOT NULL
+    )
+  `;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS weekend_market_stats_results_uidx ON weekend_market_stats_results (weekend_batch_id, match_id, selection, line)`;
+  await ddl`CREATE INDEX IF NOT EXISTS weekend_market_stats_results_batch_idx ON weekend_market_stats_results (weekend_batch_id)`;
 
   await ddl`
     CREATE TABLE IF NOT EXISTS core_coverage_audit (

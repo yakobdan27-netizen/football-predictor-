@@ -2,13 +2,47 @@
  * Refresh team_ratings from hist half intensities (full 11y window).
  */
 import { eq } from "drizzle-orm";
+import { standardizeTeamName } from "@/lib/data/team-names";
 import { getDb } from "@/lib/db";
-import { teamRatings } from "@/lib/db/schema";
+import { histFixtures, teamRatings } from "@/lib/db/schema";
 import { apiLeagueId } from "@/lib/football-api/leagues";
 import { clampLambda, SHRINKAGE_K, shrinkRateTowardLeague } from "@/lib/prediction-log/model-config";
 import { computeTeamHalfFromHist } from "./team-half-intensities";
 import { leagueGoalAverageFromHist } from "./team-half-intensities";
 import { HIST_DOMESTIC_LEAGUES } from "./seasons";
+
+function teamKey(name: string): string {
+  return standardizeTeamName(name).trim().toLowerCase();
+}
+
+/** Distinct Big-5 team names per league from hist_fixtures. */
+export async function discoverDomesticTeamsFromHist(): Promise<
+  Record<string, string[]>
+> {
+  const db = await getDb();
+  const out: Record<string, string[]> = {};
+
+  for (const league of HIST_DOMESTIC_LEAGUES) {
+    const rows = await db
+      .select({
+        homeTeam: histFixtures.homeTeam,
+        awayTeam: histFixtures.awayTeam,
+      })
+      .from(histFixtures)
+      .where(eq(histFixtures.leagueId, league.id));
+
+    const teams = new Map<string, string>();
+    for (const r of rows) {
+      const hk = teamKey(r.homeTeam);
+      const ak = teamKey(r.awayTeam);
+      if (!teams.has(hk)) teams.set(hk, standardizeTeamName(r.homeTeam));
+      if (!teams.has(ak)) teams.set(ak, standardizeTeamName(r.awayTeam));
+    }
+    out[league.name] = [...teams.values()].sort();
+  }
+
+  return out;
+}
 
 export async function persistTeamRatingsForLeague(
   leagueName: string,

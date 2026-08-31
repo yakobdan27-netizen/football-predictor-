@@ -24,6 +24,7 @@ import {
   type WeekendLearnerSyncResult,
 } from "@/lib/prediction-log/weekend-analysis-learner";
 import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
+import { loadMarketReliability } from "@/lib/prediction-log/learner-market-reliability";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
@@ -139,6 +140,7 @@ export async function GET(request: Request) {
         matchCentreCache,
       });
       const calibrator = fitSlipCalibrator(allBatches);
+      const reliabilityEntries = await loadMarketReliability().catch(() => []);
       const ranked = rankWeekendOpportunities({
         fixtures: weekendFixtures,
         estimates,
@@ -152,6 +154,7 @@ export async function GET(request: Request) {
         batches: allBatches,
         analysis: null,
         shadowCompare: portfolioShadow,
+        reliabilityEntries,
       });
 
       return { ranked, portfolio, estimates };

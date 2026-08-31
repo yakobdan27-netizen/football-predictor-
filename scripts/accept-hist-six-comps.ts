@@ -82,7 +82,7 @@ async function main() {
     fails += 1;
   }
 
-  if (!check("HIST_LEAGUES has 6 competitions", HIST_LEAGUES.length === 6)) {
+  if (!check("HIST_LEAGUES has 8 competitions", HIST_LEAGUES.length === 8)) {
     fails += 1;
   }
   if (
@@ -98,7 +98,7 @@ async function main() {
   const okIds = new Set(
     confirm.leagues.filter((l) => l.ok).map((l) => l.expectedId)
   );
-  const need = [39, 140, 135, 78, 61, 2];
+  const need = [39, 140, 135, 78, 61, 2, 3, 848];
   const allOk = need.every((id) => okIds.has(id));
   if (
     !check(

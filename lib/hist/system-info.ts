@@ -1,9 +1,15 @@
 /**
  * Aggregated hist inventory + DIEH readiness for dashboard / status surfaces.
  */
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { histMeta } from "@/lib/db/schema";
+import {
+  histMeta,
+  teamHalfStats,
+  teamRatings,
+  teamSeasonStats,
+} from "@/lib/db/schema";
+import { sqlCount } from "@/lib/core/sql-count";
 import {
   auditHistCoverage,
   enrichmentGapQueueFromCoverage,
@@ -20,6 +26,8 @@ import {
   type HalfParamsStore,
 } from "./half-params-types";
 import { loadHalfParamsStore } from "./half-params";
+import { resolveHistSyncTier, type HistSyncMode } from "./preflight";
+import { HIST_LEAGUES } from "./seasons";
 
 export type DiehLeagueStatus = {
   leagueName: string;
@@ -30,6 +38,16 @@ export type DiehLeagueStatus = {
   kappaAdj: number;
   goalsDistribution: string;
   computedAt: string | null;
+};
+
+export type DerivedLeagueCounts = {
+  leagueId: number;
+  leagueName: string;
+  teamHalfStats: number;
+  teamRatings: number;
+  teamSeasonStats: number;
+  htMissingPct: number | null;
+  cornersMissingPct: number | null;
 };
 
 export type SystemInformation = {
@@ -44,11 +62,18 @@ export type SystemInformation = {
     leagues: DiehLeagueStatus[];
     readyCount: number;
   };
+  derived: {
+    histFixturesTotal: number;
+    coreFixturesTotal: number;
+    syncMode: HistSyncMode;
+    perLeague: DerivedLeagueCounts[];
+  };
   meta: {
     lastRunAt: string | null;
     lastSummary: string | null;
     apiPlan: string | null;
     apiRemaining: number | null;
+    syncMode: HistSyncMode;
   };
   drain: {
     gapsRemaining: number;
@@ -59,6 +84,60 @@ export type SystemInformation = {
     scheduleNote: string;
   };
 };
+
+async function loadDerivedLeagueCounts(
+  perCompetition: HistCoverageReport["perCompetition"]
+): Promise<DerivedLeagueCounts[]> {
+  const db = await getDb();
+  const halfRows = await db
+    .select({
+      leagueId: teamHalfStats.leagueId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(teamHalfStats)
+    .groupBy(teamHalfStats.leagueId);
+  const ratingRows = await db
+    .select({
+      leagueId: teamRatings.leagueId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(teamRatings)
+    .groupBy(teamRatings.leagueId);
+  const seasonRows = await db
+    .select({
+      leagueId: teamSeasonStats.leagueId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(teamSeasonStats)
+    .groupBy(teamSeasonStats.leagueId);
+
+  const halfMap = new Map(halfRows.map((r) => [r.leagueId, Number(r.n)]));
+  const ratingMap = new Map(ratingRows.map((r) => [r.leagueId, Number(r.n)]));
+  const seasonMap = new Map(seasonRows.map((r) => [r.leagueId, Number(r.n)]));
+  const compMap = new Map(
+    perCompetition.map((c) => [c.leagueId, c] as const)
+  );
+
+  return HIST_LEAGUES.map((league) => {
+    const comp = compMap.get(league.id);
+    const stored = comp?.stored ?? 0;
+    const withHt = comp?.withHt ?? 0;
+    const withCorners = comp?.withCorners ?? 0;
+    return {
+      leagueId: league.id,
+      leagueName: league.name,
+      teamHalfStats: halfMap.get(league.id) ?? 0,
+      teamRatings: ratingMap.get(league.id) ?? 0,
+      teamSeasonStats: seasonMap.get(league.id) ?? 0,
+      htMissingPct:
+        stored > 0 ? Math.round((1 - withHt / stored) * 1000) / 10 : null,
+      cornersMissingPct:
+        stored > 0
+          ? Math.round((1 - withCorners / stored) * 1000) / 10
+          : null,
+    };
+  });
+}
 
 export async function buildSystemInformation(): Promise<SystemInformation> {
   const coverage = await auditHistCoverage();
@@ -108,6 +187,27 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
     gatePass && enrichmentGapsRemaining > 0 ? "enrichment" : "gap-priority";
   const maxChunks = cronMaxChunksFromEnv();
   const interleave = cronInterleaveEnrichmentFromEnv();
+  const syncTier = resolveHistSyncTier(metaRow?.remaining ?? null, true);
+
+  let histFixturesTotal = 0;
+  let coreFixturesTotal = 0;
+  let perLeague: DerivedLeagueCounts[] = [];
+  try {
+    const db = await getDb();
+    histFixturesTotal = await sqlCount(
+      db,
+      "SELECT count(*)::int AS c FROM hist_fixtures"
+    );
+    coreFixturesTotal = await sqlCount(
+      db,
+      "SELECT count(*)::int AS c FROM core_fixture"
+    );
+    perLeague = await loadDerivedLeagueCounts(coverage.perCompetition);
+  } catch {
+    perLeague = [];
+  }
+
+  const gateTotal = coverage.summary.total;
 
   return {
     generatedAt: new Date().toISOString(),
@@ -122,24 +222,31 @@ export async function buildSystemInformation(): Promise<SystemInformation> {
       leagues: diehLeagues,
       readyCount: diehLeagues.filter((l) => l.diehReady).length,
     },
+    derived: {
+      histFixturesTotal,
+      coreFixturesTotal,
+      syncMode: syncTier.syncMode,
+      perLeague,
+    },
     meta: {
       lastRunAt: metaRow?.lastRunAt?.toISOString() ?? null,
       lastSummary: metaRow?.lastSummary ?? null,
       apiPlan: metaRow?.plan ?? null,
       apiRemaining: metaRow?.remaining ?? null,
+      syncMode: syncTier.syncMode,
     },
     drain: {
       gapsRemaining,
       enrichmentGapsRemaining,
       totalStored,
       mode: drainMode,
-      scheduleUtc: ["05:00", "09:00", "13:00", "17:00", "21:00"],
+      scheduleUtc: ["04:00", "05:00", "06:00", "09:00"],
       scheduleNote:
         gatePass && enrichmentGapsRemaining > 0
-          ? `Cron /api/cron/hist-backfill · enrichment phase · ${enrichmentGapsRemaining} HT/corners gaps`
+          ? `Cron /api/cron/hist-backfill · enrichment phase · ${enrichmentGapsRemaining} HT/corners gaps · sync=${syncTier.syncMode}`
           : interleave
-            ? `Cron /api/cron/hist-backfill · gap-priority · inventory until 66/66 · ≤${maxChunks} chunks/${HIST_CRON_DEADLINE_MS_DEFAULT / 1000}s · interleaved HT/corners`
-            : `Cron /api/cron/hist-backfill · gap-priority · inventory until 66/66 · ≤${maxChunks} chunks/${HIST_CRON_DEADLINE_MS_DEFAULT / 1000}s`,
+            ? `Cron hist 05:00 + core 06:00 · gap-priority until ${gateTotal}/${gateTotal} · ≤${maxChunks} chunks · sync=${syncTier.syncMode}`
+            : `Cron hist 05:00 + core 06:00 · gap-priority until ${gateTotal}/${gateTotal} · ≤${maxChunks} chunks`,
     },
   };
 }

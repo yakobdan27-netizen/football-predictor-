@@ -14,7 +14,11 @@ import {
 } from "@/lib/prediction-log/corners-model";
 import { scorePortfolioProposition } from "@/lib/market-advisory/score-portfolio-proposition";
 import type { AgreementStatus, AdvisoryTier } from "@/lib/market-advisory/types";
-import type { AnalysisHistory, PredictionBatch } from "@/lib/prediction-log/types";
+import type { AnalysisHistory, MarketReliabilityEntry, PredictionBatch } from "@/lib/prediction-log/types";
+import {
+  lookupPortfolioReliabilityBoost,
+  portfolioLegToMarketSelection,
+} from "@/lib/prediction-log/learner-market-reliability";
 import type { BinCalibrator } from "@/lib/predictor/calibration";
 import {
   legToMarketCode,
@@ -71,6 +75,8 @@ export type PortfolioPickTrace = {
   agreementStatus?: AgreementStatus;
   advisoryStatus?: AdvisoryTier;
   ineligibilityReasons?: string[];
+  learnerReliabilityNote?: string;
+  learnerReliabilityBoost?: number;
 };
 
 export type PortfolioPick = {
@@ -144,6 +150,8 @@ export type PortfolioCategoryScore = {
   advisoryStatus: AdvisoryTier;
   msamEligible: boolean;
   ineligibilityReasons: string[];
+  learnerReliabilityNote?: string;
+  learnerReliabilityBoost?: number;
 };
 
 function kickoffMs(iso: string): number {
@@ -206,6 +214,8 @@ function toPortfolioPick(
       agreementStatus: score.agreementStatus,
       advisoryStatus: score.advisoryStatus,
       ineligibilityReasons: score.ineligibilityReasons,
+      learnerReliabilityNote: score.learnerReliabilityNote,
+      learnerReliabilityBoost: score.learnerReliabilityBoost,
     },
   };
 }
@@ -303,7 +313,8 @@ function scoreCategoryCollaborative(
   estimate: CanonicalFixtureEstimate,
   calibrator: BinCalibrator | null,
   batches: PredictionBatch[],
-  analysis: AnalysisHistory | null
+  analysis: AnalysisHistory | null,
+  reliabilityEntries: MarketReliabilityEntry[]
 ): PortfolioCategoryScore | null {
   const leg = scoreCategoryLeg(category, fixture, estimate, calibrator, batches);
   if (!leg) return null;
@@ -319,13 +330,33 @@ function scoreCategoryCollaborative(
   });
   if (!collab || collab.finalAdvisoryScore == null) return null;
 
+  let finalAdvisoryScore = collab.finalAdvisoryScore;
+  let learnerReliabilityNote: string | undefined;
+  let learnerReliabilityBoost: number | undefined;
+
+  const mapping = portfolioLegToMarketSelection(category, leg);
+  if (mapping && reliabilityEntries.length > 0) {
+    const rel = lookupPortfolioReliabilityBoost({
+      homeTeam: fixture.home.name,
+      awayTeam: fixture.away.name,
+      league: fixture.league,
+      mapping,
+      entries: reliabilityEntries,
+    });
+    if (rel.boost !== 0) {
+      finalAdvisoryScore = Math.max(0, finalAdvisoryScore + rel.boost);
+      learnerReliabilityBoost = rel.boost;
+      learnerReliabilityNote = rel.note ?? undefined;
+    }
+  }
+
   return {
     fixture,
     leg,
     marketCode,
     pRaw: collab.pRaw,
     pCalibrated: collab.pCalibrated,
-    finalAdvisoryScore: collab.finalAdvisoryScore,
+    finalAdvisoryScore,
     msamScore: collab.msamScore,
     msamNormalizedScore: collab.msamNormalizedScore,
     existingNormalizedScore: collab.existingNormalizedScore,
@@ -334,6 +365,8 @@ function scoreCategoryCollaborative(
     advisoryStatus: collab.advisoryStatus,
     msamEligible: collab.msamEligible,
     ineligibilityReasons: collab.ineligibilityReasons,
+    learnerReliabilityNote,
+    learnerReliabilityBoost,
   };
 }
 
@@ -350,6 +383,7 @@ function buildCategoryRankings(input: {
   calibrator: BinCalibrator | null;
   batches: PredictionBatch[];
   analysis: AnalysisHistory | null;
+  reliabilityEntries?: MarketReliabilityEntry[];
 }): CategoryRanking[] {
   const estimateById = new Map<number, CanonicalFixtureEstimate>();
   for (let i = 0; i < input.fixtures.length; i++) {
@@ -382,7 +416,8 @@ function buildCategoryRankings(input: {
         estimate,
         input.calibrator,
         input.batches,
-        input.analysis
+        input.analysis,
+        input.reliabilityEntries ?? []
       );
       if (score) ranked.push(score);
     }
@@ -468,6 +503,7 @@ export function curateWeekendPortfolio(input: {
   batches: PredictionBatch[];
   analysis?: AnalysisHistory | null;
   shadowCompare?: boolean;
+  reliabilityEntries?: MarketReliabilityEntry[];
 }): WeekendPortfolioResult {
   const rankings = buildCategoryRankings({
     fixtures: input.fixtures,
@@ -475,6 +511,7 @@ export function curateWeekendPortfolio(input: {
     calibrator: input.calibrator,
     batches: input.batches,
     analysis: input.analysis ?? null,
+    reliabilityEntries: input.reliabilityEntries,
   });
   const reducible = rankings.filter((r) =>
     REDUCIBLE_CATEGORIES.some((c) => c.id === r.id)

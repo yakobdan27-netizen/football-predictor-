@@ -12,7 +12,9 @@ export {
   HIST_SEASON_DECAY_BASE,
 } from "./seasons";
 export type { HistCompType, HistLeagueDef, HistJobKey } from "./seasons";
-export { runHistPreflight, readHistMeta } from "./preflight";
+export { runHistPreflight, readHistMeta, resolveHistSyncTier } from "./preflight";
+export type { HistSyncMode, HistPreflight } from "./preflight";
+export { recomputeDerivedFromHist } from "./recompute-derived";
 export { runHistBackfillChunk } from "./backfill";
 export type { HistBackfillChunkSummary } from "./backfill";
 export { histJobsSummary, ensureHistJobs } from "./store";

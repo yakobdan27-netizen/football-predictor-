@@ -34,15 +34,22 @@ export function AiLearnerApp() {
   const [dbMeta, setDbMeta] = useState<{
     weekendOutcomeCount: number;
     marketRulesCount: number;
+    marketReliabilityCount: number;
   } | null>(null);
 
   useEffect(() => {
     void fetch("/api/learner-stats")
       .then((r) => r.json())
-      .then((json: { weekendOutcomeCount?: number; marketRulesCount?: number }) => {
+      .then(
+        (json: {
+          weekendOutcomeCount?: number;
+          marketRulesCount?: number;
+          marketReliabilityCount?: number;
+        }) => {
         setDbMeta({
           weekendOutcomeCount: json.weekendOutcomeCount ?? 0,
           marketRulesCount: json.marketRulesCount ?? 0,
+          marketReliabilityCount: json.marketReliabilityCount ?? 0,
         });
       })
       .catch(() => setDbMeta(null));
@@ -167,7 +174,8 @@ export function AiLearnerApp() {
             <>
               {" "}
               · Database outcomes: <strong>{dbMeta.weekendOutcomeCount}</strong> · Active rules:{" "}
-              <strong>{dbMeta.marketRulesCount}</strong>
+              <strong>{dbMeta.marketRulesCount}</strong> · Market reliability:{" "}
+              <strong>{dbMeta.marketReliabilityCount}</strong>
             </>
           )}
         </p>

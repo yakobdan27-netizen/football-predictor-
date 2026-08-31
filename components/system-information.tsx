@@ -19,6 +19,20 @@ type SystemInfo = {
       withHt: number;
     }>;
   };
+  derived: {
+    histFixturesTotal: number;
+    coreFixturesTotal: number;
+    syncMode: string;
+    perLeague: Array<{
+      leagueId: number;
+      leagueName: string;
+      teamHalfStats: number;
+      teamRatings: number;
+      teamSeasonStats: number;
+      htMissingPct: number | null;
+      cornersMissingPct: number | null;
+    }>;
+  };
   dieh: {
     fittedAt: string | null;
     minValid: number;
@@ -35,6 +49,7 @@ type SystemInfo = {
     lastSummary: string | null;
     apiPlan: string | null;
     apiRemaining: number | null;
+    syncMode: string;
   };
   drain: {
     gapsRemaining: number;
@@ -139,11 +154,19 @@ export function SystemInformation() {
           {info.meta.apiRemaining != null
             ? ` · API remaining: ${info.meta.apiRemaining}`
             : ""}
+          {info.meta.syncMode
+            ? ` · sync mode: ${info.meta.syncMode}`
+            : ""}
           {info.meta.lastRunAt
             ? ` · run ${new Date(info.meta.lastRunAt).toLocaleString()}`
             : ""}
         </p>
       )}
+
+      <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "0 0 0.75rem" }}>
+        Fixtures: {info.derived.histFixturesTotal.toLocaleString()} hist ·{" "}
+        {info.derived.coreFixturesTotal.toLocaleString()} core_fixture
+      </p>
 
       <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "0 0 0.75rem" }}>
         Daily drain: {info.drain.scheduleNote} · cron{" "}
@@ -165,10 +188,57 @@ export function SystemInformation() {
           <div className="stat-label">Hist fixtures stored</div>
         </div>
         <div>
+          <div className="stat-value">{info.derived.coreFixturesTotal.toLocaleString()}</div>
+          <div className="stat-label">Core fixtures</div>
+        </div>
+        <div>
           <div className="stat-value">{info.drain.gapsRemaining}</div>
           <div className="stat-label">Gap buckets left</div>
         </div>
       </div>
+
+      <details style={{ marginBottom: "0.75rem" }}>
+        <summary style={{ cursor: "pointer", fontSize: "0.85rem", fontWeight: 600 }}>
+          Derived tables per league
+        </summary>
+        <table
+          style={{
+            width: "100%",
+            fontSize: "0.75rem",
+            marginTop: "0.5rem",
+            borderCollapse: "collapse",
+          }}
+        >
+          <thead>
+            <tr style={{ textAlign: "left", color: "var(--muted)" }}>
+              <th style={{ padding: "4px 6px" }}>League</th>
+              <th style={{ padding: "4px 6px" }}>Half stats</th>
+              <th style={{ padding: "4px 6px" }}>Ratings</th>
+              <th style={{ padding: "4px 6px" }}>Season stats</th>
+              <th style={{ padding: "4px 6px" }}>HT null %</th>
+              <th style={{ padding: "4px 6px" }}>Corners null %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {info.derived.perLeague.map((row) => (
+              <tr key={row.leagueId}>
+                <td style={{ padding: "4px 6px" }}>{row.leagueName}</td>
+                <td style={{ padding: "4px 6px" }}>{row.teamHalfStats}</td>
+                <td style={{ padding: "4px 6px" }}>{row.teamRatings}</td>
+                <td style={{ padding: "4px 6px" }}>{row.teamSeasonStats}</td>
+                <td style={{ padding: "4px 6px" }}>
+                  {row.htMissingPct != null ? `${row.htMissingPct}%` : "—"}
+                </td>
+                <td style={{ padding: "4px 6px" }}>
+                  {row.cornersMissingPct != null
+                    ? `${row.cornersMissingPct}%`
+                    : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
 
       {info.dieh.fittedAt && (
         <p style={{ fontSize: "0.75rem", color: "var(--muted)", margin: "0 0 0.75rem" }}>

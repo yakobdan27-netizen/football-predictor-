@@ -21,6 +21,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron/core-backfill",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/cron/match-centre-results",
       "schedule": "0 8 * * *"
     },
@@ -84,6 +88,9 @@
       "maxDuration": 60
     },
     "app/api/cron/core-integrity/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/core-backfill/route.ts": {
       "maxDuration": 60
     },
     "app/api/cron/live-daily-sweep/route.ts": {

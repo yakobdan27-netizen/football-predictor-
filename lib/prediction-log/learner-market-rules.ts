@@ -17,6 +17,13 @@ import type {
   ScoreResult,
 } from "./types";
 import type { WeekendPickOutcomeExtract } from "./persist-weekend-learner-db";
+import {
+  loadMarketTableWinsGroupedByMatch,
+  mergeWinningAlternatives,
+  outcomeMatchKey,
+  winningAlternativesFromMarketRows,
+  type MarketTableWinRow,
+} from "./learner-market-reliability";
 
 export const MIN_RULE_SAMPLE = 3;
 
@@ -187,7 +194,8 @@ function buildRuleText(acc: RuleAccumulator, winRate: number): string {
 
 /** Pure aggregation from outcome rows (testable without DB). */
 export function aggregateLossRecoveryRules(
-  outcomes: WeekendPickOutcomeExtract[]
+  outcomes: WeekendPickOutcomeExtract[],
+  marketWinsByMatch?: Map<string, MarketTableWinRow[]>
 ): NewAiLearnerMarketRule[] {
   const wrongOutcomes = outcomes.filter((o) => o.result === "wrong");
   const totalWrongByLost = new Map<string, number>();
@@ -202,7 +210,24 @@ export function aggregateLossRecoveryRules(
   }
 
   for (const row of wrongOutcomes) {
-    const alternatives = findWinningAlternatives(row);
+    const fromFacts = findWinningAlternatives(row);
+    const matchKey = outcomeMatchKey(
+      row.batchId,
+      row.matchId,
+      row.providerFixtureId,
+      row.matchDate
+    );
+    const fromTables = marketWinsByMatch
+      ? winningAlternativesFromMarketRows(
+          {
+            marketKey: row.marketKey,
+            prediction: row.prediction,
+            line: row.line,
+          },
+          marketWinsByMatch.get(matchKey) ?? []
+        )
+      : [];
+    const alternatives = mergeWinningAlternatives(fromFacts, fromTables);
     if (alternatives.length === 0) continue;
     const league = row.league ?? "*";
 
@@ -303,7 +328,10 @@ export async function recomputeAndPersistMarketRules(): Promise<number> {
   const db = await getDb();
   const rows = await db.select().from(aiLearnerPickOutcomes);
   const extracts = rows.map(outcomeRowFromDb);
-  const rules = aggregateLossRecoveryRules(extracts);
+  const marketWinsByMatch = await loadMarketTableWinsGroupedByMatch().catch(
+    () => new Map<string, MarketTableWinRow[]>()
+  );
+  const rules = aggregateLossRecoveryRules(extracts, marketWinsByMatch);
 
   await db.delete(aiLearnerMarketRules);
 

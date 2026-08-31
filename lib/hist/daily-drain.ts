@@ -11,6 +11,7 @@ import {
 } from "./coverage-audit";
 import { runHistBackfillChunk } from "./backfill";
 import type { HistBackfillChunkSummary } from "./backfill";
+import { runHistPreflight, type HistSyncMode } from "./preflight";
 
 export type DailyDrainResult = {
   ok: boolean;
@@ -33,6 +34,7 @@ export type DailyDrainResult = {
     | "error"
     | "no_gaps"
     | "enrichment_complete";
+  syncMode?: HistSyncMode;
   lastChunk: HistBackfillChunkSummary | null;
   error?: string;
 };
@@ -135,6 +137,35 @@ async function refitHalfParamsIfNeeded(
   }
 }
 
+async function recomputeDerivedIfNeeded(
+  totalEnriched: number,
+  invBefore: number,
+  invAfter: number
+): Promise<void> {
+  if (totalEnriched <= 0 && invAfter <= invBefore) return;
+  try {
+    const { recomputeDerivedFromHist } = await import("./recompute-derived");
+    const result = await recomputeDerivedFromHist();
+    console.log(
+      `[daily-drain] derived recompute: half=${result.teamHalfStats.written} ratings=${result.teamRatings.written}`
+    );
+  } catch (e) {
+    console.warn(
+      "[daily-drain] derived recompute skipped:",
+      e instanceof Error ? e.message : e
+    );
+  }
+}
+
+async function postDrainHooks(
+  totalEnriched: number,
+  invBefore: number,
+  invAfter: number
+): Promise<void> {
+  await refitHalfParamsIfNeeded(totalEnriched, invBefore, invAfter);
+  await recomputeDerivedIfNeeded(totalEnriched, invBefore, invAfter);
+}
+
 function buildResult(
   partial: Omit<DailyDrainResult, "ok"> & { ok?: boolean }
 ): DailyDrainResult {
@@ -149,9 +180,44 @@ export async function runDailyHistDrain(opts?: {
   deadlineMs?: number;
   interleaveEnrichment?: boolean;
 }): Promise<DailyDrainResult> {
-  const maxChunks = Math.max(
+  const preflight = await runHistPreflight();
+  const finish = (
+    partial: Omit<DailyDrainResult, "ok"> & { ok?: boolean }
+  ): DailyDrainResult =>
+    buildResult({ syncMode: preflight.syncMode, ...partial });
+
+  if (preflight.abort) {
+    const before = await auditHistCoverage().catch(() => null);
+    return finish({
+      ok: false,
+      gatePass: before
+        ? before.summary.inventoryPass >= before.summary.total
+        : false,
+      inventoryPass: before?.summary.inventoryPass ?? 0,
+      total: before?.summary.total ?? 0,
+      providerHoles: before?.summary.providerHoles ?? 0,
+      chunksAttempted: 0,
+      totalEnriched: 0,
+      htFilled: 0,
+      cornersFilled: 0,
+      phase: "inventory",
+      enrichmentGapsRemaining: before
+        ? enrichmentGapQueueFromCoverage(before).length
+        : 0,
+      stoppedReason: "quota",
+      syncMode: preflight.syncMode,
+      lastChunk: null,
+      error: preflight.reason ?? "preflight abort",
+    });
+  }
+
+  const envMax = Math.max(
     1,
     Math.min(20, opts?.maxChunks ?? cronMaxChunksFromEnv())
+  );
+  const maxChunks = Math.max(
+    1,
+    Math.min(envMax, preflight.recommendedMaxChunks)
   );
   const deadlineMs = opts?.deadlineMs ?? HIST_CRON_DEADLINE_MS_DEFAULT;
   const deadlineAt =
@@ -174,7 +240,7 @@ export async function runDailyHistDrain(opts?: {
   });
 
   if (!initial.hasWork) {
-    return buildResult({
+    return finish({
       gatePass: inv0 >= before.summary.total,
       inventoryPass: inv0,
       total: before.summary.total,
@@ -196,7 +262,7 @@ export async function runDailyHistDrain(opts?: {
   for (let i = 0; i < maxChunks; i++) {
     if (Date.now() >= deadlineAt && chunksAttempted > 0) {
       const after = await auditHistCoverage().catch(() => before);
-      await refitHalfParamsIfNeeded(
+      await postDrainHooks(
         totalEnriched,
         inv0,
         after.summary.inventoryPass
@@ -205,7 +271,7 @@ export async function runDailyHistDrain(opts?: {
         interleave,
         inventorySinceEnrich,
       });
-      return buildResult({
+      return finish({
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
         total: after.summary.total,
@@ -228,12 +294,12 @@ export async function runDailyHistDrain(opts?: {
     });
     phase = pick.phase;
     if (!pick.hasWork) {
-      await refitHalfParamsIfNeeded(
+      await postDrainHooks(
         totalEnriched,
         inv0,
         live.summary.inventoryPass
       );
-      return buildResult({
+      return finish({
         gatePass: live.summary.inventoryPass >= live.summary.total,
         inventoryPass: live.summary.inventoryPass,
         total: live.summary.total,
@@ -256,7 +322,7 @@ export async function runDailyHistDrain(opts?: {
         mode: phase,
       });
     } catch (e) {
-      return buildResult({
+      return finish({
         ok: false,
         gatePass: false,
         inventoryPass: inv0,
@@ -285,12 +351,12 @@ export async function runDailyHistDrain(opts?: {
 
     if (lastChunk.quotaAbort || lastChunk.preflight.abort) {
       const after = await auditHistCoverage().catch(() => before);
-      await refitHalfParamsIfNeeded(
+      await postDrainHooks(
         totalEnriched,
         inv0,
         after.summary.inventoryPass
       );
-      return buildResult({
+      return finish({
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
         total: after.summary.total,
@@ -309,12 +375,12 @@ export async function runDailyHistDrain(opts?: {
     }
     if (lastChunk.done) {
       const after = await auditHistCoverage().catch(() => before);
-      await refitHalfParamsIfNeeded(
+      await postDrainHooks(
         totalEnriched,
         inv0,
         after.summary.inventoryPass
       );
-      return buildResult({
+      return finish({
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
         total: after.summary.total,
@@ -333,12 +399,12 @@ export async function runDailyHistDrain(opts?: {
     }
     if (!lastChunk.ok && lastChunk.error) {
       const after = await auditHistCoverage().catch(() => before);
-      await refitHalfParamsIfNeeded(
+      await postDrainHooks(
         totalEnriched,
         inv0,
         after.summary.inventoryPass
       );
-      return buildResult({
+      return finish({
         ok: false,
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
@@ -360,7 +426,7 @@ export async function runDailyHistDrain(opts?: {
 
     if (Date.now() >= deadlineAt) {
       const after = await auditHistCoverage().catch(() => before);
-      await refitHalfParamsIfNeeded(
+      await postDrainHooks(
         totalEnriched,
         inv0,
         after.summary.inventoryPass
@@ -369,7 +435,7 @@ export async function runDailyHistDrain(opts?: {
         interleave,
         inventorySinceEnrich,
       });
-      return buildResult({
+      return finish({
         gatePass: after.summary.inventoryPass >= after.summary.total,
         inventoryPass: after.summary.inventoryPass,
         total: after.summary.total,
@@ -388,7 +454,7 @@ export async function runDailyHistDrain(opts?: {
 
   const after = await auditHistCoverage().catch(() => before);
 
-  await refitHalfParamsIfNeeded(
+  await postDrainHooks(
     totalEnriched,
     inv0,
     after.summary.inventoryPass

@@ -1,6 +1,8 @@
 import { generateRecommendedBatch } from "./generate-recommended-batch";
 import { isCautiousClub, isWeakOddsBandForLearner, learnerConfidenceForOdds } from "./ai-learner";
 import { findMatchingLossRecoveryRule } from "./learner-market-rules";
+import { findTeamMarketReliability } from "./learner-market-reliability";
+import { selectionKey } from "./weekend-market-results";
 import {
   isRiskyCharacteristicsMatchup,
   teamCharacteristicsMatchScore,
@@ -38,6 +40,43 @@ function combinedOddsOfMatches(matches: RecommendedMatch[]): number | null {
   }
   if (count === 0) return null;
   return Math.round(product * 100) / 100;
+}
+
+function marketKeyToFamily(key: LogMarketKey): string | null {
+  switch (key) {
+    case "1x2":
+    case "double_chance":
+    case "win_one_half":
+    case "ht_1x2":
+    case "handicap":
+    case "ht_handicap":
+    case "three_way_handicap":
+      return "win";
+    case "more_goals_half":
+      return "halfGoal";
+    case "corners_ou":
+    case "home_corners_ou":
+      return "corner";
+    case "btts":
+      return "bttsHalves";
+    case "draw_one_half":
+      return "drawHalf";
+    case "total_goals_ou":
+    case "home_goals_ou":
+    case "away_goals_ou":
+      return "totalGoals";
+    case "shots_ou":
+    case "home_shots_ou":
+    case "away_shots_ou":
+    case "sot_ou":
+    case "home_sot_ou":
+    case "away_sot_ou":
+    case "throw_ins_ou":
+    case "offsides_ou":
+      return "stats";
+    default:
+      return null;
+  }
 }
 
 function annotatePick(
@@ -107,6 +146,31 @@ function annotatePick(
   );
   if (recoveryRule && selected) {
     learnerWhy += ` Weekend history: ${recoveryRule.ruleText}`;
+  }
+
+  if (selected && marketKey) {
+    const family = marketKeyToFamily(marketKey);
+    const relSelection = selectionKey(marketKey, pick.prediction);
+    const reliabilityPool = [
+      ...(stats.advice.topTeamMarkets ?? []),
+      ...(stats.advice.weakTeamMarkets ?? []),
+    ];
+    if (family && reliabilityPool.length > 0) {
+      for (const team of [homeTeam, awayTeam]) {
+        const rel = findTeamMarketReliability(
+          team,
+          league,
+          family,
+          relSelection,
+          pick.line ?? null,
+          reliabilityPool
+        );
+        if (rel) {
+          learnerWhy += ` Weekend market history: ${rel.ruleText}`;
+          break;
+        }
+      }
+    }
   }
 
   return {

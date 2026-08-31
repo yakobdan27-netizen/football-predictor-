@@ -1254,6 +1254,297 @@ export type AiLearnerMarketRule = typeof aiLearnerMarketRules.$inferSelect;
 export type NewAiLearnerMarketRule = typeof aiLearnerMarketRules.$inferInsert;
 export type AiLearnerStatsSnapshot = typeof aiLearnerStatsSnapshot.$inferSelect;
 
+/** Aggregated team/market win rates from weekend per-market result tables. */
+export const aiLearnerMarketReliability = pgTable(
+  "ai_learner_market_reliability",
+  {
+    id: serial("id").primaryKey(),
+    team: text("team").notNull(),
+    league: text("league").notNull(),
+    marketFamily: text("market_family").notNull(),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    wins: integer("wins").notNull().default(0),
+    losses: integer("losses").notNull().default(0),
+    sample: integer("sample").notNull().default(0),
+    winRate: integer("win_rate"),
+    ruleText: text("rule_text").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("ai_learner_market_reliability_uidx").on(
+      t.team,
+      t.league,
+      t.marketFamily,
+      t.selection,
+      t.line
+    ),
+    teamIdx: index("ai_learner_market_reliability_team_idx").on(t.team),
+    leagueIdx: index("ai_learner_market_reliability_league_idx").on(t.league),
+    familyIdx: index("ai_learner_market_reliability_family_idx").on(t.marketFamily),
+  })
+);
+
+export type AiLearnerMarketReliability = typeof aiLearnerMarketReliability.$inferSelect;
+export type NewAiLearnerMarketReliability = typeof aiLearnerMarketReliability.$inferInsert;
+
+/** Shared weekend market result row shape (family A — win / result markets). */
+export const weekendMarketWinResults = pgTable(
+  "weekend_market_win_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_win_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_win_results_batch_idx").on(t.weekendBatchId),
+    leagueIdx: index("weekend_market_win_results_league_idx").on(t.league),
+  })
+);
+
+export const weekendMarketHalfGoalResults = pgTable(
+  "weekend_market_half_goal_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_half_goal_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_half_goal_results_batch_idx").on(
+      t.weekendBatchId
+    ),
+  })
+);
+
+export const weekendMarketCornerResults = pgTable(
+  "weekend_market_corner_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    corners1hHome: integer("corners_1h_home"),
+    corners1hAway: integer("corners_1h_away"),
+    corners2hHome: integer("corners_2h_home"),
+    corners2hAway: integer("corners_2h_away"),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_corner_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_corner_results_batch_idx").on(t.weekendBatchId),
+  })
+);
+
+export const weekendMarketComboResults = pgTable(
+  "weekend_market_combo_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_combo_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_combo_results_batch_idx").on(t.weekendBatchId),
+  })
+);
+
+export const weekendMarketBttsHalvesResults = pgTable(
+  "weekend_market_btts_halves_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_btts_halves_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_btts_halves_results_batch_idx").on(
+      t.weekendBatchId
+    ),
+  })
+);
+
+export const weekendMarketDrawHalfResults = pgTable(
+  "weekend_market_draw_half_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_draw_half_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_draw_half_results_batch_idx").on(
+      t.weekendBatchId
+    ),
+  })
+);
+
+export const weekendMarketTotalGoalsResults = pgTable(
+  "weekend_market_total_goals_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_total_goals_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_total_goals_results_batch_idx").on(
+      t.weekendBatchId
+    ),
+  })
+);
+
+export const weekendMarketStatsResults = pgTable(
+  "weekend_market_stats_results",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    matchId: text("match_id").notNull(),
+    providerFixtureId: integer("provider_fixture_id"),
+    league: text("league"),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    matchDate: text("match_date"),
+    selection: text("selection").notNull(),
+    line: real("line"),
+    actualValue: text("actual_value"),
+    result: text("result").notNull(),
+    wasWeekendPick: integer("was_weekend_pick").notNull().default(0),
+    filledAt: timestamp("filled_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  (t) => ({
+    uniq: uniqueIndex("weekend_market_stats_results_uidx").on(
+      t.weekendBatchId,
+      t.matchId,
+      t.selection,
+      t.line
+    ),
+    batchIdx: index("weekend_market_stats_results_batch_idx").on(t.weekendBatchId),
+  })
+);
+
+export type WeekendMarketWinResult = typeof weekendMarketWinResults.$inferSelect;
+export type NewWeekendMarketWinResult = typeof weekendMarketWinResults.$inferInsert;
+
 export const coreCoverageAudit = pgTable(
   "core_coverage_audit",
   {

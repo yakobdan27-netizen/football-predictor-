@@ -29,6 +29,16 @@ export const HIST_LEAGUES: readonly HistLeagueDef[] = [
     id: LEAGUE_API_IDS["UEFA Champions League"],
     type: "cup",
   },
+  {
+    name: "UEFA Europa League",
+    id: LEAGUE_API_IDS["UEFA Europa League"],
+    type: "cup",
+  },
+  {
+    name: "UEFA Europa Conference League",
+    id: LEAGUE_API_IDS["UEFA Europa Conference League"],
+    type: "cup",
+  },
 ] as const;
 
 /** Domestic leagues only (exclude cups from intensity / BETA / priors). */

@@ -242,11 +242,10 @@ test("test_upcoming_batch_ladder_matches_hsh_p2h_gt_1h", async () => {
   });
 });
 
-test("test_inventory_gate_helper_counts_66_buckets", async () => {
-  // Structural gate: auditor always returns 6 comps × 11 seasons.
-  // Live inventoryPass=66/66 is enforced by scripts/drain-hist-gaps.ts (quota-bound).
+test("test_inventory_gate_helper_counts_88_buckets", async () => {
+  // Structural gate: auditor returns 8 comps × 11 completed seasons.
   const { HIST_LEAGUES, HIST_COMPLETED_SEASON_COUNT } = await import(
     "@/lib/hist/seasons"
   );
-  assert.equal(HIST_LEAGUES.length * HIST_COMPLETED_SEASON_COUNT, 66);
+  assert.equal(HIST_LEAGUES.length * HIST_COMPLETED_SEASON_COUNT, 88);
 });

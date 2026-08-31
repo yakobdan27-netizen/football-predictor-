@@ -54,6 +54,36 @@ function report(buckets: HistCoverageBucket[]): HistCoverageReport {
   };
 }
 
+test("gapQueueFromCoverage seeds empty league before partial PL bucket", () => {
+  const plPartial = bucket({
+    leagueId: 39,
+    leagueName: "Premier League",
+    season: 2024,
+    inventoryPass: false,
+    stored_fixtures: 190,
+    expected_fixtures: 380,
+    completeness: "missing",
+  });
+  const laLigaEmpty = bucket({
+    leagueId: 140,
+    leagueName: "La Liga",
+    season: 2015,
+    inventoryPass: false,
+    stored_fixtures: 0,
+    expected_fixtures: 380,
+    completeness: "missing",
+  });
+  const r = report([plPartial, laLigaEmpty]);
+  r.perCompetition = [
+    { leagueId: 39, leagueName: "Premier League", compType: "league", stored: 190, withCorners: 0, withHt: 0 },
+    { leagueId: 140, leagueName: "La Liga", compType: "league", stored: 0, withCorners: 0, withHt: 0 },
+  ];
+  const gaps = gapQueueFromCoverage(r);
+  assert.equal(gaps.length, 2);
+  assert.equal(gaps[0]!.leagueId, 140);
+  assert.equal(gaps[0]!.season, 2015);
+});
+
 test("resolveHistDrainPhase picks inventory when gaps remain and interleave off", () => {
   const invGap = bucket({
     leagueId: 39,

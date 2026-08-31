@@ -1,27 +1,24 @@
 import { NextResponse } from "next/server";
 import { ensureSchema } from "@/lib/db/init";
-import { recomputeLeaguePriors } from "@/lib/hist/league-priors";
-import { persistTeamHalfStatsFromHist } from "@/lib/hist/persist-team-half-stats";
-import { recomputeLeagueBetas } from "@/lib/hist/recompute-betas";
+import { recomputeDerivedFromHist } from "@/lib/hist/recompute-derived";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
 
 /**
  * POST /api/hist/recompute-betas
- * Empirical BETA_2H + league priors + team_half_stats from hist_*.
+ * Empirical BETA_2H + league priors + team_half_stats + team_ratings from hist_*.
  */
 export async function POST() {
   try {
     await ensureSchema();
-    const betas = await recomputeLeagueBetas();
-    const priors = await recomputeLeaguePriors();
-    const half = await persistTeamHalfStatsFromHist();
+    const result = await recomputeDerivedFromHist();
     return NextResponse.json({
       ok: true,
-      betas,
-      priors,
-      teamHalfStats: half,
+      betas: result.betas,
+      priors: result.priors,
+      teamHalfStats: result.teamHalfStats,
+      teamRatings: result.teamRatings,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

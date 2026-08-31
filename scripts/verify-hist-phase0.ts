@@ -38,6 +38,8 @@ const EXPECTED: Array<{ name: string; id: number; type: string }> = [
   { name: "Bundesliga", id: 78, type: "league" },
   { name: "Ligue 1", id: 61, type: "league" },
   { name: "UEFA Champions League", id: 2, type: "cup" },
+  { name: "UEFA Europa League", id: 3, type: "cup" },
+  { name: "UEFA Europa Conference League", id: 848, type: "cup" },
 ];
 
 async function main() {
@@ -90,8 +92,8 @@ async function main() {
     process.exit(1);
   }
 
-  if (HIST_LEAGUES.length !== 6) {
-    console.error(`FAIL HIST_LEAGUES length: expected 6, got ${HIST_LEAGUES.length}`);
+  if (HIST_LEAGUES.length !== 8) {
+    console.error(`FAIL HIST_LEAGUES length: expected 8, got ${HIST_LEAGUES.length}`);
     process.exit(1);
   }
 
@@ -133,15 +135,15 @@ async function main() {
 
   const keys = histJobKeys();
   console.log(
-    `PASS job keys: ${keys.length} (expect 6×12=${6 * 12} with current)`
+    `PASS job keys: ${keys.length} (expect 8×12=${8 * 12} with current)`
   );
-  if (keys.length !== 72) {
-    console.error(`FAIL job keys: expected 72, got ${keys.length}`);
+  if (keys.length !== 96) {
+    console.error(`FAIL job keys: expected 96, got ${keys.length}`);
     process.exit(1);
   }
 
   console.log(
-    `Phase 0 summary: PASS plan=${plan} remaining=${remaining ?? "?"} leagues=6/6 seasons=${seasons.length} jobs=${keys.length}`
+    `Phase 0 summary: PASS plan=${plan} remaining=${remaining ?? "?"} leagues=8/8 seasons=${seasons.length} jobs=${keys.length}`
   );
 }
 

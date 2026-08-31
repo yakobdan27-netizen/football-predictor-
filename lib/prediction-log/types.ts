@@ -938,6 +938,17 @@ export interface ClubCautionStat {
   reason: string;
 }
 
+export interface MarketReliabilityEntry {
+  team: string;
+  league: string;
+  marketFamily: string;
+  selection: string;
+  line?: number;
+  winRate: number;
+  sample: number;
+  ruleText: string;
+}
+
 export interface LossRecoveryRuleEntry {
   league: string;
   lostMarket: LogMarketKey;
@@ -961,6 +972,10 @@ export interface LearnerAdvice {
   lossRecoveryRules?: string[];
   /** Structured rules for recommendation annotation matching. */
   lossRecoveryRuleEntries?: LossRecoveryRuleEntry[];
+  /** Strong team/market patterns from weekend pool history (win rate >= 65%). */
+  topTeamMarkets?: MarketReliabilityEntry[];
+  /** Weak team/market patterns from weekend pool history (win rate <= 35%). */
+  weakTeamMarkets?: MarketReliabilityEntry[];
 }
 
 export interface LearnerStatsStore {

@@ -102,6 +102,28 @@ export function LearnerAdvicePanel({ stats, enabled }: LearnerAdvicePanelProps) 
             </ul>
           </div>
         )}
+
+        {(advice.topTeamMarkets?.length ?? 0) > 0 && (
+          <div>
+            <div className="stat-label">Team market patterns (weekend pool history)</div>
+            <ul style={{ fontSize: "0.8125rem", paddingLeft: "1.25rem", margin: 0 }}>
+              {advice.topTeamMarkets!.slice(0, 8).map((r) => (
+                <li key={`${r.team}-${r.selection}-${r.line ?? ""}`}>{r.ruleText}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {(advice.weakTeamMarkets?.length ?? 0) > 0 && (
+          <div>
+            <div className="stat-label">Weak team market patterns</div>
+            <ul style={{ fontSize: "0.8125rem", paddingLeft: "1.25rem", margin: 0, color: "var(--warn)" }}>
+              {advice.weakTeamMarkets!.slice(0, 5).map((r) => (
+                <li key={`${r.team}-${r.selection}-${r.line ?? ""}`}>{r.ruleText}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.75rem" }}>

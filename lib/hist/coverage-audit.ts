@@ -337,14 +337,20 @@ export function hasEmptyCompetition(report: HistCoverageReport): boolean {
 
 /**
  * Gap queue for inventory gate:
- * 1) Finish buckets already started (highest fill < 0.98 first)
- * 2) Then empty/missing (domestics before cups, older seasons first)
+ * 1) Seed leagues with zero total stored (perCompetition) before deep-finishing partial buckets
+ * 2) Among empty leagues: domestic before cups, oldest season first
+ * 3) Among started leagues: finish closest to 0.98 first (deep-first within league)
  * Skip full + honest provider holes.
  */
 export function gapQueueFromCoverage(
   report: HistCoverageReport
 ): HistCoverageBucket[] {
   const cupRank = (t: "league" | "cup"): number => (t === "league" ? 0 : 1);
+  const leagueStored = new Map(
+    report.perCompetition.map((c) => [c.leagueId, c.stored] as const)
+  );
+  const leagueIsEmpty = (leagueId: number): boolean =>
+    (leagueStored.get(leagueId) ?? 0) === 0;
   const fillOf = (b: HistCoverageBucket): number =>
     b.expected_fixtures > 0
       ? b.stored_fixtures / b.expected_fixtures
@@ -355,11 +361,16 @@ export function gapQueueFromCoverage(
   return report.buckets
     .filter((b) => !b.inventoryPass && !b.providerHole)
     .sort((a, b) => {
-      const aFill = fillOf(a);
-      const bFill = fillOf(b);
+      const aEmptyLeague = leagueIsEmpty(a.leagueId) ? 0 : 1;
+      const bEmptyLeague = leagueIsEmpty(b.leagueId) ? 0 : 1;
+      if (aEmptyLeague !== bEmptyLeague) return aEmptyLeague - bEmptyLeague;
+
       const aStarted = a.stored_fixtures > 0 ? 0 : 1;
       const bStarted = b.stored_fixtures > 0 ? 0 : 1;
       if (aStarted !== bStarted) return aStarted - bStarted;
+
+      const aFill = fillOf(a);
+      const bFill = fillOf(b);
       // Among started: closest to 0.98 first (finish seasons).
       if (aStarted === 0 && aFill !== bFill) return bFill - aFill;
       const c = cupRank(a.compType) - cupRank(b.compType);

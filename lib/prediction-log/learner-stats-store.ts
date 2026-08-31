@@ -8,9 +8,15 @@ import {
   recomputeAndPersistMarketRules,
 } from "./learner-market-rules";
 import {
+  loadMarketReliability,
+  pickTopAndWeakTeamMarkets,
+  recomputeAndPersistMarketReliability,
+} from "./learner-market-reliability";
+import {
   persistWeekendLearnerFromBatches,
 } from "./persist-weekend-learner-db";
-import type { LearnerStatsStore, PredictionBatch } from "./types";
+import { persistWeekendMarketFamilyResults } from "./weekend-market-results";
+import type { LearnerStatsStore, MarketReliabilityEntry, PredictionBatch } from "./types";
 import { getDb } from "@/lib/db";
 import { aiLearnerStatsSnapshot } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -28,6 +34,22 @@ function mergeMarketRulesIntoStats(
       ...stats.advice,
       lossRecoveryRules: rules.map((r) => r.ruleText),
       lossRecoveryRuleEntries: rules,
+    },
+  };
+}
+
+function mergeMarketReliabilityIntoStats(
+  stats: LearnerStatsStore,
+  reliability: MarketReliabilityEntry[]
+): LearnerStatsStore {
+  if (reliability.length === 0) return stats;
+  const { topTeamMarkets, weakTeamMarkets } = pickTopAndWeakTeamMarkets(reliability);
+  return {
+    ...stats,
+    advice: {
+      ...stats.advice,
+      topTeamMarkets,
+      weakTeamMarkets,
     },
   };
 }
@@ -78,20 +100,32 @@ export async function persistLearnerStatsSnapshot(
 }
 
 export async function loadLearnerStatsStore(): Promise<LearnerStatsStore> {
-  const rules = await loadLearnerMarketRules().catch(() => [] as Awaited<
-    ReturnType<typeof loadLearnerMarketRules>
-  >);
+  const [rules, reliability] = await Promise.all([
+    loadLearnerMarketRules().catch(() => [] as Awaited<
+      ReturnType<typeof loadLearnerMarketRules>
+    >),
+    loadMarketReliability().catch(() => [] as MarketReliabilityEntry[]),
+  ]);
 
   const fromDb = await loadLearnerStatsFromDb();
   if (fromDb) {
-    return mergeMarketRulesIntoStats(fromDb, rules);
+    return mergeMarketReliabilityIntoStats(
+      mergeMarketRulesIntoStats(fromDb, rules),
+      reliability
+    );
   }
 
   const stored = await getJson<LearnerStatsStore>(KV_KEYS.learnerStats);
   if (!stored?.oddsRanges) {
-    return mergeMarketRulesIntoStats(emptyLearnerStats(), rules);
+    return mergeMarketReliabilityIntoStats(
+      mergeMarketRulesIntoStats(emptyLearnerStats(), rules),
+      reliability
+    );
   }
-  return mergeMarketRulesIntoStats(stored, rules);
+  return mergeMarketReliabilityIntoStats(
+    mergeMarketRulesIntoStats(stored, rules),
+    reliability
+  );
 }
 
 export async function saveLearnerStatsStore(stats: LearnerStatsStore): Promise<void> {
@@ -108,15 +142,23 @@ export async function recomputeAndPersistLearnerStats(
 ): Promise<LearnerStatsStore> {
   const batches = allBatches ?? (await loadAllBatches());
   await persistWeekendLearnerFromBatches(batches).catch(() => null);
+  await persistWeekendMarketFamilyResults(batches).catch(() => null);
+  await recomputeAndPersistMarketReliability().catch(() => null);
   await recomputeAndPersistMarketRules().catch(() => null);
 
   const clubProfiles = recomputeClubProfiles(batches);
   let stats = recomputeLearnerStats(batches, null, clubProfiles);
 
-  const rules = await loadLearnerMarketRules().catch(() => [] as Awaited<
-    ReturnType<typeof loadLearnerMarketRules>
-  >);
-  stats = mergeMarketRulesIntoStats(stats, rules);
+  const [rules, reliability] = await Promise.all([
+    loadLearnerMarketRules().catch(() => [] as Awaited<
+      ReturnType<typeof loadLearnerMarketRules>
+    >),
+    loadMarketReliability().catch(() => [] as MarketReliabilityEntry[]),
+  ]);
+  stats = mergeMarketReliabilityIntoStats(
+    mergeMarketRulesIntoStats(stats, rules),
+    reliability
+  );
 
   await saveLearnerStatsStore(stats);
   return stats;

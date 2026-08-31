@@ -2,7 +2,7 @@ import { LEAGUE_API_IDS } from "@/lib/football-api/leagues";
 import type { LeagueOption } from "@/lib/prediction-log/markets-config";
 
 /**
- * Competitions for historical stats backfill (Big-5 + UCL/UEL).
+ * Competitions for historical stats backfill (Big-5 + UCL/UEL/UECL).
  * Intentionally separate from LIVE_SYNC_LEAGUES (live poll / daily sweep).
  */
 export const STATS_BACKFILL_LEAGUES = [
@@ -13,6 +13,7 @@ export const STATS_BACKFILL_LEAGUES = [
   "Ligue 1",
   "UEFA Champions League",
   "UEFA Europa League",
+  "UEFA Europa Conference League",
 ] as const satisfies readonly LeagueOption[];
 
 export type StatsBackfillLeague = (typeof STATS_BACKFILL_LEAGUES)[number];
