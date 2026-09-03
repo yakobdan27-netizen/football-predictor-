@@ -70,6 +70,8 @@ Tables are created automatically on first API request (`ensureSchema` in `lib/db
 | `TELEGRAM_WEBHOOK_SECRET` | Optional | Secret token verified on `POST /api/telegram/webhook` |
 | `INTERNAL_API_KEY` | Optional | Shared secret for `/api/internal/*` (header `x-internal-api-key`) |
 | `CRON_SECRET` | Optional | Bearer token for Vercel cron routes (`/api/cron/*`, bulk history) |
+| `OPENAI_API_KEY` | Optional | OpenAI API key for `/openai-predictions` weekend picks (server-only; never commit) |
+| `OPENAI_MODEL` | Optional | OpenAI model for weekend picks (default `gpt-4o-mini`; e.g. `gpt-4o` for higher quality) |
 
 ### Telegram bot (external users)
 

@@ -171,6 +171,9 @@
     "app/api/match-centre/weekend-opportunities/route.ts": {
       "maxDuration": 120
     },
+    "app/api/openai-weekend-predictions/route.ts": {
+      "maxDuration": 120
+    },
     "app/api/fixtures/recent-results/route.ts": {
       "maxDuration": 30
     },

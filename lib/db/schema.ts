@@ -1796,3 +1796,73 @@ export const marketAdvisoryAuditEvents = pgTable(
 
 export type MarketAdvisoryRun = typeof marketAdvisoryRuns.$inferSelect;
 export type MarketAdvisoryCandidate = typeof marketAdvisoryCandidates.$inferSelect;
+
+/** One OpenAI generation run for a weekend batch. */
+export const openaiWeekendPredictionRuns = pgTable(
+  "openai_weekend_prediction_runs",
+  {
+    id: serial("id").primaryKey(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    model: text("model").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull(),
+    matchCount: integer("match_count").notNull().default(0),
+    summaryJson: text("summary_json"),
+  },
+  (t) => ({
+    batchIdx: index("openai_weekend_prediction_runs_batch_idx").on(
+      t.weekendBatchId
+    ),
+    generatedIdx: index("openai_weekend_prediction_runs_generated_idx").on(
+      t.generatedAt
+    ),
+  })
+);
+
+/** Individual OpenAI pick per fixture within a run. */
+export const openaiWeekendPredictions = pgTable(
+  "openai_weekend_predictions",
+  {
+    id: serial("id").primaryKey(),
+    runId: integer("run_id").notNull(),
+    weekendBatchId: text("weekend_batch_id").notNull(),
+    apiFixtureId: integer("api_fixture_id").notNull(),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    league: text("league").notNull(),
+    kickoffIso: text("kickoff_iso").notNull(),
+    marketFamily: text("market_family").notNull(),
+    marketLabel: text("market_label").notNull(),
+    selectionKey: text("selection_key").notNull(),
+    line: real("line"),
+    comboId: text("combo_id"),
+    prediction: text("prediction").notNull(),
+    confidencePct: integer("confidence_pct").notNull(),
+    rationale: text("rationale").notNull(),
+    systemMarket: text("system_market"),
+    systemPrediction: text("system_prediction"),
+    systemProbabilityPct: integer("system_probability_pct"),
+    result: text("result"),
+    gradedAt: timestamp("graded_at", { withTimezone: true }),
+  },
+  (t) => ({
+    runIdx: index("openai_weekend_predictions_run_idx").on(t.runId),
+    batchIdx: index("openai_weekend_predictions_batch_idx").on(t.weekendBatchId),
+    fixtureIdx: index("openai_weekend_predictions_fixture_idx").on(
+      t.apiFixtureId
+    ),
+    runFixtureUniq: uniqueIndex("openai_weekend_predictions_run_fixture_uidx").on(
+      t.runId,
+      t.apiFixtureId
+    ),
+  })
+);
+
+export type OpenaiWeekendPredictionRun =
+  typeof openaiWeekendPredictionRuns.$inferSelect;
+export type NewOpenaiWeekendPredictionRun =
+  typeof openaiWeekendPredictionRuns.$inferInsert;
+export type OpenaiWeekendPrediction =
+  typeof openaiWeekendPredictions.$inferSelect;
+export type NewOpenaiWeekendPrediction =
+  typeof openaiWeekendPredictions.$inferInsert;

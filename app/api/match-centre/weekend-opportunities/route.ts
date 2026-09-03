@@ -1,47 +1,32 @@
 import { NextResponse } from "next/server";
 import { unstable_cache } from "next/cache";
-import {
-  fetchUpcomingForLeague,
-  NEXT_MATCHES_LEAGUES,
-} from "@/lib/football-api/fetch-upcoming-league";
-import { registerMatchCentreFixtures } from "@/lib/match-centre/register-fixtures";
-import {
-  filterWeekendFixtures,
-  rankWeekendOpportunities,
-} from "@/lib/match-centre/weekend-opportunities";
-import { curateWeekendPortfolio } from "@/lib/match-centre/weekend-portfolio";
-import { preloadMatchCentreHalfRates } from "@/lib/match-centre/team-half-rates";
-import { loadAllBatches } from "@/lib/prediction-log/club-store";
-import { buildUpcomingPredictionBatch } from "@/lib/prediction-log/batch-fixture-picker";
-import {
-  collectBatchTeamLeaguePairs,
-  estimateBatchCanonicalAsync,
-} from "@/lib/prediction-log/canonical-fixture-estimate";
-import { fitSlipCalibrator } from "@/lib/slip-builder/slip-calibration";
 import { sumFilterReasons } from "@/lib/football-api/fixture-eligibility";
+import {
+  buildWeekendPool,
+  normalizeWeekendBatch,
+} from "@/lib/match-centre/build-weekend-pool";
+import { curateWeekendPortfolio } from "@/lib/match-centre/weekend-portfolio";
+import { buildUpcomingPredictionBatch } from "@/lib/prediction-log/batch-fixture-picker";
+import { loadAllBatches } from "@/lib/prediction-log/club-store";
 import {
   persistWeekendAnalysisLearnerBatches,
   type WeekendLearnerSyncResult,
 } from "@/lib/prediction-log/weekend-analysis-learner";
 import { recomputeAndPersistLearnerStats } from "@/lib/prediction-log/learner-stats-store";
-import { loadMarketReliability } from "@/lib/prediction-log/learner-market-reliability";
+import { filterWeekendFixtures } from "@/lib/match-centre/weekend-opportunities";
+import {
+  fetchUpcomingForLeague,
+  NEXT_MATCHES_LEAGUES,
+} from "@/lib/football-api/fetch-upcoming-league";
 
 export const maxDuration = 120;
 export const runtime = "nodejs";
 
 const WEEKEND_CACHE_SECONDS = 300;
 
-function normalizeWeekendBatch(batch: NonNullable<ReturnType<typeof buildUpcomingPredictionBatch>>) {
-  const weekendId = `WEEKEND-${batch.date}`;
-  return {
-    ...batch,
-    id: weekendId,
-    batchName: "Weekend Picks Pool",
-    matches: batch.matches.map((m, i) => ({
-      ...m,
-      id: `${weekendId}-m${i + 1}`,
-    })),
-  };
+function apiSeasonFallback(): number {
+  const d = new Date();
+  return d.getUTCMonth() >= 7 ? d.getUTCFullYear() : d.getUTCFullYear() - 1;
 }
 
 export async function GET(request: Request) {
@@ -72,7 +57,6 @@ export async function GET(request: Request) {
       )
     );
 
-    const allFixtures = leagueResults.flatMap((r) => r.fixtures);
     const filteredCount = leagueResults.reduce(
       (n, r) => n + (r.filteredCount ?? 0),
       0
@@ -80,28 +64,16 @@ export async function GET(request: Request) {
     const filterReasons = sumFilterReasons(
       leagueResults.map((r) => r.filterReasons ?? {})
     );
+
+    const allFixtures = leagueResults.flatMap((r) => r.fixtures);
     const weekendFixtures = filterWeekendFixtures(allFixtures);
-
-    if (weekendFixtures.length > 0) {
-      registerMatchCentreFixtures(
-        weekendFixtures.map((f) => ({
-          apiFixtureId: f.apiFixtureId,
-          kickoffIso: f.kickoffIso,
-          matchDate: f.matchDate,
-          status: f.status,
-          home: f.home,
-          away: f.away,
-          venue: f.venue,
-          leagueId: f.leagueId,
-          league: f.league,
-        }))
-      ).catch(() => {});
-    }
-
     const rawBatch = buildUpcomingPredictionBatch(weekendFixtures);
     const batch = rawBatch ? normalizeWeekendBatch(rawBatch) : null;
 
     if (!batch || batch.matches.length === 0) {
+      const warnings = leagueResults
+        .filter((r) => r.warning)
+        .map((r) => `${r.league}: ${r.warning}`);
       return NextResponse.json({
         ok: true,
         generatedAt: new Date().toISOString(),
@@ -110,54 +82,33 @@ export async function GET(request: Request) {
         insufficientPool: true,
         rows: [],
         warnings: [
+          ...warnings,
           "No upcoming fixtures in the next 7 days across the five leagues.",
         ],
-        leagueErrors: leagueResults
-          .filter((r) => r.warning)
-          .map((r) => `${r.league}: ${r.warning}`),
         filteredCount,
         filterReasons,
       });
     }
 
-    type ScoredPayload = {
-      ranked: Awaited<ReturnType<typeof rankWeekendOpportunities>>;
+    type ScoredPayload = Awaited<ReturnType<typeof buildWeekendPool>> & {
       portfolio: ReturnType<typeof curateWeekendPortfolio>;
-      estimates: Awaited<ReturnType<typeof estimateBatchCanonicalAsync>>;
     };
 
     const runScoring = async (): Promise<ScoredPayload> => {
-      const [matchCentreCache, allBatches] = await Promise.all([
-        preloadMatchCentreHalfRates(collectBatchTeamLeaguePairs(batch)).catch(
-          () => undefined
-        ),
-        loadAllBatches().catch(() => [] as Awaited<
-          ReturnType<typeof loadAllBatches>
-        >),
-      ]);
-
-      const estimates = await estimateBatchCanonicalAsync(batch, [batch], {
-        matchCentreCache,
-      });
-      const calibrator = fitSlipCalibrator(allBatches);
-      const reliabilityEntries = await loadMarketReliability().catch(() => []);
-      const ranked = rankWeekendOpportunities({
-        fixtures: weekendFixtures,
-        estimates,
-        calibrator,
-      });
-
+      const pool = await buildWeekendPool({ refresh: true });
+      const allBatches = await loadAllBatches().catch(
+        () => [] as Awaited<ReturnType<typeof loadAllBatches>>
+      );
       const portfolio = curateWeekendPortfolio({
-        fixtures: weekendFixtures,
-        estimates,
-        calibrator,
+        fixtures: pool.weekendFixtures,
+        estimates: pool.estimates,
+        calibrator: scored.calibrator,
         batches: allBatches,
         analysis: null,
         shadowCompare: portfolioShadow,
-        reliabilityEntries,
+        reliabilityEntries: pool.reliabilityEntries,
       });
-
-      return { ranked, portfolio, estimates };
+      return { ...pool, portfolio };
     };
 
     const dayKey = batch.date;
@@ -172,7 +123,7 @@ export async function GET(request: Request) {
       learnerSync = await persistWeekendAnalysisLearnerBatches({
         baseBatch: batch,
         estimates: scored.estimates,
-        weekendRows: scored.ranked.rows,
+        weekendRows: scored.rows,
         portfolioPicks: scored.portfolio.picks,
       });
       await recomputeAndPersistLearnerStats().catch(() => {});
@@ -186,10 +137,7 @@ export async function GET(request: Request) {
       };
     }
 
-    const result = scored.ranked;
-    const portfolio = scored.portfolio;
-
-    const warnings: string[] = [];
+    const warnings: string[] = [...scored.warnings];
     for (const r of leagueResults) {
       if (r.warning) warnings.push(`${r.league}: ${r.warning}`);
     }
@@ -197,12 +145,12 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       generatedAt: new Date().toISOString(),
-      window: result.window,
-      fixturePoolCount: result.fixturePoolCount,
-      selectedCount: result.selectedCount,
-      insufficientPool: result.insufficientPool,
-      rows: result.rows,
-      portfolio,
+      window: scored.window,
+      fixturePoolCount: scored.fixturePoolCount,
+      selectedCount: scored.rows.length,
+      insufficientPool: scored.insufficientPool,
+      rows: scored.rows,
+      portfolio: scored.portfolio,
       warnings,
       filteredCount,
       filterReasons,
@@ -218,9 +166,4 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
-}
-
-function apiSeasonFallback(): number {
-  const d = new Date();
-  return d.getUTCMonth() >= 7 ? d.getUTCFullYear() : d.getUTCFullYear() - 1;
 }

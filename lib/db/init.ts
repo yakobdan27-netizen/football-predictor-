@@ -1,7 +1,7 @@
 import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
 /** Bump when additive DDL changes so cold starts can skip full bootstrap. */
-const SCHEMA_BOOTSTRAP_VERSION = 7;
+const SCHEMA_BOOTSTRAP_VERSION = 8;
 
 let initialized = false;
 let ensureSchemaPromise: Promise<void> | null = null;
@@ -1456,6 +1456,50 @@ async function runEnsureSchema(): Promise<void> {
       backfill_complete integer NOT NULL DEFAULT 0
     )
   `;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS openai_weekend_prediction_runs (
+      id serial PRIMARY KEY,
+      weekend_batch_id text NOT NULL,
+      model text NOT NULL,
+      prompt_version text NOT NULL,
+      generated_at timestamptz NOT NULL,
+      match_count integer NOT NULL DEFAULT 0,
+      summary_json text
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS openai_weekend_prediction_runs_batch_idx ON openai_weekend_prediction_runs (weekend_batch_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS openai_weekend_prediction_runs_generated_idx ON openai_weekend_prediction_runs (generated_at)`;
+
+  await ddl`
+    CREATE TABLE IF NOT EXISTS openai_weekend_predictions (
+      id serial PRIMARY KEY,
+      run_id integer NOT NULL,
+      weekend_batch_id text NOT NULL,
+      api_fixture_id integer NOT NULL,
+      home_team text NOT NULL,
+      away_team text NOT NULL,
+      league text NOT NULL,
+      kickoff_iso text NOT NULL,
+      market_family text NOT NULL,
+      market_label text NOT NULL,
+      selection_key text NOT NULL,
+      line real,
+      combo_id text,
+      prediction text NOT NULL,
+      confidence_pct integer NOT NULL,
+      rationale text NOT NULL,
+      system_market text,
+      system_prediction text,
+      system_probability_pct integer,
+      result text,
+      graded_at timestamptz
+    )
+  `;
+  await ddl`CREATE INDEX IF NOT EXISTS openai_weekend_predictions_run_idx ON openai_weekend_predictions (run_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS openai_weekend_predictions_batch_idx ON openai_weekend_predictions (weekend_batch_id)`;
+  await ddl`CREATE INDEX IF NOT EXISTS openai_weekend_predictions_fixture_idx ON openai_weekend_predictions (api_fixture_id)`;
+  await ddl`CREATE UNIQUE INDEX IF NOT EXISTS openai_weekend_predictions_run_fixture_uidx ON openai_weekend_predictions (run_id, api_fixture_id)`;
 
   await ddl`
     INSERT INTO app_schema_meta (id, version, updated_at)

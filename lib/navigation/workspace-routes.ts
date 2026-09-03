@@ -166,6 +166,12 @@ export const MORE_NAV = [
     icon: "📅",
   },
   { href: "/ai-learner", label: "AI", desktopLabel: "AI Learner", icon: "🧠" },
+  {
+    href: "/openai-predictions",
+    label: "OpenAI",
+    desktopLabel: "OpenAI Picks",
+    icon: "🤖",
+  },
 ] as const;
 
 /** Legacy path (no query) → workspace path + tab id. */
